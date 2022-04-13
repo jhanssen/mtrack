@@ -6,17 +6,6 @@ include(CheckCSourceCompiles)
 
 include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
 
-check_c_source_compiles([=[
-    #include <sys/user.h>
-
-    int main()
-    {
-        struct user_regs_struct regs;
-        (void)regs;
-        return 0;
-    }
-    ]=] MTRACK_HAS_USER_REGS_STRUCT)
-
 if (MTRACK_HAS_USER_REGS_STRUCT)
     add_definitions(-DMTRACK_HAS_USER_REGS_STRUCT)
 endif ()
@@ -27,5 +16,6 @@ ExternalProject_Add(libunwind
     CONFIGURE_COMMAND ../libunwind/configure --prefix ${CMAKE_CURRENT_BINARY_DIR}/3rdparty/libunwind
     )
 
+add_subdirectory(3rdparty)
 add_subdirectory(preload)
 add_subdirectory(samples)
