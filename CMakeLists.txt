@@ -4,7 +4,7 @@ project(mtrack)
 include(ExternalProject)
 
 ExternalProject_Add(libunwind
-    URL http://download.savannah.nongnu.org/releases/libunwind/libunwind-1.6.2.tar.gz
+    URL https://download.savannah.nongnu.org/releases/libunwind/libunwind-1.6.2.tar.gz
     URL_HASH SHA256=4a6aec666991fb45d0889c44aede8ad6eb108071c3554fcdff671f9c94794976
     CONFIGURE_COMMAND ../libunwind/configure --prefix ${CMAKE_CURRENT_BINARY_DIR}/3rdparty/libunwind
     )
