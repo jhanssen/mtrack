@@ -2,6 +2,24 @@ cmake_minimum_required(VERSION 3.13)
 project(mtrack)
 
 include(ExternalProject)
+include(CheckCSourceCompiles)
+
+include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
+
+check_c_source_compiles([=[
+    #include <sys/user.h>
+
+    int main()
+    {
+        struct user_regs_struct regs;
+        (void)regs;
+        return 0;
+    }
+    ]=] MTRACK_HAS_USER_REGS_STRUCT)
+
+if (MTRACK_HAS_USER_REGS_STRUCT)
+    add_definitions(-DMTRACK_HAS_USER_REGS_STRUCT)
+endif ()
 
 ExternalProject_Add(libunwind
     URL https://download.savannah.nongnu.org/releases/libunwind/libunwind-1.6.2.tar.gz
