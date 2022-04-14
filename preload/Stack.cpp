@@ -60,18 +60,20 @@ struct Waiter
     }
 };
 
-
-gregset_t gregset;
-std::atomic<bool> handled = false;
+struct {
+    gregset_t gregset;
+    std::atomic<bool> handled = false;
+    bool siginstalled = false;
+} data;
 
 static void handler(int sig)
 {
     ucontext_t ctx;
     getcontext(&ctx);
 
-    memcpy(&gregset, &ctx.uc_mcontext.gregs, sizeof(gregset_t));
+    memcpy(&data.gregset, &ctx.uc_mcontext.gregs, sizeof(gregset_t));
 
-    Waiter wl(handled);
+    Waiter wl(data.handled);
     wl.notify();
 }
 
@@ -79,11 +81,14 @@ Stack::Stack(uint32_t ptid)
 {
     dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
 
-    struct sigaction sa;
-    sa.sa_flags = SA_SIGINFO;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_handler = handler;
-    sigaction(SIGUSR1, &sa, nullptr);
+    if (!data.siginstalled) {
+        struct sigaction sa;
+        sa.sa_flags = SA_SIGINFO;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_handler = handler;
+        sigaction(SIGUSR1, &sa, nullptr);
+        data.siginstalled = true;
+    }
 
     unw_context_t context = {};
     unw_getcontext(&context);
@@ -94,27 +99,27 @@ Stack::Stack(uint32_t ptid)
 #ifdef MTRACK_HAS_USER_REGS_STRUCT
         syscall(SYS_tkill, ptid, SIGUSR1);
 
-        Waiter wl(handled);
+        Waiter wl(data.handled);
         wl.wait();
 
         // set regs from other thread
-        unw_set_reg(&cursor, UNW_X86_64_R15, gregset[REG_R15]);
-        unw_set_reg(&cursor, UNW_X86_64_R14, gregset[REG_R14]);
-        unw_set_reg(&cursor, UNW_X86_64_R13, gregset[REG_R13]);
-        unw_set_reg(&cursor, UNW_X86_64_R12, gregset[REG_R12]);
-        unw_set_reg(&cursor, UNW_X86_64_RBP, gregset[REG_RBP]);
-        unw_set_reg(&cursor, UNW_X86_64_RBX, gregset[REG_RBX]);
-        unw_set_reg(&cursor, UNW_X86_64_R11, gregset[REG_R11]);
-        unw_set_reg(&cursor, UNW_X86_64_R10, gregset[REG_R10]);
-        unw_set_reg(&cursor, UNW_X86_64_R9, gregset[REG_R9]);
-        unw_set_reg(&cursor, UNW_X86_64_R8, gregset[REG_R8]);
-        unw_set_reg(&cursor, UNW_X86_64_RAX, gregset[REG_RAX]);
-        unw_set_reg(&cursor, UNW_X86_64_RCX, gregset[REG_RCX]);
-        unw_set_reg(&cursor, UNW_X86_64_RDX, gregset[REG_RDX]);
-        unw_set_reg(&cursor, UNW_X86_64_RSI, gregset[REG_RSI]);
-        unw_set_reg(&cursor, UNW_X86_64_RDI, gregset[REG_RDI]);
-        unw_set_reg(&cursor, UNW_X86_64_RIP, gregset[REG_RIP]);
-        unw_set_reg(&cursor, UNW_X86_64_RSP, gregset[REG_RSP]);
+        unw_set_reg(&cursor, UNW_X86_64_R15, data.gregset[REG_R15]);
+        unw_set_reg(&cursor, UNW_X86_64_R14, data.gregset[REG_R14]);
+        unw_set_reg(&cursor, UNW_X86_64_R13, data.gregset[REG_R13]);
+        unw_set_reg(&cursor, UNW_X86_64_R12, data.gregset[REG_R12]);
+        unw_set_reg(&cursor, UNW_X86_64_RBP, data.gregset[REG_RBP]);
+        unw_set_reg(&cursor, UNW_X86_64_RBX, data.gregset[REG_RBX]);
+        unw_set_reg(&cursor, UNW_X86_64_R11, data.gregset[REG_R11]);
+        unw_set_reg(&cursor, UNW_X86_64_R10, data.gregset[REG_R10]);
+        unw_set_reg(&cursor, UNW_X86_64_R9,  data.gregset[REG_R9]);
+        unw_set_reg(&cursor, UNW_X86_64_R8,  data.gregset[REG_R8]);
+        unw_set_reg(&cursor, UNW_X86_64_RAX, data.gregset[REG_RAX]);
+        unw_set_reg(&cursor, UNW_X86_64_RCX, data.gregset[REG_RCX]);
+        unw_set_reg(&cursor, UNW_X86_64_RDX, data.gregset[REG_RDX]);
+        unw_set_reg(&cursor, UNW_X86_64_RSI, data.gregset[REG_RSI]);
+        unw_set_reg(&cursor, UNW_X86_64_RDI, data.gregset[REG_RDI]);
+        unw_set_reg(&cursor, UNW_X86_64_RIP, data.gregset[REG_RIP]);
+        unw_set_reg(&cursor, UNW_X86_64_RSP, data.gregset[REG_RSP]);
 #else
         for (size_t i=0; i<sizeof(regs.uregs) / sizeof(regs.uregs[0]); ++i) {
             printf("got numbers %zu %lu\n", i, regs.uregs[i]);
