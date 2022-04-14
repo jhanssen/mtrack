@@ -59,7 +59,7 @@ static void faultThread()
             const auto place = fault_msg.arg.pagefault.address;
             const auto ptid = fault_msg.arg.pagefault.feat.ptid;
             printf("  - pagefault %u\n", ptid);
-            Stack stack(ptid);
+            ThreadStack stack(ptid);
             uffdio_zeropage zero = {
                 .range = {
                     .start = place,
