@@ -1,57 +1,74 @@
+#include "Stack.h"
+
 #include <assert.h>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <linux/userfaultfd.h>
 #include <poll.h>
+#include <stdlib.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#include <stdio.h>
-
 #include <atomic>
 #include <thread>
-
-#include "Stack.h"
 
 #define PAGESIZE 4096
 
 typedef void* (*MmapSig)(void*, size_t, int, int, int, off_t);
 
-struct Data
+class Hooks
 {
-    std::thread thr;
-    std::atomic<bool> ok = false;
-    thread_local static bool hooked;
+public:
+    static bool hook();
 
-    std::atomic_flag isInitialized = ATOMIC_FLAG_INIT;
-    std::atomic_flag isShutdown = ATOMIC_FLAG_INIT;
-    MmapSig mmap = nullptr;
-    int ffd = -1;
+    enum class HookStatus
+    {
+        Hooking,
+        HookOk,
+        HookFailed
+    };
+
+private:
+    Hooks() = delete;
 };
+
+struct Data {
+    MmapSig mmap;
+    int faultFd;
+    std::thread thread;
+    std::atomic_flag hookCalled = ATOMIC_FLAG_INIT;
+    std::atomic<Hooks::HookStatus> hookStatus = Hooks::HookStatus::Hooking;
+    std::atomic_flag isShutdown = ATOMIC_FLAG_INIT;
+    int pipe[2];
+
+    static thread_local bool hooked;
+} data;
 
 thread_local bool Data::hooked = true;
 
-static Data data;
-
-static void faultThread()
+static void hookThread()
 {
     data.hooked = false;
-    pollfd evt = { .fd = data.ffd, .events = POLLIN };
-    while (poll(&evt, 1, 1000) > 0) {
+
+    pollfd evt[] = {
+        { .fd = data.faultFd, .events = POLLIN },
+        { .fd = data.pipe[0], .events = POLLIN }
+    };
+    while (poll(evt, 1, 1000) > 0) {
         printf("- top of fault thread\n");
-        if (evt.revents & (POLLERR | POLLHUP)) {
+        if (evt[0].revents & (POLLERR | POLLHUP)) {
             // done?
-            close(data.ffd);
-            data.ffd = -1;
+            close(data.faultFd);
+            data.faultFd = -1;
             return;
         }
         uffd_msg fault_msg = {0};
-        if (read(data.ffd, &fault_msg, sizeof(fault_msg)) != sizeof(fault_msg)) {
+        if (read(data.faultFd, &fault_msg, sizeof(fault_msg)) != sizeof(fault_msg)) {
             // read error
-            close(data.ffd);
-            data.ffd = -1;
+            close(data.faultFd);
+            data.faultFd = -1;
             return;
         }
         switch (fault_msg.event) {
@@ -66,10 +83,10 @@ static void faultThread()
                     .len = PAGESIZE
                 }
             };
-            if (ioctl(data.ffd, UFFDIO_ZEROPAGE, &zero)) {
+            if (ioctl(data.faultFd, UFFDIO_ZEROPAGE, &zero)) {
                 // boo
-                close(data.ffd);
-                data.ffd = -1;
+                close(data.faultFd);
+                data.faultFd = -1;
                 return;
             }
             printf("  - handled pagefault\n");
@@ -78,54 +95,77 @@ static void faultThread()
     }
 }
 
-static void cleanupMmap()
+static void hookCleanup()
 {
     // might be a race here if the process exits really quickly
     if (!data.isShutdown.test_and_set()) {
-        if (data.ffd == -1) {
-            close(data.ffd);
-            data.ffd = -1;
+        if (data.faultFd == -1) {
+            close(data.faultFd);
+            data.faultFd = -1;
         }
-        data.thr.join();
+        data.thread.join();
     }
 }
 
-static bool setupMmap()
+inline bool Hooks::hook()
 {
-    if (data.isInitialized.test_and_set())
-        return true;
-
+    if (data.hookCalled.test_and_set()) {
+        for (;;) {
+            const auto status = data.hookStatus.load();
+            if (status == HookStatus::Hooking) {
+#ifdef __x86_64__
+                __builtin_ia32_pause();
+#endif
+                continue;
+            }
+            return status == HookStatus::HookOk;
+        }
+    }
     data.mmap = reinterpret_cast<MmapSig>(dlsym(RTLD_NEXT, "mmap"));
-    if (data.mmap == nullptr)
+
+    if (data.mmap == nullptr) {
+        data.hookStatus = HookStatus::HookFailed;
         return false;
-    data.ffd = syscall(SYS_userfaultfd, O_NONBLOCK);
-    if (data.ffd == -1)
+    }
+
+    data.faultFd = syscall(SYS_userfaultfd, O_NONBLOCK);
+    if (data.faultFd == -1) {
+        data.hookStatus = HookStatus::HookFailed;
         return false;
+    }
+
     uffdio_api api = {
         .api = UFFD_API,
         .features = UFFD_FEATURE_THREAD_ID | UFFD_FEATURE_EVENT_REMAP | UFFD_FEATURE_EVENT_REMOVE | UFFD_FEATURE_EVENT_UNMAP
     };
-    if (ioctl(data.ffd, UFFDIO_API, &api))
+    if (ioctl(data.faultFd, UFFDIO_API, &api)) {
+        data.hookStatus = HookStatus::HookFailed;
         return false;
-    if (api.api != UFFD_API)
+    }
+    if (api.api != UFFD_API) {
+        data.hookStatus = HookStatus::HookFailed;
         return false;
+    }
 
-    data.thr = std::thread(faultThread);
-    atexit(cleanupMmap);
+    if (pipe2(data.pipe, O_NONBLOCK) == -1) {
+        data.hookStatus = HookStatus::HookFailed;
+        return false;
+    }
 
-    data.ok = true;
+    data.thread = std::thread(hookThread);
+    atexit(hookCleanup);
+
+    data.hookStatus = HookStatus::HookOk;
     return true;
 }
 
 extern "C" {
 void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
-    if (!setupMmap()) {
+    if (!Hooks::hook()) {
         printf("no setup\n");
         return nullptr;
     }
-    while (!data.ok.load())
-        ;
     auto ret = data.mmap(addr, length, prot, flags, fd, offset);
     if (!data.hooked)
         return ret;
@@ -139,7 +179,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
             .mode = UFFDIO_REGISTER_MODE_MISSING
         };
 
-        if (ioctl(data.ffd, UFFDIO_REGISTER, &reg)) {
+        if (ioctl(data.faultFd, UFFDIO_REGISTER, &reg)) {
             printf("no register %m\n");
             munmap(ret, length);
             return nullptr;
