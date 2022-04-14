@@ -115,12 +115,6 @@ Stack::Stack(uint32_t ptid)
         unw_set_reg(&cursor, UNW_X86_64_RDI, gregset[REG_RDI]);
         unw_set_reg(&cursor, UNW_X86_64_RIP, gregset[REG_RIP]);
         unw_set_reg(&cursor, UNW_X86_64_RSP, gregset[REG_RSP]);
-
-        // printf("got rip %lx %lx\n", faen.rip, faen.rsp);
-
-        //printf("read %llx %llx %llx from %s\n", stack, sp, ip, buf);
-
-        //printf("rrr ip %llx sp %llx\n", ip, sp);
 #else
         for (size_t i=0; i<sizeof(regs.uregs) / sizeof(regs.uregs[0]); ++i) {
             printf("got numbers %zu %lu\n", i, regs.uregs[i]);
@@ -131,14 +125,13 @@ Stack::Stack(uint32_t ptid)
     printf("hallo %u\n", gettid());
     while (unw_step(&cursor) > 0) {
         unw_word_t ip = 0, sp = 0;
-        // printf("DFFLFKFKFK 2\n");
         unw_get_reg(&cursor, UNW_REG_IP, &ip);
-        // printf("DFFLFKFKFK 3\n");
         unw_get_reg(&cursor, UNW_REG_SP, &sp);
         printf("ip %lx sp %lx\n", ip, sp);
         if (ip > 0) {
             mPtrs.push_back(std::make_pair(ip, sp));
-            //break;
+        } else {
+            break;
         }
     }
     printf("donezo\n");
