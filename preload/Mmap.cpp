@@ -23,16 +23,21 @@ struct Data
 {
     std::thread thr;
     std::atomic<bool> ok = false;
+    thread_local static bool hooked;
 
     std::atomic_flag isInitialized = ATOMIC_FLAG_INIT;
+    std::atomic_flag isShutdown = ATOMIC_FLAG_INIT;
     MmapSig mmap = nullptr;
     int ffd = -1;
 };
+
+thread_local bool Data::hooked = true;
 
 static Data data;
 
 static void faultThread()
 {
+    data.hooked = false;
     pollfd evt = { .fd = data.ffd, .events = POLLIN };
     while (poll(&evt, 1, 1000) > 0) {
         printf("- top of fault thread\n");
@@ -61,7 +66,6 @@ static void faultThread()
                     .len = PAGESIZE
                 }
             };
-            // sleep(1);
             if (ioctl(data.ffd, UFFDIO_ZEROPAGE, &zero)) {
                 // boo
                 close(data.ffd);
@@ -77,9 +81,11 @@ static void faultThread()
 static void cleanupMmap()
 {
     // might be a race here if the process exits really quickly
-    if (data.ok) {
-        assert(data.ffd != -1);
-        close(data.ffd);
+    if (!data.isShutdown.test_and_set()) {
+        if (data.ffd == -1) {
+            close(data.ffd);
+            data.ffd = -1;
+        }
         data.thr.join();
     }
 }
@@ -121,6 +127,8 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     while (!data.ok.load())
         ;
     auto ret = data.mmap(addr, length, prot, flags, fd, offset);
+    if (!data.hooked)
+        return ret;
 
     if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)) {
         uffdio_register reg = {
