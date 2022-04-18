@@ -16,6 +16,7 @@
 #include <execinfo.h>
 
 #include <atomic>
+#include <mutex>
 #include <thread>
 #include <tuple>
 
@@ -34,6 +35,7 @@ class Hooks
 {
 public:
     static bool hook();
+    static bool hookInternal();
 
     enum class HookStatus
     {
@@ -47,7 +49,7 @@ private:
 };
 
 struct Data {
-    MmapSig mmap;
+    MmapSig mmap, mmap64;
     MunmapSig munmap;
     MremapSig mremap;
     MprotectSig mprotect;
@@ -68,7 +70,9 @@ struct Data {
     std::vector<std::tuple<void*, size_t, int>> mmapRanges;
 
     static thread_local bool hooked;
-} data;
+} data = {};
+
+static std::once_flag hookOnce = {};
 
 thread_local bool Data::hooked = true;
 
@@ -108,37 +112,37 @@ void MmapWalker::walk(void* addr, size_t len, Func&& func)
         if (addr > std::get<0>(*it)) {
             oldend = reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it);
             remtmp = rem;
-            printf("fuckety1 %p (%p) vs %p (%p)\n",
-                   addr, reinterpret_cast<uint8_t*>(addr) + len,
-                   std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it));
+            // printf("fuckety1 %p (%p) vs %p (%p)\n",
+            //        addr, reinterpret_cast<uint8_t*>(addr) + len,
+            //        std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it));
             it = func(RangeType::Start, it, addr, rem, used);
             used += remtmp - rem;
-            printf("used1 %zu %zu (%zu %zu)\n", used, len, remtmp, rem);
+            // printf("used1 %zu %zu (%zu %zu)\n", used, len, remtmp, rem);
             if (it != data.mmapRanges.end() && addr >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) && addr < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
                 newstart = reinterpret_cast<uint8_t*>(std::get<0>(*it));
                 rem -= reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend);
                 used += reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend);
-                printf("used2 %zu %zu (%zu %zu)\n", used, len, remtmp, rem);
+                // printf("used2 %zu %zu (%zu %zu)\n", used, len, remtmp, rem);
             }
             assert(used <= len);
         }
-        printf("fuckety2 %p (%p) vs %p (%p)\n",
-               addr, reinterpret_cast<uint8_t*>(addr) + len,
-               std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it));
+        // printf("fuckety2 %p (%p) vs %p (%p)\n",
+        //        addr, reinterpret_cast<uint8_t*>(addr) + len,
+        //        std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it));
         while (it != data.mmapRanges.end() && addr <= std::get<0>(*it) && (reinterpret_cast<uint8_t*>(addr) + len >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it))) {
             oldend = reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it);
             remtmp = rem;
-            printf("walked right into it %p %p (%zu) -> %p %p\n",
-                   addr, reinterpret_cast<uint8_t*>(addr) + len, rem,
-                   std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it));
+            // printf("walked right into it %p %p (%zu) -> %p %p\n",
+            //        addr, reinterpret_cast<uint8_t*>(addr) + len, rem,
+            //        std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it));
             it = func(RangeType::Middle, it, addr, rem, used);
             used += remtmp - rem;
-            printf("used3 %zu %zu (%zu %zu)\n", used, len, remtmp, rem);
+            // printf("used3 %zu %zu (%zu %zu)\n", used, len, remtmp, rem);
             if (it != data.mmapRanges.end() && addr <= std::get<0>(*it) && (reinterpret_cast<uint8_t*>(addr) + len >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it))) {
                 newstart = reinterpret_cast<uint8_t*>(std::get<0>(*it));
                 rem -= reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend);
                 used += reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend);
-                printf("used4 %zu %zu (%zu %zu)\n", used, len, remtmp, rem);
+                // printf("used4 %zu %zu (%zu %zu)\n", used, len, remtmp, rem);
             }
             assert(used <= len);
         }
@@ -190,9 +194,9 @@ static void hookThread()
 
         // printf("- fault thread 0\n");
 
-        if (data.modulesDirty) {
+        if (data.modulesDirty.load(std::memory_order_acquire)) {
             dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
-            data.modulesDirty = false;
+            data.modulesDirty.store(false, std::memory_order_release);
         }
 
         // printf("- fault thread 1 %d %d\n", evt[0].revents, evt[1].revents);
@@ -274,9 +278,20 @@ bool Hooks::hook()
         return status == HookStatus::Ok;
     }
 
+    return hookInternal();
+}
+
+bool Hooks::hookInternal()
+{
     data.mmap = reinterpret_cast<MmapSig>(dlsym(RTLD_NEXT, "mmap"));
     if (data.mmap == nullptr) {
         printf("no mmap\n");
+        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
+        return false;
+    }
+    data.mmap64 = reinterpret_cast<MmapSig>(dlsym(RTLD_NEXT, "mmap64"));
+    if (data.mmap64 == nullptr) {
+        printf("no mmap64\n");
         data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
         return false;
     }
@@ -298,18 +313,18 @@ bool Hooks::hook()
         data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
         return false;
     }
-    // data.dlopen = reinterpret_cast<DlOpenSig>(dlsym(RTLD_NEXT, "dlopen"));
-    // if (data.dlopen == nullptr) {
-    //     printf("no dlopen\n");
-    //     data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
-    //     return false;
-    // }
-    // data.dlclose = reinterpret_cast<DlCloseSig>(dlsym(RTLD_NEXT, "dlclose"));
-    // if (data.dlclose == nullptr) {
-    //     printf("no dlclose\n");
-    //     data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
-    //     return false;
-    // }
+    data.dlopen = reinterpret_cast<DlOpenSig>(dlsym(RTLD_NEXT, "dlopen"));
+    if (data.dlopen == nullptr) {
+        printf("no dlopen\n");
+        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
+        return false;
+    }
+    data.dlclose = reinterpret_cast<DlCloseSig>(dlsym(RTLD_NEXT, "dlclose"));
+    if (data.dlclose == nullptr) {
+        printf("no dlclose\n");
+        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
+        return false;
+    }
 
     data.faultFd = syscall(SYS_userfaultfd, O_NONBLOCK);
     if (data.faultFd == -1) {
@@ -352,6 +367,90 @@ bool Hooks::hook()
     return true;
 }
 
+bool trackMmap(void* addr, size_t length, int prot, int flags)
+{
+    // printf("-maping %p %zu flags 0x%x priv/anon %d\n", addr, length, flags, (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS));
+    MmapWalker::walk(addr, length, [flags](MmapWalker::RangeType type, auto it, void* addr, size_t& len, size_t used) {
+        assert(len > 0);
+        switch (type) {
+        case MmapWalker::RangeType::Empty:
+            // printf("inserting %p %zu\n", addr, len);
+            return data.mmapRanges.insert(it, std::make_tuple(addr, len, flags)) + 1;
+        case MmapWalker::RangeType::Start: {
+            if (std::get<2>(*it) == flags) {
+                len -= std::get<1>(*it);
+                // printf("started, len is now %zu (%d)\n", len, __LINE__);
+                return it + 1;
+            }
+            // split out start, add new item
+            const auto oldlen = std::get<1>(*it);
+            const auto oldflags = std::get<2>(*it);
+            std::get<1>(*it) = reinterpret_cast<uint8_t*>(addr) - reinterpret_cast<uint8_t*>(std::get<0>(*it));
+            it = data.mmapRanges.insert(it + 1, std::make_tuple(addr, oldlen - std::get<1>(*it), flags));
+            // if addr is fully contained in this item, make another new item with old flags
+            if (reinterpret_cast<uint8_t*>(addr) + len < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) {
+                const auto remlen = (reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) - (reinterpret_cast<uint8_t*>(addr) + len);
+                it = data.mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(addr) + len, remlen, oldflags));
+                len = 0;
+                // printf("started, len is now %zu (%d)\n", len, __LINE__);
+            } else {
+                assert(len >= oldlen - std::get<1>(*it));
+                len -= oldlen - std::get<1>(*it);
+                // printf("started, len is now %zu (%d)\n", len, __LINE__);
+            }
+            return it + 1; }
+        case MmapWalker::RangeType::Middle:
+            std::get<2>(*it) = flags;
+            assert(len >= std::get<1>(*it));
+            len -= std::get<1>(*it);
+            // printf("middled, len is now %zu (%d)\n", len, __LINE__);
+            return it + 1;
+        case MmapWalker::RangeType::End:
+            if (std::get<2>(*it) == flags) {
+                len -= std::get<1>(*it);
+                // printf("ended, len is now %zu (%d)\n", len, __LINE__);
+                return it + 1;
+            }
+            // add new item, split out end
+            // printf("balli used %zu (%p %p) addr %p %zu\n", used, std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + used, addr, len);
+            reinterpret_cast<uint8_t*&>(std::get<0>(*it)) += used + len;
+            std::get<1>(*it) -= len;
+            it = data.mmapRanges.insert(it, std::make_tuple(addr, len, flags));
+            len = 0;
+            // printf("ended, len is now %zu (%d)\n", len, __LINE__);
+            return it + 2;
+        }
+        assert(false && "invalid MmapWalker::RangeType for mmap");
+        __builtin_unreachable();
+    });
+    // printf("1--\n");
+    // for (const auto& item : data.mmapRanges) {
+    //     printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
+    // }
+
+    if ((prot & (PROT_READ | PROT_WRITE)) && !(prot & PROT_EXEC)) {
+        // printf("ball %zu 0x%x 0x%x\n", length, prot, flags);
+        uffdio_register reg = {
+            .range = {
+                .start = reinterpret_cast<__u64>(addr),
+                .len = length
+            },
+            .mode = UFFDIO_REGISTER_MODE_MISSING
+        };
+
+        if (ioctl(data.faultFd, UFFDIO_REGISTER, &reg))
+            return true;
+
+        if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
+            printf("no range %m\n");
+            munmap(addr, length);
+            return false;
+        }
+    }
+
+    return true;
+}
+
 extern "C" {
 void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
@@ -359,111 +458,37 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
         printf("no setup\n");
         return nullptr;
     }
+
+    // printf("mmap?? %p\n", addr);
     auto ret = data.mmap(addr, length, prot, flags, fd, offset);
-    printf("-maping %p(%p) %zu flags 0x%x priv/anon %d\n", addr, ret, length, flags, (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS));
-    if (length > 1000000) {
-        int j, nptrs;
-        void *buffer[100];
-        char **strings;
+    // printf("mmap %p??\n", ret);
 
-        nptrs = backtrace(buffer, 100);
-        printf("backtrace() returned %d addresses\n", nptrs);
-
-        /* The call backtrace_symbols_fd(buffer, nptrs, STDOUT_FILENO)
-           would produce similar output to the following: */
-
-        strings = backtrace_symbols(buffer, nptrs);
-        if (strings == NULL) {
-            perror("backtrace_symbols");
-            exit(EXIT_FAILURE);
-        }
-
-        for (j = 0; j < nptrs; j++)
-            printf("%s\n", strings[j]);
-
-        free(strings);
-    }
     if (!data.hooked || ret == MAP_FAILED)
         return ret;
 
     if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)) {
-        MmapWalker::walk(ret, length, [flags](MmapWalker::RangeType type, auto it, void* addr, size_t& len, size_t used) {
-            assert(len > 0);
-            switch (type) {
-            case MmapWalker::RangeType::Empty:
-                printf("inserting %p %zu\n", addr, len);
-                return data.mmapRanges.insert(it, std::make_tuple(addr, len, flags)) + 1;
-            case MmapWalker::RangeType::Start: {
-                if (std::get<2>(*it) == flags) {
-                    len -= std::get<1>(*it);
-                    printf("started, len is now %zu (%d)\n", len, __LINE__);
-                    return it + 1;
-                }
-                // split out start, add new item
-                const auto oldlen = std::get<1>(*it);
-                const auto oldflags = std::get<2>(*it);
-                std::get<1>(*it) = reinterpret_cast<uint8_t*>(addr) - reinterpret_cast<uint8_t*>(std::get<0>(*it));
-                it = data.mmapRanges.insert(it + 1, std::make_tuple(addr, oldlen - std::get<1>(*it), flags));
-                // if addr is fully contained in this item, make another new item with old flags
-                if (reinterpret_cast<uint8_t*>(addr) + len < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) {
-                    const auto remlen = (reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) - (reinterpret_cast<uint8_t*>(addr) + len);
-                    it = data.mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(addr) + len, remlen, oldflags));
-                    len = 0;
-                    printf("started, len is now %zu (%d)\n", len, __LINE__);
-                } else {
-                    assert(len >= oldlen - std::get<1>(*it));
-                    len -= oldlen - std::get<1>(*it);
-                    printf("started, len is now %zu (%d)\n", len, __LINE__);
-                }
-                return it + 1; }
-            case MmapWalker::RangeType::Middle:
-                std::get<2>(*it) = flags;
-                assert(len >= std::get<1>(*it));
-                len -= std::get<1>(*it);
-                printf("middled, len is now %zu (%d)\n", len, __LINE__);
-                return it + 1;
-            case MmapWalker::RangeType::End:
-                if (std::get<2>(*it) == flags) {
-                    len -= std::get<1>(*it);
-                    printf("ended, len is now %zu (%d)\n", len, __LINE__);
-                    return it + 1;
-                }
-                // add new item, split out end
-                printf("balli used %zu (%p %p) addr %p %zu\n", used, std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + used, addr, len);
-                reinterpret_cast<uint8_t*&>(std::get<0>(*it)) += used + len;
-                std::get<1>(*it) -= len;
-                it = data.mmapRanges.insert(it, std::make_tuple(addr, len, flags));
-                len = 0;
-                printf("ended, len is now %zu (%d)\n", len, __LINE__);
-                return it + 2;
-            }
-            assert(false && "invalid MmapWalker::RangeType for mmap");
-            __builtin_unreachable();
-        });
-        printf("1--\n");
-        for (const auto& item : data.mmapRanges) {
-            printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
-        }
+        trackMmap(ret, length, prot, flags);
+    }
 
-        if ((prot & (PROT_READ | PROT_WRITE)) && !(prot & PROT_EXEC)) {
-            // printf("ball %zu 0x%x 0x%x\n", length, prot, flags);
-            uffdio_register reg = {
-                .range = {
-                    .start = reinterpret_cast<__u64>(ret),
-                    .len = length
-                },
-                .mode = UFFDIO_REGISTER_MODE_MISSING
-            };
+    return ret;
+}
 
-            if (ioctl(data.faultFd, UFFDIO_REGISTER, &reg))
-                return ret;
+void* mmap64(void* addr, size_t length, int prot, int flags, int fd, off_t pgoffset)
+{
+    if (!Hooks::hook()) {
+        printf("no setup\n");
+        return nullptr;
+    }
 
-            if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
-                printf("no range %m\n");
-                munmap(ret, length);
-                return nullptr;
-            }
-        }
+    // printf("mmap64?? %p\n", addr);
+    auto ret = data.mmap64(addr, length, prot, flags, fd, pgoffset);
+    // printf("mmap64 %p??\n", ret);
+
+    if (!data.hooked || ret == MAP_FAILED)
+        return ret;
+
+    if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)) {
+        trackMmap(ret, length, prot, flags);
     }
 
     return ret;
@@ -476,22 +501,22 @@ int munmap(void* addr, size_t len)
         return -1;
     }
 
-    if (len > 1000000) {
-        printf("3--\n");
-        for (const auto& item : data.mmapRanges) {
-            printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
-        }
-    }
+    // if (len > 1000000) {
+    //     printf("3--\n");
+    //     for (const auto& item : data.mmapRanges) {
+    //         printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
+    //     }
+    // }
 
     {
-        printf("-unmaping %p(%p) %zu\n", addr, reinterpret_cast<uint8_t*>(addr) + len, len);
+        // printf("-unmaping %p(%p) %zu\n", addr, reinterpret_cast<uint8_t*>(addr) + len, len);
         bool updated = false;
         MmapWalker::walk(addr, len, [&updated](MmapWalker::RangeType type, auto it, void* addr, size_t& len, size_t used) {
             switch (type) {
             case MmapWalker::RangeType::Start: {
                 // update start item
-                printf("FUCK %p(%p) vs %p(%p)\n", addr, reinterpret_cast<uint8_t*>(addr) + len,
-                       std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it));
+                // printf("FUCK %p(%p) vs %p(%p)\n", addr, reinterpret_cast<uint8_t*>(addr) + len,
+                //        std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it));
                 updated = true;
                 const auto oldlen = std::get<1>(*it);
                 std::get<1>(*it) = reinterpret_cast<uint8_t*>(addr) - reinterpret_cast<uint8_t*>(std::get<0>(*it));
@@ -501,7 +526,7 @@ int munmap(void* addr, size_t len)
                     it = data.mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(addr) + len, remlen, std::get<2>(*it)));
                     len = 0;
                 } else {
-                    printf("FUCK AGAIN %zu vs %zu (%zu %zu)\n", len, oldlen - std::get<1>(*it), oldlen, std::get<1>(*it));
+                    // printf("FUCK AGAIN %zu vs %zu (%zu %zu)\n", len, oldlen - std::get<1>(*it), oldlen, std::get<1>(*it));
                     assert(len >= oldlen - std::get<1>(*it));
                     len -= oldlen - std::get<1>(*it);
                 }
@@ -523,38 +548,38 @@ int munmap(void* addr, size_t len)
             assert(false && "invalid MmapWalker::RangeType for mmap");
             __builtin_unreachable();
         });
-        if (updated) {
-            printf("2--\n");
-            for (const auto& item : data.mmapRanges) {
-                printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
-            }
-        }
+        // if (updated) {
+        //     printf("2--\n");
+        //     for (const auto& item : data.mmapRanges) {
+        //         printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
+        //     }
+        // }
     }
 
     const auto ret = data.munmap(addr, len);
-    if (len > 1000000) {
-        int j, nptrs;
-        void *buffer[100];
-        char **strings;
+    // if (len > 1000000) {
+    //     int j, nptrs;
+    //     void *buffer[100];
+    //     char **strings;
 
-        nptrs = backtrace(buffer, 100);
-        printf("backtrace() returned %d addresses\n", nptrs);
+    //     nptrs = backtrace(buffer, 100);
+    //     printf("backtrace() returned %d addresses\n", nptrs);
 
-        /* The call backtrace_symbols_fd(buffer, nptrs, STDOUT_FILENO)
-           would produce similar output to the following: */
+    //     /* The call backtrace_symbols_fd(buffer, nptrs, STDOUT_FILENO)
+    //        would produce similar output to the following: */
 
-        strings = backtrace_symbols(buffer, nptrs);
-        if (strings == NULL) {
-            perror("backtrace_symbols");
-            exit(EXIT_FAILURE);
-        }
+    //     strings = backtrace_symbols(buffer, nptrs);
+    //     if (strings == NULL) {
+    //         perror("backtrace_symbols");
+    //         exit(EXIT_FAILURE);
+    //     }
 
-        for (j = 0; j < nptrs; j++)
-            printf("%s\n", strings[j]);
+    //     for (j = 0; j < nptrs; j++)
+    //         printf("%s\n", strings[j]);
 
-        free(strings);
-    }
-    printf("-unmapped %p %d\n", addr, ret);
+    //     free(strings);
+    // }
+    // printf("-unmapped %p %d\n", addr, ret);
     return ret;
 }
 
@@ -573,18 +598,18 @@ int mprotect(void* addr, size_t len, int prot)
         });
         if (it != data.mmapRanges.begin() && !data.mmapRanges.empty())
             --it;
-        if (it != data.mmapRanges.end()) {
-            printf("found %p %zu (%p) (%d) for %p %zu\n",
-                   std::get<0>(*it), std::get<1>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it),
-                   std::get<2>(*it), addr, len);
-        }
+        // if (it != data.mmapRanges.end()) {
+        //     printf("found %p %zu (%p) (%d) for %p %zu\n",
+        //            std::get<0>(*it), std::get<1>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it),
+        //            std::get<2>(*it), addr, len);
+        // }
         if (it != data.mmapRanges.end() && addr >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) && addr < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
-            printf(" - really found\n");
+            // printf(" - really found\n");
             flags = std::get<2>(*it);
         }
     }
 
-    printf("mprotect %p %zu %d %d\n", addr, len, prot, flags);
+    // printf("mprotect %p %zu %d %d\n", addr, len, prot, flags);
     if ((prot & (PROT_READ | PROT_WRITE)) && !(prot & PROT_EXEC) && (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)) {
         uffdio_register reg = {
             .range = {
@@ -608,7 +633,7 @@ int mprotect(void* addr, size_t len, int prot)
 
 void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
 {
-    printf("======!~!!!!!!!==== mremap!!!\n");
+    // printf("======!~!!!!!!!==== mremap!!!\n");
     abort();
     if (flags & MREMAP_FIXED) {
         va_list ap;
@@ -621,25 +646,26 @@ void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
     return data.mremap(addr, old_size, new_size, flags);
 }
 
-/*
 void* dlopen(const char* filename, int flags)
 {
-    if (!Hooks::hook()) {
-        printf("no setup\n");
-        return nullptr;
-    }
-    data.modulesDirty = true;
+    // if (!Hooks::hook()) {
+    //     printf("no setup\n");
+    //     return nullptr;
+    // }
+    std::call_once(hookOnce, Hooks::hookInternal);
+    // data.modulesDirty.store(true, std::memory_order_release);
     return data.dlopen(filename, flags);
 }
 
 int dlclose(void* handle)
 {
-    if (!Hooks::hook()) {
-        printf("no setup\n");
-        return -1;
-    }
-    data.modulesDirty = true;
+    // if (!Hooks::hook()) {
+    //     printf("no setup\n");
+    //     return -1;
+    // }
+    // data.modulesDirty.store(true, std::memory_order_release);
+    data.dlclose = reinterpret_cast<DlCloseSig>(dlsym(RTLD_NEXT, "dlclose"));
     return data.dlclose(handle);
 }
-*/
+
 } // extern "C"
