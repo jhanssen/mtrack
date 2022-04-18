@@ -14,6 +14,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <execinfo.h>
+#include <pthread.h>
 
 #include <atomic>
 #include <mutex>
@@ -30,6 +31,7 @@ typedef int (*MunmapSig)(void*, size_t);
 typedef int (*MprotectSig)(void*, size_t, int);
 typedef void* (*DlOpenSig)(const char*, int);
 typedef int  (*DlCloseSig)(void*);
+typedef int (*PthreadSetnameSig)(pthread_t thread, const char* name);
 
 class Hooks
 {
@@ -47,6 +49,7 @@ struct Data {
     MprotectSig mprotect;
     DlOpenSig dlopen;
     DlCloseSig dlclose;
+    PthreadSetnameSig pthread_setname_np;
 
     int faultFd;
     std::thread thread;
@@ -293,6 +296,11 @@ void Hooks::hook()
     data->dlclose = reinterpret_cast<DlCloseSig>(dlsym(RTLD_NEXT, "dlclose"));
     if (data->dlclose == nullptr) {
         printf("no dlclose\n");
+        abort();
+    }
+    data->pthread_setname_np = reinterpret_cast<PthreadSetnameSig>(dlsym(RTLD_NEXT, "pthread_setname_np"));
+    if (data->pthread_setname_np == nullptr) {
+        printf("no pthread_setname_np\n");
         abort();
     }
 
@@ -607,8 +615,17 @@ int dlclose(void* handle)
 {
     std::call_once(hookOnce, Hooks::hook);
     data->modulesDirty.store(true, std::memory_order_release);
-    data->dlclose = reinterpret_cast<DlCloseSig>(dlsym(RTLD_NEXT, "dlclose"));
     return data->dlclose(handle);
+}
+
+int pthread_setname_np(pthread_t thread, const char* name)
+{
+    std::call_once(hookOnce, Hooks::hook);
+    // ### should fix this, this will drop unless we're the same thread
+    if (thread == pthread_self()) {
+        data->recorder.record("tn %d %s\n", gettid(), name);
+    }
+    return data->pthread_setname_np(thread, name);
 }
 
 } // extern "C"
