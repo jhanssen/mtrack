@@ -34,15 +34,7 @@ typedef int  (*DlCloseSig)(void*);
 class Hooks
 {
 public:
-    static bool hook();
-    static bool hookInternal();
-
-    enum class HookStatus
-    {
-        Hooking,
-        Ok,
-        Failure
-    };
+    static void hook();
 
 private:
     Hooks() = delete;
@@ -58,8 +50,6 @@ struct Data {
 
     int faultFd;
     std::thread thread;
-    std::atomic<Hooks::HookStatus> hookStatus = Hooks::HookStatus::Hooking;
-    std::atomic_flag hookCalled = ATOMIC_FLAG_INIT;
     std::atomic_flag isShutdown = ATOMIC_FLAG_INIT;
     std::atomic<bool> modulesDirty = true;
     int pipe[2];
@@ -70,7 +60,7 @@ struct Data {
     std::vector<std::tuple<void*, size_t, int>> mmapRanges;
 
     static thread_local bool hooked;
-} data = {};
+} *data = nullptr;
 
 static std::once_flag hookOnce = {};
 
@@ -94,13 +84,13 @@ struct MmapWalker
 template<typename Func>
 void MmapWalker::walk(void* addr, size_t len, Func&& func)
 {
-    ScopedSpinlock lock(data.mmapRangeLock);
-    auto foundit = std::upper_bound(data.mmapRanges.begin(), data.mmapRanges.end(), addr, [](auto addr, const auto& item) {
+    ScopedSpinlock lock(data->mmapRangeLock);
+    auto foundit = std::upper_bound(data->mmapRanges.begin(), data->mmapRanges.end(), addr, [](auto addr, const auto& item) {
         return addr < std::get<0>(item);
     });
 
     auto it = foundit;
-    if (foundit != data.mmapRanges.begin())
+    if (foundit != data->mmapRanges.begin())
         --it;
 
     size_t rem = len;
@@ -108,7 +98,7 @@ void MmapWalker::walk(void* addr, size_t len, Func&& func)
     size_t remtmp;
     void* oldend;
     void* newstart;
-    if (it != data.mmapRanges.end() && addr >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) && addr < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
+    if (it != data->mmapRanges.end() && addr >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) && addr < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
         if (addr > std::get<0>(*it)) {
             oldend = reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it);
             remtmp = rem;
@@ -118,7 +108,7 @@ void MmapWalker::walk(void* addr, size_t len, Func&& func)
             it = func(RangeType::Start, it, addr, rem, used);
             used += remtmp - rem;
             // printf("used1 %zu %zu (%zu %zu)\n", used, len, remtmp, rem);
-            if (it != data.mmapRanges.end() && addr >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) && addr < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
+            if (it != data->mmapRanges.end() && addr >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) && addr < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
                 newstart = reinterpret_cast<uint8_t*>(std::get<0>(*it));
                 rem -= reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend);
                 used += reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend);
@@ -129,7 +119,7 @@ void MmapWalker::walk(void* addr, size_t len, Func&& func)
         // printf("fuckety2 %p (%p) vs %p (%p)\n",
         //        addr, reinterpret_cast<uint8_t*>(addr) + len,
         //        std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it));
-        while (it != data.mmapRanges.end() && addr <= std::get<0>(*it) && (reinterpret_cast<uint8_t*>(addr) + len >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it))) {
+        while (it != data->mmapRanges.end() && addr <= std::get<0>(*it) && (reinterpret_cast<uint8_t*>(addr) + len >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it))) {
             oldend = reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it);
             remtmp = rem;
             // printf("walked right into it %p %p (%zu) -> %p %p\n",
@@ -138,7 +128,7 @@ void MmapWalker::walk(void* addr, size_t len, Func&& func)
             it = func(RangeType::Middle, it, addr, rem, used);
             used += remtmp - rem;
             // printf("used3 %zu %zu (%zu %zu)\n", used, len, remtmp, rem);
-            if (it != data.mmapRanges.end() && addr <= std::get<0>(*it) && (reinterpret_cast<uint8_t*>(addr) + len >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it))) {
+            if (it != data->mmapRanges.end() && addr <= std::get<0>(*it) && (reinterpret_cast<uint8_t*>(addr) + len >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it))) {
                 newstart = reinterpret_cast<uint8_t*>(std::get<0>(*it));
                 rem -= reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend);
                 used += reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend);
@@ -146,7 +136,7 @@ void MmapWalker::walk(void* addr, size_t len, Func&& func)
             }
             assert(used <= len);
         }
-        if (it != data.mmapRanges.end() && rem > 0 && reinterpret_cast<uint8_t*>(addr) + used >= std::get<0>(*it) && reinterpret_cast<uint8_t*>(addr) + len < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
+        if (it != data->mmapRanges.end() && rem > 0 && reinterpret_cast<uint8_t*>(addr) + used >= std::get<0>(*it) && reinterpret_cast<uint8_t*>(addr) + len < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
             it = func(RangeType::End, it, addr, rem, used);
         }
     } else {
@@ -161,12 +151,12 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, 
         fileName = "m";
     }
 
-    data.recorder.record("dl %s %zx\n", fileName, info->dlpi_addr);
+    data->recorder.record("dl %s %zx\n", fileName, info->dlpi_addr);
 
     for (int i = 0; i < info->dlpi_phnum; i++) {
         const auto& phdr = info->dlpi_phdr[i];
         if (phdr.p_type == PT_LOAD) {
-            data.recorder.record("ph %zx %zx\n", phdr.p_vaddr, phdr.p_memsz);
+            data->recorder.record("ph %zx %zx\n", phdr.p_vaddr, phdr.p_memsz);
         }
     }
 
@@ -175,11 +165,11 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, 
 
 static void hookThread()
 {
-    data.hooked = false;
+    data->hooked = false;
 
     pollfd evt[] = {
-        { .fd = data.faultFd, .events = POLLIN },
-        { .fd = data.pipe[0], .events = POLLIN }
+        { .fd = data->faultFd, .events = POLLIN },
+        { .fd = data->pipe[0], .events = POLLIN }
     };
     for (;;) {
         // printf("- top of fault thread\n");
@@ -194,27 +184,27 @@ static void hookThread()
 
         // printf("- fault thread 0\n");
 
-        if (data.modulesDirty.load(std::memory_order_acquire)) {
+        if (data->modulesDirty.load(std::memory_order_acquire)) {
             dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
-            data.modulesDirty.store(false, std::memory_order_release);
+            data->modulesDirty.store(false, std::memory_order_release);
         }
 
         // printf("- fault thread 1 %d %d\n", evt[0].revents, evt[1].revents);
 
         if (evt[0].revents & (POLLERR | POLLHUP)) {
             // done?
-            close(data.faultFd);
-            data.faultFd = -1;
+            close(data->faultFd);
+            data->faultFd = -1;
             printf("- pagefault error 1\n");
             return;
         }
         // printf("- fault thread 2\n");
         if (evt[0].revents & POLLIN) {
             uffd_msg fault_msg = {0};
-            if (read(data.faultFd, &fault_msg, sizeof(fault_msg)) != sizeof(fault_msg)) {
+            if (read(data->faultFd, &fault_msg, sizeof(fault_msg)) != sizeof(fault_msg)) {
                 // read error
-                close(data.faultFd);
-                data.faultFd = -1;
+                close(data->faultFd);
+                data->faultFd = -1;
                 printf("- pagefault error 2\n");
                 return;
             }
@@ -225,10 +215,10 @@ static void hookThread()
                 const auto place = fault_msg.arg.pagefault.address;
                 const auto ptid = fault_msg.arg.pagefault.feat.ptid;
                 // printf("  - pagefault %u\n", ptid);
-                data.recorder.record("mm %p %u\n", place, ptid);
+                data->recorder.record("mm %p %u\n", place, ptid);
                 ThreadStack stack(ptid);
                 while (!stack.atEnd()) {
-                    data.recorder.record("st %llx %llx\n", stack.ip(), stack.sp());
+                    data->recorder.record("st %llx %llx\n", stack.ip(), stack.sp());
                     stack.next();
                 }
                 uffdio_zeropage zero = {
@@ -237,10 +227,10 @@ static void hookThread()
                         .len = PAGESIZE
                     }
                 };
-                if (ioctl(data.faultFd, UFFDIO_ZEROPAGE, &zero)) {
+                if (ioctl(data->faultFd, UFFDIO_ZEROPAGE, &zero)) {
                     // boo
-                    close(data.faultFd);
-                    data.faultFd = -1;
+                    close(data->faultFd);
+                    data->faultFd = -1;
                     return;
                 }
                 // printf("  - handled pagefault\n");
@@ -255,116 +245,88 @@ static void hookThread()
 static void hookCleanup()
 {
     // might be a race here if the process exits really quickly
-    if (!data.isShutdown.test_and_set()) {
-        if (data.faultFd == -1) {
-            close(data.faultFd);
-            data.faultFd = -1;
+    if (!data->isShutdown.test_and_set()) {
+        if (data->faultFd == -1) {
+            close(data->faultFd);
+            data->faultFd = -1;
         }
-        data.thread.join();
+        data->thread.join();
     }
-    data.recorder.cleanup();
+    data->recorder.cleanup();
+    delete data;
+    data = nullptr;
 }
 
-bool Hooks::hook()
+void Hooks::hook()
 {
-    if (data.hookCalled.test_and_set()) {
-        auto status = data.hookStatus.load(std::memory_order_acquire);
-        while (status == HookStatus::Hooking) {
-#ifdef __x86_64__
-            __builtin_ia32_pause();
-#endif
-            status = data.hookStatus.load(std::memory_order_relaxed);
-        }
-        return status == HookStatus::Ok;
-    }
-
-    return hookInternal();
-}
-
-bool Hooks::hookInternal()
-{
-    data.mmap = reinterpret_cast<MmapSig>(dlsym(RTLD_NEXT, "mmap"));
-    if (data.mmap == nullptr) {
+    data = new Data();
+    data->mmap = reinterpret_cast<MmapSig>(dlsym(RTLD_NEXT, "mmap"));
+    if (data->mmap == nullptr) {
         printf("no mmap\n");
-        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
-        return false;
+        abort();
     }
-    data.mmap64 = reinterpret_cast<MmapSig>(dlsym(RTLD_NEXT, "mmap64"));
-    if (data.mmap64 == nullptr) {
+    data->mmap64 = reinterpret_cast<MmapSig>(dlsym(RTLD_NEXT, "mmap64"));
+    if (data->mmap64 == nullptr) {
         printf("no mmap64\n");
-        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
-        return false;
+        abort();
     }
-    data.munmap = reinterpret_cast<MunmapSig>(dlsym(RTLD_NEXT, "munmap"));
-    if (data.munmap == nullptr) {
+    data->munmap = reinterpret_cast<MunmapSig>(dlsym(RTLD_NEXT, "munmap"));
+    if (data->munmap == nullptr) {
         printf("no munmap\n");
-        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
-        return false;
+        abort();
     }
-    data.mremap = reinterpret_cast<MremapSig>(dlsym(RTLD_NEXT, "mremap"));
-    if (data.mremap == nullptr) {
+    data->mremap = reinterpret_cast<MremapSig>(dlsym(RTLD_NEXT, "mremap"));
+    if (data->mremap == nullptr) {
         printf("no mremap\n");
-        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
-        return false;
+        abort();
     }
-    data.mprotect = reinterpret_cast<MprotectSig>(dlsym(RTLD_NEXT, "mprotect"));
-    if (data.mprotect == nullptr) {
+    data->mprotect = reinterpret_cast<MprotectSig>(dlsym(RTLD_NEXT, "mprotect"));
+    if (data->mprotect == nullptr) {
         printf("no mprotect\n");
-        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
-        return false;
+        abort();
     }
-    data.dlopen = reinterpret_cast<DlOpenSig>(dlsym(RTLD_NEXT, "dlopen"));
-    if (data.dlopen == nullptr) {
+    data->dlopen = reinterpret_cast<DlOpenSig>(dlsym(RTLD_NEXT, "dlopen"));
+    if (data->dlopen == nullptr) {
         printf("no dlopen\n");
-        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
-        return false;
+        abort();
     }
-    data.dlclose = reinterpret_cast<DlCloseSig>(dlsym(RTLD_NEXT, "dlclose"));
-    if (data.dlclose == nullptr) {
+    data->dlclose = reinterpret_cast<DlCloseSig>(dlsym(RTLD_NEXT, "dlclose"));
+    if (data->dlclose == nullptr) {
         printf("no dlclose\n");
-        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
-        return false;
+        abort();
     }
 
-    data.faultFd = syscall(SYS_userfaultfd, O_NONBLOCK);
-    if (data.faultFd == -1) {
+    data->faultFd = syscall(SYS_userfaultfd, O_NONBLOCK);
+    if (data->faultFd == -1) {
         printf("no faultFd\n");
-        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
-        return false;
+        abort();
     }
 
     uffdio_api api = {
         .api = UFFD_API,
         .features = UFFD_FEATURE_THREAD_ID //| UFFD_FEATURE_EVENT_REMAP | UFFD_FEATURE_EVENT_REMOVE | UFFD_FEATURE_EVENT_UNMAP
     };
-    if (ioctl(data.faultFd, UFFDIO_API, &api)) {
+    if (ioctl(data->faultFd, UFFDIO_API, &api)) {
         printf("no ioctl api\n");
-        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
-        return false;
+        abort();
     }
     if (api.api != UFFD_API) {
         printf("no api api\n");
-        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
-        return false;
+        abort();
     }
 
-    if (pipe2(data.pipe, O_NONBLOCK) == -1) {
+    if (pipe2(data->pipe, O_NONBLOCK) == -1) {
         printf("no pipe\n");
-        data.hookStatus.store(HookStatus::Failure, std::memory_order_release);
-        return false;
+        abort();
     }
 
-    data.thread = std::thread(hookThread);
+    data->thread = std::thread(hookThread);
     atexit(hookCleanup);
 
-    data.hookStatus.store(HookStatus::Ok, std::memory_order_release);
-
-    data.recorder.initialize("./mtrack.data");
-    data.recorder.record("mt %x\n", MTrackFileVersion);
+    data->recorder.initialize("./mtrack.data");
+    data->recorder.record("mt %x\n", MTrackFileVersion);
 
     printf("hook.\n");
-
-    return true;
 }
 
 bool trackMmap(void* addr, size_t length, int prot, int flags)
@@ -375,7 +337,7 @@ bool trackMmap(void* addr, size_t length, int prot, int flags)
         switch (type) {
         case MmapWalker::RangeType::Empty:
             // printf("inserting %p %zu\n", addr, len);
-            return data.mmapRanges.insert(it, std::make_tuple(addr, len, flags)) + 1;
+            return data->mmapRanges.insert(it, std::make_tuple(addr, len, flags)) + 1;
         case MmapWalker::RangeType::Start: {
             if (std::get<2>(*it) == flags) {
                 len -= std::get<1>(*it);
@@ -386,11 +348,11 @@ bool trackMmap(void* addr, size_t length, int prot, int flags)
             const auto oldlen = std::get<1>(*it);
             const auto oldflags = std::get<2>(*it);
             std::get<1>(*it) = reinterpret_cast<uint8_t*>(addr) - reinterpret_cast<uint8_t*>(std::get<0>(*it));
-            it = data.mmapRanges.insert(it + 1, std::make_tuple(addr, oldlen - std::get<1>(*it), flags));
+            it = data->mmapRanges.insert(it + 1, std::make_tuple(addr, oldlen - std::get<1>(*it), flags));
             // if addr is fully contained in this item, make another new item with old flags
             if (reinterpret_cast<uint8_t*>(addr) + len < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) {
                 const auto remlen = (reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) - (reinterpret_cast<uint8_t*>(addr) + len);
-                it = data.mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(addr) + len, remlen, oldflags));
+                it = data->mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(addr) + len, remlen, oldflags));
                 len = 0;
                 // printf("started, len is now %zu (%d)\n", len, __LINE__);
             } else {
@@ -415,7 +377,7 @@ bool trackMmap(void* addr, size_t length, int prot, int flags)
             // printf("balli used %zu (%p %p) addr %p %zu\n", used, std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + used, addr, len);
             reinterpret_cast<uint8_t*&>(std::get<0>(*it)) += used + len;
             std::get<1>(*it) -= len;
-            it = data.mmapRanges.insert(it, std::make_tuple(addr, len, flags));
+            it = data->mmapRanges.insert(it, std::make_tuple(addr, len, flags));
             len = 0;
             // printf("ended, len is now %zu (%d)\n", len, __LINE__);
             return it + 2;
@@ -424,7 +386,7 @@ bool trackMmap(void* addr, size_t length, int prot, int flags)
         __builtin_unreachable();
     });
     // printf("1--\n");
-    // for (const auto& item : data.mmapRanges) {
+    // for (const auto& item : data->mmapRanges) {
     //     printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
     // }
 
@@ -438,7 +400,7 @@ bool trackMmap(void* addr, size_t length, int prot, int flags)
             .mode = UFFDIO_REGISTER_MODE_MISSING
         };
 
-        if (ioctl(data.faultFd, UFFDIO_REGISTER, &reg))
+        if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg))
             return true;
 
         if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
@@ -454,16 +416,13 @@ bool trackMmap(void* addr, size_t length, int prot, int flags)
 extern "C" {
 void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
-    if (!Hooks::hook()) {
-        printf("no setup\n");
-        return nullptr;
-    }
+    std::call_once(hookOnce, Hooks::hook);
 
     // printf("mmap?? %p\n", addr);
-    auto ret = data.mmap(addr, length, prot, flags, fd, offset);
+    auto ret = data->mmap(addr, length, prot, flags, fd, offset);
     // printf("mmap %p??\n", ret);
 
-    if (!data.hooked || ret == MAP_FAILED)
+    if (!data->hooked || ret == MAP_FAILED)
         return ret;
 
     if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)) {
@@ -475,16 +434,13 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 
 void* mmap64(void* addr, size_t length, int prot, int flags, int fd, off_t pgoffset)
 {
-    if (!Hooks::hook()) {
-        printf("no setup\n");
-        return nullptr;
-    }
+    std::call_once(hookOnce, Hooks::hook);
 
     // printf("mmap64?? %p\n", addr);
-    auto ret = data.mmap64(addr, length, prot, flags, fd, pgoffset);
+    auto ret = data->mmap64(addr, length, prot, flags, fd, pgoffset);
     // printf("mmap64 %p??\n", ret);
 
-    if (!data.hooked || ret == MAP_FAILED)
+    if (!data->hooked || ret == MAP_FAILED)
         return ret;
 
     if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)) {
@@ -496,14 +452,11 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, off_t pgoff
 
 int munmap(void* addr, size_t len)
 {
-    if (!Hooks::hook()) {
-        printf("no setup\n");
-        return -1;
-    }
+    std::call_once(hookOnce, Hooks::hook);
 
     // if (len > 1000000) {
     //     printf("3--\n");
-    //     for (const auto& item : data.mmapRanges) {
+    //     for (const auto& item : data->mmapRanges) {
     //         printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
     //     }
     // }
@@ -523,7 +476,7 @@ int munmap(void* addr, size_t len)
                 // if addr is fully contained in this item, make another new item at the end
                 if (reinterpret_cast<uint8_t*>(addr) + len < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) {
                     const auto remlen = (reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) - (reinterpret_cast<uint8_t*>(addr) + len);
-                    it = data.mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(addr) + len, remlen, std::get<2>(*it)));
+                    it = data->mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(addr) + len, remlen, std::get<2>(*it)));
                     len = 0;
                 } else {
                     // printf("FUCK AGAIN %zu vs %zu (%zu %zu)\n", len, oldlen - std::get<1>(*it), oldlen, std::get<1>(*it));
@@ -534,7 +487,7 @@ int munmap(void* addr, size_t len)
             case MmapWalker::RangeType::Middle:
                 updated = true;
                 len -= std::get<1>(*it);
-                return data.mmapRanges.erase(it);
+                return data->mmapRanges.erase(it);
             case MmapWalker::RangeType::End:
                 // update end item
                 updated = true;
@@ -550,13 +503,13 @@ int munmap(void* addr, size_t len)
         });
         // if (updated) {
         //     printf("2--\n");
-        //     for (const auto& item : data.mmapRanges) {
+        //     for (const auto& item : data->mmapRanges) {
         //         printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
         //     }
         // }
     }
 
-    const auto ret = data.munmap(addr, len);
+    const auto ret = data->munmap(addr, len);
     // if (len > 1000000) {
     //     int j, nptrs;
     //     void *buffer[100];
@@ -585,25 +538,22 @@ int munmap(void* addr, size_t len)
 
 int mprotect(void* addr, size_t len, int prot)
 {
-    if (!Hooks::hook()) {
-        printf("no setup\n");
-        return -1;
-    }
+    std::call_once(hookOnce, Hooks::hook);
 
     int flags = 0;
     {
-        ScopedSpinlock lock(data.mmapRangeLock);
-        auto it = std::upper_bound(data.mmapRanges.begin(), data.mmapRanges.end(), addr, [](auto addr, const auto& item) {
+        ScopedSpinlock lock(data->mmapRangeLock);
+        auto it = std::upper_bound(data->mmapRanges.begin(), data->mmapRanges.end(), addr, [](auto addr, const auto& item) {
             return addr < std::get<0>(item);
         });
-        if (it != data.mmapRanges.begin() && !data.mmapRanges.empty())
+        if (it != data->mmapRanges.begin() && !data->mmapRanges.empty())
             --it;
-        // if (it != data.mmapRanges.end()) {
+        // if (it != data->mmapRanges.end()) {
         //     printf("found %p %zu (%p) (%d) for %p %zu\n",
         //            std::get<0>(*it), std::get<1>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it),
         //            std::get<2>(*it), addr, len);
         // }
-        if (it != data.mmapRanges.end() && addr >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) && addr < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
+        if (it != data->mmapRanges.end() && addr >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) && addr < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
             // printf(" - really found\n");
             flags = std::get<2>(*it);
         }
@@ -619,8 +569,8 @@ int mprotect(void* addr, size_t len, int prot)
             .mode = UFFDIO_REGISTER_MODE_MISSING
         };
 
-        if (ioctl(data.faultFd, UFFDIO_REGISTER, &reg))
-            return data.mprotect(addr, len, prot);
+        if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg))
+            return data->mprotect(addr, len, prot);
 
         if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
             printf("no range %m\n");
@@ -628,7 +578,7 @@ int mprotect(void* addr, size_t len, int prot)
         }
     }
 
-    return data.mprotect(addr, len, prot);
+    return data->mprotect(addr, len, prot);
 }
 
 void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
@@ -641,31 +591,24 @@ void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
         void* new_address = va_arg(ap, void*);
         va_end(ap);
 
-        return data.mremap(addr, old_size, new_size, flags, new_address);
+        return data->mremap(addr, old_size, new_size, flags, new_address);
     }
-    return data.mremap(addr, old_size, new_size, flags);
+    return data->mremap(addr, old_size, new_size, flags);
 }
 
 void* dlopen(const char* filename, int flags)
 {
-    // if (!Hooks::hook()) {
-    //     printf("no setup\n");
-    //     return nullptr;
-    // }
-    std::call_once(hookOnce, Hooks::hookInternal);
-    // data.modulesDirty.store(true, std::memory_order_release);
-    return data.dlopen(filename, flags);
+    std::call_once(hookOnce, Hooks::hook);
+    data->modulesDirty.store(true, std::memory_order_release);
+    return data->dlopen(filename, flags);
 }
 
 int dlclose(void* handle)
 {
-    // if (!Hooks::hook()) {
-    //     printf("no setup\n");
-    //     return -1;
-    // }
-    // data.modulesDirty.store(true, std::memory_order_release);
-    data.dlclose = reinterpret_cast<DlCloseSig>(dlsym(RTLD_NEXT, "dlclose"));
-    return data.dlclose(handle);
+    std::call_once(hookOnce, Hooks::hook);
+    data->modulesDirty.store(true, std::memory_order_release);
+    data->dlclose = reinterpret_cast<DlCloseSig>(dlsym(RTLD_NEXT, "dlclose"));
+    return data->dlclose(handle);
 }
 
 } // extern "C"
