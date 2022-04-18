@@ -1,5 +1,6 @@
 set(SOURCES
     Hooks.cpp
+    Recorder.cpp
     Stack.cpp
     )
 

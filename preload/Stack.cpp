@@ -1,64 +1,18 @@
 #include "Stack.h"
-#include <sys/ptrace.h>
-#include <sys/syscall.h>
-#include <sys/types.h>
-#include <sys/user.h>
-#include <link.h>
+#include "Waiter.h"
+
+#include <execinfo.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <signal.h>
 #include <string.h>
+#include <sys/syscall.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <atomic>
-#include <execinfo.h>
 
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
-
-static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, void* data)
-{
-    const char* fileName = info->dlpi_name;
-    if (!fileName || !fileName[0]) {
-        fileName = "x";
-    }
-
-    printf("dl it %s %zx\n", fileName, info->dlpi_addr);
-
-    for (int i = 0; i < info->dlpi_phnum; i++) {
-        const auto& phdr = info->dlpi_phdr[i];
-        if (phdr.p_type == PT_LOAD) {
-            printf(" - %zx %zx\n", phdr.p_vaddr, phdr.p_memsz);
-        }
-    }
-
-    return 0;
-}
-
-struct Waiter
-{
-    Waiter(std::atomic<bool>& l)
-        : lock_(l)
-    {
-    }
-
-    std::atomic<bool>& lock_;
-
-    void wait()
-    {
-        for (;;) {
-            if (lock_.exchange(false, std::memory_order_acquire) == true) {
-                break;
-            }
-            while (lock_.load(std::memory_order_relaxed) == false) {
-                __builtin_ia32_pause();
-            }
-        }
-    }
-
-    void notify() {
-        lock_.store(true, std::memory_order_release);
-    }
-};
 
 struct {
     gregset_t gregs;
@@ -108,22 +62,22 @@ void Stack::initialize(const StackInitializer& initializer)
     unw_set_reg(&cursor, UNW_X86_64_RIP, initializer.gregs[REG_RIP]);
     unw_set_reg(&cursor, UNW_X86_64_RSP, initializer.gregs[REG_RSP]);
 
-    printf("hallo %u\n", gettid());
+    // printf("hallo %u\n", gettid());
     while (unw_step(&cursor) > 0) {
         unw_word_t ip = 0, sp = 0;
         unw_get_reg(&cursor, UNW_REG_IP, &ip);
         unw_get_reg(&cursor, UNW_REG_SP, &sp);
-        printf("ip %lx sp %lx\n", ip, sp);
+        // printf("ip %lx sp %lx\n", ip, sp);
         if (ip > 0) {
-            mPtrs.push_back(std::make_pair(ip, sp));
+            mPtrs.push_back(std::make_pair<long long unsigned, long long unsigned>(ip, sp));
         } else {
             break;
         }
     }
-    printf("donezo\n");
+    // printf("donezo\n");
 }
 
-ThreadStack::ThreadStack(uint32_t ptid)
+ThreadStack::ThreadStack(unsigned ptid)
 {
     // dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
 
