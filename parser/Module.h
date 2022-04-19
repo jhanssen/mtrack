@@ -6,6 +6,10 @@
 #include <unordered_map>
 #include <vector>
 
+extern "C" {
+struct backtrace_state;
+};
+
 class Module : public std::enable_shared_from_this<Module>
 {
 public:
@@ -18,6 +22,8 @@ public:
     uint64_t address() const;
     const std::vector<std::pair<uint64_t, uint64_t>>& ranges() const;
 
+    void resolveAddress(uint64_t addr);
+
 protected:
     Module(const char* filename, uint64_t addr);
 
@@ -25,6 +31,7 @@ private:
     std::string mFileName;
     uint64_t mAddr;
     std::vector<std::pair<uint64_t, uint64_t>> mRanges;
+    backtrace_state* mState { nullptr };
 
 private:
     static std::unordered_map<uint64_t, std::weak_ptr<Module>> sModuleByName;

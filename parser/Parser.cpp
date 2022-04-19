@@ -101,6 +101,7 @@ void Parser::handleStack(const char* data)
     if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end) {
         auto mod = it->second.module;
         printf("found module %s\n", mod->fileName().c_str());
+        mod->resolveAddress(ip);
     }
 }
 

@@ -2,6 +2,7 @@
 #include "Creatable.h"
 #include <cstring>
 #include <libbacktrace/backtrace.h>
+#include <cxxabi.h>
 
 extern "C" {
 #include <libbacktrace/internal.h>
@@ -9,7 +10,7 @@ extern "C" {
 
 std::unordered_map<uint64_t, std::weak_ptr<Module>> Module::sModuleByName;
 
-static uint64_t sdbm(const uint8_t* str)
+static inline uint64_t sdbm(const uint8_t* str)
 {
     uint64_t hash = 0;
     int c;
@@ -20,6 +21,25 @@ static uint64_t sdbm(const uint8_t* str)
 
     return hash;
 }
+
+static inline std::string demangle(const char* function)
+{
+    if (!function) {
+        return {};
+    } else if (function[0] != '_' || function[1] != 'Z') {
+        return function;
+    }
+
+    std::string ret;
+    int status = 0;
+    char* demangled = abi::__cxa_demangle(function, 0, 0, &status);
+    if (demangled && status == 0) {
+        ret = demangled;
+        free(demangled);
+    }
+    return {};
+}
+
 
 struct BtCallbackData
 {
@@ -53,6 +73,8 @@ Module::Module(const char* filename, uint64_t addr)
             state->syminfo_fn = &elf_nosyms;
         }
     }
+
+    mState = state;
 }
 
 std::shared_ptr<Module> Module::create(const char* filename, uint64_t addr)
@@ -70,4 +92,33 @@ std::shared_ptr<Module> Module::create(const char* filename, uint64_t addr)
 void Module::addHeader(uint64_t addr, uint64_t len)
 {
     mRanges.push_back(std::make_pair(mAddr + addr, mAddr + addr + len));
+}
+
+void Module::resolveAddress(uint64_t addr)
+{
+    backtrace_pcinfo(mState, addr,
+                     [](void* data, uintptr_t /*addr*/, const char* file, int line, const char* function) -> int {
+                         printf("pc frame %s %s %d\n", demangle(function).c_str(), file ? file : "(no file)", line);
+                         // Frame frame(demangle(function), file ? file : "", line);
+                         // auto info = reinterpret_cast<AddressInformation*>(data);
+                         // if (!info->frame.isValid()) {
+                         //     info->frame = frame;
+                         // } else {
+                         //     info->inlined.push_back(frame);
+                         // }
+                         return 0;
+                     },
+                     [](void* /*data*/, const char* msg, int errnum) {
+                         printf("pc frame bad %s %d\n", msg, errnum);
+                     },
+                     nullptr);
+    backtrace_syminfo(
+        mState, addr,
+        [](void* data, uintptr_t /*pc*/, const char* symname, uintptr_t /*symval*/, uintptr_t /*symsize*/) {
+            printf("syminfo instead %s\n", demangle(symname).c_str());
+        },
+        [](void* /*data*/, const char* msg, int errnum) {
+            printf("syminfo frame bad %s %d\n", msg, errnum);
+        },
+        nullptr);
 }
