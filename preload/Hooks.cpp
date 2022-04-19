@@ -622,7 +622,7 @@ int pthread_setname_np(pthread_t thread, const char* name)
 {
     std::call_once(hookOnce, Hooks::hook);
     // ### should fix this, this will drop unless we're the same thread
-    if (thread == pthread_self()) {
+    if (pthread_equal(thread, pthread_self())) {
         data->recorder.record("tn %d %s\n", gettid(), name);
     }
     return data->pthread_setname_np(thread, name);
