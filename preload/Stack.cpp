@@ -69,7 +69,8 @@ void Stack::initialize(const StackInitializer& initializer)
         unw_get_reg(&cursor, UNW_REG_SP, &sp);
         // printf("ip %lx sp %lx\n", ip, sp);
         if (ip > 0) {
-            mPtrs.push_back(std::make_pair<long long unsigned, long long unsigned>(ip, sp));
+            // not sure why but ip is consistently one past where I need it to be
+            mPtrs.push_back(std::make_pair<long long unsigned, long long unsigned>(ip - 1, sp));
         } else {
             break;
         }

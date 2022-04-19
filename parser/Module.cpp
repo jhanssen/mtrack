@@ -30,12 +30,12 @@ static inline std::string demangle(const char* function)
         return function;
     }
 
-    std::string ret;
     int status = 0;
     char* demangled = abi::__cxa_demangle(function, 0, 0, &status);
     if (demangled && status == 0) {
-        ret = demangled;
+        std::string ret = demangled;
         free(demangled);
+        return ret;
     }
     return {};
 }
@@ -87,31 +87,43 @@ void Module::addHeader(uint64_t addr, uint64_t len)
     mRanges.push_back(std::make_pair(mAddr + addr, mAddr + addr + len));
 }
 
-void Module::resolveAddress(uint64_t addr)
+Address Module::resolveAddress(uint64_t addr)
 {
-    backtrace_pcinfo(mState, addr,
-                     [](void* data, uintptr_t /*addr*/, const char* file, int line, const char* function) -> int {
-                         printf("pc frame %s %s %d\n", demangle(function).c_str(), file ? file : "(no file)", line);
-                         // Frame frame(demangle(function), file ? file : "", line);
-                         // auto info = reinterpret_cast<AddressInformation*>(data);
-                         // if (!info->frame.isValid()) {
-                         //     info->frame = frame;
-                         // } else {
-                         //     info->inlined.push_back(frame);
-                         // }
-                         return 0;
-                     },
-                     [](void* /*data*/, const char* msg, int errnum) {
-                         printf("pc frame bad %s %d\n", msg, errnum);
-                     },
-                     nullptr);
-    backtrace_syminfo(
+    Address resolvedAddr;
+
+    backtrace_pcinfo(
         mState, addr,
-        [](void* data, uintptr_t /*pc*/, const char* symname, uintptr_t /*symval*/, uintptr_t /*symsize*/) {
-            printf("syminfo instead %s\n", demangle(symname).c_str());
+        [](void* data, uintptr_t /*addr*/, const char* file, int line, const char* function) -> int {
+            // printf("pc frame %s %s %d\n", demangle(function).c_str(), file ? file : "(no file)", line);
+            Frame frame { demangle(function), file ? file : "", line };
+            auto resolved = reinterpret_cast<Address*>(data);
+            if (!resolved->valid()) {
+                resolved->frame = std::move(frame);
+            } else {
+                resolved->inlined.push_back(std::move(frame));
+            }
+            return 0;
         },
         [](void* /*data*/, const char* msg, int errnum) {
-            printf("syminfo frame bad %s %d\n", msg, errnum);
+            printf("pc frame bad %s %d\n", msg, errnum);
         },
-        nullptr);
+        &resolvedAddr);
+
+    if (!resolvedAddr.valid()) {
+        backtrace_syminfo(
+            mState, addr,
+            [](void* data, uintptr_t /*pc*/, const char* symname, uintptr_t /*symval*/, uintptr_t /*symsize*/) {
+                // printf("syminfo instead %s\n", demangle(symname).c_str());
+                auto resolved = reinterpret_cast<Address*>(data);
+                if (!resolved->valid()) {
+                    resolved->frame.function = demangle(symname);
+                }
+            },
+            [](void* /*data*/, const char* msg, int errnum) {
+                printf("syminfo frame bad %s %d\n", msg, errnum);
+            },
+            &resolvedAddr);
+    }
+
+    return resolvedAddr;
 }

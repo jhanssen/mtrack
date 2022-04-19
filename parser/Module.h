@@ -10,6 +10,21 @@ extern "C" {
 struct backtrace_state;
 };
 
+struct Frame
+{
+    std::string function;
+    std::string file;
+    int line;
+};
+
+struct Address
+{
+    Frame frame;
+    std::vector<Frame> inlined;
+
+    bool valid() const;
+};
+
 class Module : public std::enable_shared_from_this<Module>
 {
 public:
@@ -22,7 +37,7 @@ public:
     uint64_t address() const;
     const std::vector<std::pair<uint64_t, uint64_t>>& ranges() const;
 
-    void resolveAddress(uint64_t addr);
+    Address resolveAddress(uint64_t addr);
 
 protected:
     Module(const char* filename, uint64_t addr);
@@ -58,4 +73,9 @@ inline uint64_t Module::address() const
 inline const std::vector<std::pair<uint64_t, uint64_t>>& Module::ranges() const
 {
     return mRanges;
+}
+
+inline bool Address::valid() const
+{
+    return !frame.function.empty();
 }
