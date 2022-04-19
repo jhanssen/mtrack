@@ -10,14 +10,40 @@ ExternalProject_Add(unwind_external
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/libunwind
     )
 
+# patch libbacktrace
+find_program(PATCH
+    NAMES patch
+    PATH_SUFFIXES usr/bin
+    )
+if (NOT PATCH)
+    message(FATAL_ERROR "No patch program")
+endif()
+find_program(SHELL
+    NAMES sh
+    PATH_SUFFIXES bin
+    )
+if (NOT SHELL)
+    message(FATAL_ERROR "No shell program")
+endif()
+
 add_library(unwind_shared SHARED IMPORTED GLOBAL)
 add_dependencies(unwind_shared unwind_external)
 target_include_directories(unwind_shared INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/libunwind/include)
 set_target_properties(unwind_shared PROPERTIES IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/libunwind/lib/libunwind.so)
 add_library(unwind::shared ALIAS unwind_shared)
 
+set(LIBBACKTRACE_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR})
 set(LIBBACKTRACE_DIR ${CMAKE_CURRENT_LIST_DIR}/libbacktrace)
 set(LIBBACKTRACE_GEN_DIR ${CMAKE_CURRENT_LIST_DIR}/libbacktrace_gen)
+
+# this needs a revisit
+file(MD5 ${LIBBACKTRACE_DIR}/internal.h INTERNAL_MD5)
+if (NOT ${INTERNAL_MD5} STREQUAL "d9df3726dddb9356f78b10af5d1942c5")
+    execute_process(
+        COMMAND ${SHELL} -c "${PATCH} -p1 < ../libbacktrace-patch.diff"
+        WORKING_DIRECTORY ${LIBBACKTRACE_DIR}
+        )
+endif()
 
 set(LIBBACKTRACE_SOURCES
     ${LIBBACKTRACE_DIR}/atomic.c
@@ -34,10 +60,10 @@ set(LIBBACKTRACE_SOURCES
     ${LIBBACKTRACE_DIR}/mmap.c)
 
 add_library(backtrace_static OBJECT ${LIBBACKTRACE_SOURCES})
-target_include_directories(backtrace_static PUBLIC ${LIBBACKTRACE_DIR})
+target_include_directories(backtrace_static PUBLIC ${LIBBACKTRACE_INCLUDE_DIR})
 target_include_directories(backtrace_static PRIVATE ${LIBBACKTRACE_GEN_DIR})
 add_library(backtrace::static ALIAS backtrace_static)
 add_library(backtrace_shared SHARED ${LIBBACKTRACE_SOURCES})
-target_include_directories(backtrace_shared PUBLIC ${LIBBACKTRACE_DIR})
+target_include_directories(backtrace_shared PUBLIC ${LIBBACKTRACE_INCLUDE_DIR})
 target_include_directories(backtrace_shared PRIVATE ${LIBBACKTRACE_GEN_DIR})
 add_library(backtrace::shared ALIAS backtrace_shared)
