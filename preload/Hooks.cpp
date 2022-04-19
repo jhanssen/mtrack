@@ -1,6 +1,7 @@
 #include "Stack.h"
 #include "Spinlock.h"
 #include "Recorder.h"
+#include <common/Version.h>
 
 #include <assert.h>
 #include <dlfcn.h>
@@ -20,8 +21,6 @@
 #include <mutex>
 #include <thread>
 #include <tuple>
-
-enum { MTrackFileVersion = 0x1 };
 
 #define PAGESIZE 4096
 
@@ -154,7 +153,8 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, 
         fileName = "m";
     }
 
-    data->recorder.record("dl %s %zx\n", fileName, info->dlpi_addr);
+    // assume no quotes in filename?
+    data->recorder.record("dl \"%s\" %zx\n", fileName, info->dlpi_addr);
 
     for (int i = 0; i < info->dlpi_phnum; i++) {
         const auto& phdr = info->dlpi_phdr[i];
