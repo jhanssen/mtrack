@@ -150,7 +150,7 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, 
 {
     const char* fileName = info->dlpi_name;
     if (!fileName || !fileName[0]) {
-        fileName = "m";
+        fileName = "s";
     }
 
     // assume no quotes in filename?
@@ -333,6 +333,27 @@ void Hooks::hook()
 
     data->recorder.initialize("./mtrack.data");
     data->recorder.record("mt %x\n", MTrackFileVersion);
+
+    // record the executable file
+    char buf1[512];
+    char buf2[4096];
+    snprintf(buf1, sizeof(buf1), "/proc/%u/exe", getpid());
+    ssize_t l = readlink(buf1, buf2, sizeof(buf2));
+    if (l == -1 || l == sizeof(buf2)) {
+        // badness
+        fprintf(stderr, "no exe\n");
+    } else {
+        data->recorder.record("ex \"%s\"\n", buf2);
+    }
+
+    // record the working directory
+    // ### should probably hook chdir and fchdir to record runtime changes
+    if (getcwd(buf2, sizeof(buf2)) == nullptr) {
+        // badness
+        fprintf(stderr, "no cwd\n");
+    } else {
+        data->recorder.record("wd \"%s\"\n", buf2);
+    }
 
     printf("hook.\n");
 }

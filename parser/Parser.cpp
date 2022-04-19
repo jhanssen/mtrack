@@ -1,6 +1,9 @@
 #include "Parser.h"
 #include <common/Version.h>
+#include <cassert>
+#include <climits>
 #include <cstdlib>
+#include <limits>
 
 static inline std::pair<uint64_t, size_t> parseNumber(const char* data, int base = 10)
 {
@@ -34,6 +37,7 @@ static inline std::pair<std::string, size_t> parseString(const char* data)
                 // something bad happened, our first non-space char needs to be a '"'
                 return std::make_pair(std::string {}, size_t {});
             }
+            break;
         }
     }
     __builtin_unreachable();
@@ -41,9 +45,39 @@ static inline std::pair<std::string, size_t> parseString(const char* data)
 
 void Parser::handleModule(const char* data)
 {
-    const auto [ name, off1 ] = parseString(data);
+    auto [ name, off1 ] = parseString(data);
+    if (name.substr(0, 13) == "linux-vdso.so") {
+        // skip this
+        return;
+    }
+
     const auto [ start, off2 ] = parseNumber(data + off1, 16);
+    if (name == "s") {
+        name = mExe;
+    }
+    if (name.size() > 0 && name[0] != '/') {
+        // relative path?
+        char buf[4096];
+        name = realpath((mCwd + name).c_str(), buf);
+    }
+
     printf("dlll '%s' %lx\n", name.c_str(), start);
+
+    auto mod = Module::create(name, start);
+    mCurrentModule = mod;
+    mModules.insert(mod);
+}
+
+void Parser::updateModuleCache()
+{
+    mModuleCache.clear();
+
+    for (const auto& m : mModules) {
+        const auto& rs = m->ranges();
+        for (const auto& r : rs) {
+            mModuleCache.insert(std::make_pair(r.first, ModuleEntry { r.second, m.get() }));
+        }
+    }
 }
 
 void Parser::handleStack(const char* data)
@@ -52,6 +86,22 @@ void Parser::handleStack(const char* data)
     const auto [ ip, off1 ] = parseNumber(data, 16);
     const auto [ sp, off2 ] = parseNumber(data + off1, 16);
     printf("sttt %lx %lx\n", ip, sp);
+
+    if (mModulesDirty) {
+        updateModuleCache();
+        mModulesDirty = false;
+    }
+
+    // find ip in module cache
+    auto it = mModuleCache.upper_bound(ip);
+    if (it != mModuleCache.begin())
+        --it;
+    if (mModuleCache.size() == 1)
+        it = mModuleCache.begin();
+    if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end) {
+        auto mod = it->second.module;
+        printf("found module %s\n", mod->fileName().c_str());
+    }
 }
 
 void Parser::handleHeaderLoad(const char* data)
@@ -59,7 +109,23 @@ void Parser::handleHeaderLoad(const char* data)
     // two hex numbers
     const auto [ addr, off1 ] = parseNumber(data, 16);
     const auto [ size, off2 ] = parseNumber(data + off1, 16);
-    printf("phhh %lx %lx\n", addr, size);
+
+    assert(mCurrentModule);
+    printf("phhh %lx %lx (%lx %lx)\n", addr, size, mCurrentModule->address() + addr, mCurrentModule->address() + addr + size);
+    mCurrentModule->addHeader(addr, size);
+    mModulesDirty = true;
+}
+
+void Parser::handleExe(const char* data)
+{
+    auto [ exe, off ] = parseString(data);
+    mExe = std::move(exe);
+}
+
+void Parser::handleCwd(const char* data)
+{
+    auto [ wd, off ] = parseString(data);
+    mCwd = std::move(wd) + "/";
 }
 
 bool Parser::parse(const std::string& line)
@@ -86,6 +152,12 @@ bool Parser::parse(const std::string& line)
     } else if (line[0] == 'p' && line[1] == 'h') {
         // header for module
         handleHeaderLoad(line.data() + 3);
+    } else if (line[0] == 'e' && line[1] == 'x') {
+        // exe name
+        handleExe(line.data() + 3);
+    } else if (line[0] == 'w' && line[1] == 'd') {
+        // working directory
+        handleCwd(line.data() + 3);
     }
     return true;
 }

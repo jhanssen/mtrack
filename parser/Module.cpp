@@ -1,0 +1,73 @@
+#include "Module.h"
+#include "Creatable.h"
+#include <cstring>
+#include <libbacktrace/backtrace.h>
+
+extern "C" {
+#include <libbacktrace/internal.h>
+}
+
+std::unordered_map<uint64_t, std::weak_ptr<Module>> Module::sModuleByName;
+
+static uint64_t sdbm(const uint8_t* str)
+{
+    uint64_t hash = 0;
+    int c;
+
+    while ((c = *str++)) {
+        hash = c + (hash << 6) + (hash << 16) - hash;
+    }
+
+    return hash;
+}
+
+struct BtCallbackData
+{
+    const std::string fileName;
+};
+
+static void btErrorHandler(void* rawData, const char* msg, int errnum)
+{
+    auto data = reinterpret_cast<const BtCallbackData*>(rawData);
+    fprintf(stderr, "backtrace creation error %s: %s - %s(%d)\n", data->fileName.c_str(), msg, strerror(errnum), errnum);
+};
+
+Module::Module(const char* filename, uint64_t addr)
+    : mFileName(filename), mAddr(addr)
+{
+    BtCallbackData data = { mFileName };
+
+    auto state = backtrace_create_state(data.fileName.c_str(), false, btErrorHandler, &data);
+    if (!state)
+        return;
+
+    const int descriptor = backtrace_open(data.fileName.c_str(), btErrorHandler, &data, nullptr);
+    if (descriptor >= 1) {
+        int foundSym = 0;
+        int foundDwarf = 0;
+        auto ret = elf_add(state, data.fileName.c_str(), descriptor, NULL, 0, addr, btErrorHandler, &data,
+                           &state->fileline_fn, &foundSym, &foundDwarf, nullptr, false, false, nullptr, 0);
+        if (ret && foundSym) {
+            state->syminfo_fn = &elf_syminfo;
+        } else {
+            state->syminfo_fn = &elf_nosyms;
+        }
+    }
+}
+
+std::shared_ptr<Module> Module::create(const char* filename, uint64_t addr)
+{
+    // assume we'll never have a hash collision?
+    const uint64_t hash = sdbm(reinterpret_cast<const uint8_t*>(filename));
+    auto it = sModuleByName.find(hash);
+    if (it != sModuleByName.end())
+        return it->second.lock();
+    auto mod = Creatable<Module>::create(filename, addr);
+    sModuleByName[hash] = mod;
+    return mod;
+}
+
+void Module::addHeader(uint64_t addr, uint64_t len)
+{
+    mRanges.push_back(std::make_pair(mAddr + addr, mAddr + addr + len));
+}
