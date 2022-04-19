@@ -41,31 +41,18 @@ static inline std::string demangle(const char* function)
 }
 
 
-struct BtCallbackData
-{
-    const std::string fileName;
-};
-
-static void btErrorHandler(void* rawData, const char* msg, int errnum)
-{
-    auto data = reinterpret_cast<const BtCallbackData*>(rawData);
-    fprintf(stderr, "backtrace creation error %s: %s - %s(%d)\n", data->fileName.c_str(), msg, strerror(errnum), errnum);
-};
-
 Module::Module(const char* filename, uint64_t addr)
     : mFileName(filename), mAddr(addr)
 {
-    BtCallbackData data = { mFileName };
-
-    auto state = backtrace_create_state(data.fileName.c_str(), false, btErrorHandler, &data);
+    auto state = backtrace_create_state(mFileName.c_str(), false, btErrorHandler, this);
     if (!state)
         return;
 
-    const int descriptor = backtrace_open(data.fileName.c_str(), btErrorHandler, &data, nullptr);
+    const int descriptor = backtrace_open(mFileName.c_str(), btErrorHandler, this, nullptr);
     if (descriptor >= 1) {
         int foundSym = 0;
         int foundDwarf = 0;
-        auto ret = elf_add(state, data.fileName.c_str(), descriptor, NULL, 0, addr, btErrorHandler, &data,
+        auto ret = elf_add(state, mFileName.c_str(), descriptor, NULL, 0, addr, btErrorHandler, this,
                            &state->fileline_fn, &foundSym, &foundDwarf, nullptr, false, false, nullptr, 0);
         if (ret && foundSym) {
             state->syminfo_fn = &elf_syminfo;
@@ -76,6 +63,12 @@ Module::Module(const char* filename, uint64_t addr)
 
     mState = state;
 }
+
+void Module::btErrorHandler(void* data, const char* msg, int errnum)
+{
+    auto module = reinterpret_cast<const Module*>(data);
+    fprintf(stderr, "libbacktrace error %s: %s - %s(%d)\n", module->mFileName.c_str(), msg, strerror(errnum), errnum);
+};
 
 std::shared_ptr<Module> Module::create(const char* filename, uint64_t addr)
 {

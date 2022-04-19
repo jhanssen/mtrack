@@ -28,6 +28,9 @@ protected:
     Module(const char* filename, uint64_t addr);
 
 private:
+    static void btErrorHandler(void* data, const char* msg, int errnum);
+
+private:
     std::string mFileName;
     uint64_t mAddr;
     std::vector<std::pair<uint64_t, uint64_t>> mRanges;
