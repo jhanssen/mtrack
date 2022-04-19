@@ -44,9 +44,9 @@ inline void Recorder::record(const char* fmt, ...)
     ScopedSpinlock lock(mLock);
     if (mOffset + len >= mData.size()) {
         mData.resize(mOffset + len);
-        memcpy(&mData[mOffset], buf, len);
-        mOffset += len;
     }
+    memcpy(&mData[mOffset], buf, len);
+    mOffset += len;
 }
 
 inline void Recorder::cleanup()
