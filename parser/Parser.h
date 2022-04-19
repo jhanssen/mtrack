@@ -11,5 +11,6 @@ public:
 
 private:
     void handleModule(const char* data);
+    void handleHeaderLoad(const char* data);
     void handleStack(const char* data);
 };

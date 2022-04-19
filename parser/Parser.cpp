@@ -54,6 +54,14 @@ void Parser::handleStack(const char* data)
     printf("sttt %lx %lx\n", ip, sp);
 }
 
+void Parser::handleHeaderLoad(const char* data)
+{
+    // two hex numbers
+    const auto [ addr, off1 ] = parseNumber(data, 16);
+    const auto [ size, off2 ] = parseNumber(data + off1, 16);
+    printf("phhh %lx %lx\n", addr, size);
+}
+
 bool Parser::parse(const std::string& line)
 {
     printf("parsing '%s'\n", line.c_str());
@@ -77,6 +85,7 @@ bool Parser::parse(const std::string& line)
         handleModule(line.data() + 3);
     } else if (line[0] == 'p' && line[1] == 'h') {
         // header for module
+        handleHeaderLoad(line.data() + 3);
     }
     return true;
 }
