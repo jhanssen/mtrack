@@ -1,9 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 extern "C" {
@@ -12,9 +12,9 @@ struct backtrace_state;
 
 struct Frame
 {
-    std::string function;
-    std::string file;
-    int line;
+    uint32_t function { std::numeric_limits<uint32_t>::max() };
+    uint32_t file { std::numeric_limits<uint32_t>::max() };
+    int line { 0 };
 };
 
 struct Address
@@ -52,7 +52,7 @@ private:
     backtrace_state* mState { nullptr };
 
 private:
-    static std::unordered_map<uint64_t, std::weak_ptr<Module>> sModuleByName;
+    static std::vector<Module*> sModules;
 };
 
 inline std::shared_ptr<Module> Module::create(const std::string& filename, uint64_t addr)
@@ -77,5 +77,5 @@ inline const std::vector<std::pair<uint64_t, uint64_t>>& Module::ranges() const
 
 inline bool Address::valid() const
 {
-    return !frame.function.empty();
+    return frame.function != std::numeric_limits<uint32_t>::max();
 }

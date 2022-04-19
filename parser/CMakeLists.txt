@@ -2,6 +2,7 @@ set(SOURCES
     main.cpp
     Module.cpp
     Parser.cpp
+    StringIndexer.cpp
     )
 
 add_executable(mtrack_parser ${SOURCES})

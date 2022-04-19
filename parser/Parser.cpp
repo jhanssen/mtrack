@@ -1,4 +1,5 @@
 #include "Parser.h"
+#include "StringIndexer.h"
 #include <common/Version.h>
 #include <cassert>
 #include <climits>
@@ -102,10 +103,13 @@ void Parser::handleStack(const char* data)
         auto mod = it->second.module;
         printf("found module %s\n", mod->fileName().c_str());
         auto resolved = mod->resolveAddress(ip);
-        if (!resolved.frame.file.empty()) {
-            printf("resolved to %s:%d\n", resolved.frame.file.c_str(), resolved.frame.line);
-        } else if (!resolved.frame.function.empty()) {
-            printf("resolved to %s\n", resolved.frame.function.c_str());
+        auto indexer = StringIndexer::instance();
+        const auto& file = indexer->str(resolved.frame.file);
+        const auto& func = indexer->str(resolved.frame.function);
+        if (!file.empty()) {
+            printf("resolved to %s:%d\n", file.c_str(), resolved.frame.line);
+        } else if (!func.empty()) {
+            printf("resolved to %s\n", func.c_str());
         } else {
             printf("??\n");
         }

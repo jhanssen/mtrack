@@ -1,5 +1,6 @@
 #include "Module.h"
 #include "Creatable.h"
+#include "StringIndexer.h"
 #include <cstring>
 #include <libbacktrace/backtrace.h>
 #include <cxxabi.h>
@@ -8,19 +9,7 @@ extern "C" {
 #include <libbacktrace/internal.h>
 }
 
-std::unordered_map<uint64_t, std::weak_ptr<Module>> Module::sModuleByName;
-
-static inline uint64_t sdbm(const uint8_t* str)
-{
-    uint64_t hash = 0;
-    int c;
-
-    while ((c = *str++)) {
-        hash = c + (hash << 6) + (hash << 16) - hash;
-    }
-
-    return hash;
-}
+std::vector<Module*> Module::sModules;
 
 static inline std::string demangle(const char* function)
 {
@@ -73,12 +62,18 @@ void Module::btErrorHandler(void* data, const char* msg, int errnum)
 std::shared_ptr<Module> Module::create(const char* filename, uint64_t addr)
 {
     // assume we'll never have a hash collision?
-    const uint64_t hash = sdbm(reinterpret_cast<const uint8_t*>(filename));
-    auto it = sModuleByName.find(hash);
-    if (it != sModuleByName.end())
-        return it->second.lock();
+    const uint32_t idx = StringIndexer::instance()->index(filename);
+    if (idx < sModules.size() && sModules[idx] != nullptr)
+        return sModules[idx]->shared_from_this();
     auto mod = Creatable<Module>::create(filename, addr);
-    sModuleByName[hash] = mod;
+    if (idx >= sModules.size()) {
+        const auto num = sModules.size() - idx + 1;
+        sModules.reserve(sModules.size() + num);
+        for (size_t i = 0; i < num; ++i) {
+            sModules.push_back(nullptr);
+        }
+    }
+    sModules[idx] = mod.get();
     return mod;
 }
 
@@ -95,7 +90,8 @@ Address Module::resolveAddress(uint64_t addr)
         mState, addr,
         [](void* data, uintptr_t /*addr*/, const char* file, int line, const char* function) -> int {
             // printf("pc frame %s %s %d\n", demangle(function).c_str(), file ? file : "(no file)", line);
-            Frame frame { demangle(function), file ? file : "", line };
+            auto indexer = StringIndexer::instance();
+            Frame frame { indexer->index(demangle(function)), indexer->index(file ? std::string(file) : std::string {}), line };
             auto resolved = reinterpret_cast<Address*>(data);
             if (!resolved->valid()) {
                 resolved->frame = std::move(frame);
@@ -116,7 +112,7 @@ Address Module::resolveAddress(uint64_t addr)
                 // printf("syminfo instead %s\n", demangle(symname).c_str());
                 auto resolved = reinterpret_cast<Address*>(data);
                 if (!resolved->valid()) {
-                    resolved->frame.function = demangle(symname);
+                    resolved->frame.function = StringIndexer::instance()->index(demangle(symname));
                 }
             },
             [](void* /*data*/, const char* msg, int errnum) {
