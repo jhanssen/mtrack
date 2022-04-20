@@ -33,8 +33,9 @@ public:
     nlohmann::json stack_json() const;
 };
 
-struct Allocation : public StackEvent
+class Allocation : public StackEvent
 {
+public:
     Allocation(uint64_t a, uint64_t s, uint32_t t);
 
     uint64_t addr;
