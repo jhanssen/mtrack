@@ -104,7 +104,7 @@ void Parser::handleStack(const char* data)
         // printf("found module %s\n", mod->fileName().c_str());
         assert(!mEvents.empty());
         assert(mEvents.back()->type() == Event::Type::Allocation);
-        std::static_pointer_cast<Allocation>(mEvents.back())->stack.push_back(mod->resolveAddress(ip));
+        std::static_pointer_cast<StackEvent>(mEvents.back())->stack.push_back(mod->resolveAddress(ip));
     }
 }
 
@@ -211,7 +211,7 @@ std::string Parser::finalize() const
     return root.dump();
 }
 
-nlohmann::json Allocation::to_json() const
+nlohmann::json StackEvent::stack_json() const
 {
     using json = nlohmann::json;
 
@@ -227,12 +227,6 @@ nlohmann::json Allocation::to_json() const
         return jframe;
     };
 
-
-    json jalloc;
-    jalloc["type"] = Type::Allocation;
-    jalloc["addr"] = addr;
-    jalloc["size"] = size;
-    jalloc["thread"] = thread;
     json jstack;
     for (const auto& saddr : stack) {
         auto frame = makeFrame(saddr.frame);
@@ -245,7 +239,19 @@ nlohmann::json Allocation::to_json() const
         }
         jstack.push_back(std::move(frame));
     }
-    jalloc["stack"] = std::move(jstack);
+    return jstack;
+}
+
+nlohmann::json Allocation::to_json() const
+{
+    using json = nlohmann::json;
+
+    json jalloc;
+    jalloc["type"] = Type::Allocation;
+    jalloc["addr"] = addr;
+    jalloc["size"] = size;
+    jalloc["thread"] = thread;
+    jalloc["stack"] = stack_json();
 
     return jalloc;
 }

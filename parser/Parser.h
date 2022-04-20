@@ -24,14 +24,22 @@ private:
     Type mType;
 };
 
-struct Allocation : public Event
+class StackEvent : public Event
+{
+public:
+    StackEvent(Type type);
+
+    std::vector<Address> stack;
+    nlohmann::json stack_json() const;
+};
+
+struct Allocation : public StackEvent
 {
     Allocation(uint64_t a, uint64_t s, uint32_t t);
 
     uint64_t addr;
     uint64_t size;
     uint32_t thread;
-    std::vector<Address> stack;
 
     virtual nlohmann::json to_json() const override;
 };
@@ -82,7 +90,12 @@ inline Event::Type Event::type() const
     return mType;
 }
 
+inline StackEvent::StackEvent(Type type)
+    : Event(type)
+{
+}
+
 inline Allocation::Allocation(uint64_t a, uint64_t s, uint32_t t)
-    : Event(Type::Allocation), addr(a), size(s), thread(t)
+    : StackEvent(Type::Allocation), addr(a), size(s), thread(t)
 {
 }
