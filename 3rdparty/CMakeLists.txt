@@ -1,5 +1,7 @@
 include(ExternalProject)
 
+set(UNWIND_EXTERNAL_LIB ${CMAKE_CURRENT_BINARY_DIR}/libunwind/lib/libunwind.so)
+
 ExternalProject_Add(unwind_external
     URL https://download.savannah.nongnu.org/releases/libunwind/libunwind-1.6.2.tar.gz
     URL_HASH SHA256=4a6aec666991fb45d0889c44aede8ad6eb108071c3554fcdff671f9c94794976
@@ -8,6 +10,7 @@ ExternalProject_Add(unwind_external
     SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/libunwind
     BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/libunwind-build
     INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/libunwind
+    BUILD_BYPRODUCTS ${UNWIND_EXTERNAL_LIB}
     )
 
 # patch libbacktrace
@@ -31,7 +34,7 @@ file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libunwind/include)
 add_library(unwind_shared SHARED IMPORTED GLOBAL)
 add_dependencies(unwind_shared unwind_external)
 target_include_directories(unwind_shared INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/libunwind/include)
-set_target_properties(unwind_shared PROPERTIES IMPORTED_LOCATION ${CMAKE_CURRENT_BINARY_DIR}/libunwind/lib/libunwind.so)
+set_target_properties(unwind_shared PROPERTIES IMPORTED_LOCATION ${UNWIND_EXTERNAL_LIB})
 add_library(unwind::shared ALIAS unwind_shared)
 
 set(LIBBACKTRACE_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR})
