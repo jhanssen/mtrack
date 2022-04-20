@@ -26,6 +26,8 @@ if (NOT SHELL)
     message(FATAL_ERROR "No shell program")
 endif()
 
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libunwind/include)
+
 add_library(unwind_shared SHARED IMPORTED GLOBAL)
 add_dependencies(unwind_shared unwind_external)
 target_include_directories(unwind_shared INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/libunwind/include)
