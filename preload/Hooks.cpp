@@ -429,7 +429,7 @@ bool trackMmap(void* addr, size_t length, int prot, int flags)
             .mode = UFFDIO_REGISTER_MODE_MISSING
         };
 
-        if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg))
+        if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) >= 0)
             return true;
 
         if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
@@ -598,7 +598,7 @@ int mprotect(void* addr, size_t len, int prot)
             .mode = UFFDIO_REGISTER_MODE_MISSING
         };
 
-        if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg))
+        if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) >= 0)
             return data->mprotect(addr, len, prot);
 
         if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
