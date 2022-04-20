@@ -50,19 +50,22 @@ class Parser
 public:
     Parser() = default;
 
-    bool parse(const std::string& line);
+    bool parse(const uint8_t* data, size_t size);
     std::string finalize() const;
 
 private:
-    void handleModule(const char* data);
-    void handleHeaderLoad(const char* data);
-    void handleStack(const char* data);
-    void handleExe(const char* data);
-    void handleCwd(const char* data);
-    void handleThreadName(const char* data);
-    void handlePageFault(const char* data);
+    void handleLibrary();
+    void handleLibraryHeader();
+    void handleStack();
+    void handleExe();
+    void handleWorkingDirectory();
+    void handleThreadName();
+    void handlePageFault();
 
     void updateModuleCache();
+
+    template<typename T>
+    T readData();
 
 private:
     std::string mExe;
@@ -70,6 +73,10 @@ private:
     std::shared_ptr<Module> mCurrentModule;
     std::unordered_set<std::shared_ptr<Module>> mModules;
     bool mModulesDirty { false };
+
+    const uint8_t* mData { nullptr };
+    const uint8_t* mEnd { nullptr };
+    bool mError { false };
 
     struct ModuleEntry
     {
@@ -99,4 +106,49 @@ inline StackEvent::StackEvent(Type type)
 inline Allocation::Allocation(uint64_t a, uint64_t s, uint32_t t)
     : StackEvent(Type::Allocation), addr(a), size(s), thread(t)
 {
+}
+
+template<typename T>
+inline T Parser::readData()
+{
+    if constexpr (std::is_same_v<T, std::string>) {
+        if (mEnd - mData < sizeof(uint32_t)) {
+            fprintf(stderr, "short read of string size\n");
+            mError = true;
+            return {};
+        }
+
+        uint32_t size;
+        memcpy(&size, mData, sizeof(uint32_t));
+        mData += sizeof(uint32_t);
+
+        if (size > 1024 * 1024) {
+            fprintf(stderr, "string too large (%u)\n", size);
+            mError = true;
+            return {};
+        }
+
+        if (mEnd - mData < size) {
+            fprintf(stderr, "short read of string data (%u)\n", size);
+            mError = true;
+            return {};
+        }
+
+        std::string str;
+        str.resize(size);
+        memcpy(str.data(), mData, size);
+        mData += size;
+        return str;
+    } else {
+        if (mEnd - mData < sizeof(T)) {
+            fprintf(stderr, "short read of int (%zu)\n", sizeof(T));
+            mError = true;
+            return {};
+        }
+
+        T t;
+        memcpy(&t, mData, sizeof(T));
+        mData += sizeof(T);
+        return t;
+    }
 }

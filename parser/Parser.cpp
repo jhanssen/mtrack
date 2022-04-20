@@ -1,58 +1,20 @@
 #include "Parser.h"
 #include "StringIndexer.h"
+#include <common/RecordType.h>
 #include <common/Version.h>
 #include <cassert>
 #include <climits>
 #include <cstdlib>
 #include <limits>
 
-static inline std::pair<uint64_t, size_t> parseNumber(const char* data, int base = 10)
+void Parser::handleLibrary()
 {
-    char* end = nullptr;
-    const auto ret = strtoull(data, &end, base);
-    return std::make_pair(static_cast<uint64_t>(ret), static_cast<size_t>(end - data));
-}
-
-static inline std::pair<std::string, size_t> parseString(const char* data)
-{
-    // skip spaces
-    size_t off = 0;
-    size_t qstart = std::numeric_limits<size_t>::max();
-    for (;; ++off) {
-        switch (*(data + off)) {
-        case '\0':
-            // done
-            return std::make_pair(std::string {}, size_t {});
-        case '"':
-            if (qstart == std::numeric_limits<size_t>::max()) {
-                qstart = off + 1;
-            } else {
-                // done
-                return std::make_pair(std::string(data + qstart, data + off), off + 1);
-            }
-        case ' ':
-        case '\t':
-            break;
-        default:
-            if (qstart == std::numeric_limits<size_t>::max()) {
-                // something bad happened, our first non-space char needs to be a '"'
-                return std::make_pair(std::string {}, size_t {});
-            }
-            break;
-        }
-    }
-    __builtin_unreachable();
-}
-
-void Parser::handleModule(const char* data)
-{
-    auto [ name, off1 ] = parseString(data);
+    auto name = readData<std::string>();
+    auto start = readData<uint64_t>();
     if (name.substr(0, 13) == "linux-vdso.so") {
         // skip this
         return;
     }
-
-    const auto [ start, off2 ] = parseNumber(data + off1, 16);
     if (name == "s") {
         name = mExe;
     }
@@ -81,11 +43,10 @@ void Parser::updateModuleCache()
     }
 }
 
-void Parser::handleStack(const char* data)
+void Parser::handleStack()
 {
     // two hex numbers
-    const auto [ ip, off1 ] = parseNumber(data, 16);
-    const auto [ sp, off2 ] = parseNumber(data + off1, 16);
+    const auto ip = readData<uint64_t>();
     // printf("sttt %lx %lx\n", ip, sp);
 
     if (mModulesDirty) {
@@ -114,11 +75,11 @@ void Parser::handleStack(const char* data)
     }
 }
 
-void Parser::handleHeaderLoad(const char* data)
+void Parser::handleLibraryHeader()
 {
     // two hex numbers
-    const auto [ addr, off1 ] = parseNumber(data, 16);
-    const auto [ size, off2 ] = parseNumber(data + off1, 16);
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
 
     assert(mCurrentModule);
     // printf("phhh %lx %lx (%lx %lx)\n", addr, size, mCurrentModule->address() + addr, mCurrentModule->address() + addr + size);
@@ -126,29 +87,26 @@ void Parser::handleHeaderLoad(const char* data)
     mModulesDirty = true;
 }
 
-void Parser::handleExe(const char* data)
+void Parser::handleExe()
 {
-    auto [ exe, off ] = parseString(data);
-    mExe = std::move(exe);
+    mExe = readData<std::string>();
 }
 
-void Parser::handleCwd(const char* data)
+void Parser::handleWorkingDirectory()
 {
-    auto [ wd, off ] = parseString(data);
-    mCwd = std::move(wd) + "/";
+    mCwd = readData<std::string>() + "/";
 }
 
-void Parser::handleThreadName(const char* data)
+void Parser::handleThreadName()
 {
-    const auto [ tid, off1 ] = parseNumber(data);
-    const auto [ name, off2 ] = parseString(data + off1);
-    mThreadNames[tid] = name;
+    const auto tid = readData<uint32_t>();
+    mThreadNames[tid] = readData<std::string>();
 }
 
-void Parser::handlePageFault(const char* data)
+void Parser::handlePageFault()
 {
-    const auto [ addr, off1 ] = parseNumber(data, 16);
-    const auto [ tid, off2 ] = parseNumber(data + off1, 10);
+    const auto addr = readData<uint64_t>();
+    const auto tid = readData<uint32_t>();
 
     std::string tname;
     auto tn = mThreadNames.find(tid);
@@ -159,45 +117,68 @@ void Parser::handlePageFault(const char* data)
     mEvents.push_back(std::make_shared<Allocation>(addr, 4096, StringIndexer::instance()->index(tname)));
 }
 
-bool Parser::parse(const std::string& line)
+bool Parser::parse(const uint8_t* data, size_t size)
 {
-    // first two bytes is the type of data
-    if (line.size() < 2) {
-        fprintf(stderr, "invalid line '%s'", line.c_str());
+    if (size < sizeof(FileVersion)) {
+        fprintf(stderr, "no version\n");
         return false;
     }
-    if (line[0] == 'm' && line[1] == 't') {
-        // mtrack header version
-        const auto [ version, off] = parseNumber(line.data() + 3, 16);
-        if (version != MTrackFileVersion) {
-            fprintf(stderr, "invalid mtrack file version 0x%x (expected 0x%x)\n", static_cast<int>(version), MTrackFileVersion);
-            return false;
-        }
-    } else if (line[0] == 's' && line[1] == 't') {
-        // stack
-        handleStack(line.data() + 3);
-    } else if (line[0] == 'd' && line[1] == 'l') {
-        // new module
-        handleModule(line.data() + 3);
-    } else if (line[0] == 'p' && line[1] == 'h') {
-        // header for module
-        handleHeaderLoad(line.data() + 3);
-    } else if (line[0] == 'e' && line[1] == 'x') {
-        // exe name
-        handleExe(line.data() + 3);
-    } else if (line[0] == 'w' && line[1] == 'd') {
-        // working directory
-        handleCwd(line.data() + 3);
-    } else if (line[0] == 't' && line[1] == 'n') {
-        // thread name
-        handleThreadName(line.data() + 3);
-    } else if (line[0] == 'p' && line[1] == 'f') {
-        // mmap page fault
-        handlePageFault(line.data() + 3);
-    } else {
-        fprintf(stderr, "unhandled '%s'\n", line.c_str());
+
+    mData = data;
+    mEnd = data + size;
+
+    auto version = readData<FileVersion>();
+    if (version != FileVersion::Current) {
+        fprintf(stderr, "invalid file version (got %u vs %u)\n",
+                static_cast<std::underlying_type_t<FileVersion>>(version),
+                static_cast<std::underlying_type_t<FileVersion>>(FileVersion::Current));
+        return false;
     }
-    return true;
+
+
+    while (!mError && mData < mEnd) {
+        const auto type = readData<RecordType>();
+        //printf("hello %u\n", static_cast<std::underlying_type_t<RecordType>>(type));
+        switch (type) {
+        case RecordType::Executable:
+            handleExe();
+            break;
+        case RecordType::Free:
+            break;
+        case RecordType::Library:
+            handleLibrary();
+            break;
+        case RecordType::LibraryHeader:
+            handleLibraryHeader();
+            break;
+        case RecordType::Madvise:
+            break;
+        case RecordType::Malloc:
+            break;
+        case RecordType::Mmap:
+            break;
+        case RecordType::Munmap:
+            break;
+        case RecordType::PageFault:
+            handlePageFault();
+            break;
+        case RecordType::Stack:
+            handleStack();
+            break;
+        case RecordType::ThreadName:
+            handleThreadName();
+            break;
+        case RecordType::WorkingDirectory:
+            handleWorkingDirectory();
+            break;
+        default:
+            fprintf(stderr, "unhandled type %u\n", static_cast<std::underlying_type_t<RecordType>>(type));
+            mError = true;
+            break;
+        }
+    }
+
+    return !mError;
 }
 
 std::string Parser::finalize() const
@@ -223,8 +204,8 @@ nlohmann::json StackEvent::stack_json() const
 
     auto makeFrame = [](const Frame& frame) {
         json jframe;
-        jframe.push_back(frame.function != std::numeric_limits<uint32_t>::max() ? frame.function : -1);
-        jframe.push_back(frame.file != std::numeric_limits<uint32_t>::max() ? frame.file : -1);
+        jframe.push_back(frame.function);
+        jframe.push_back(frame.file);
         jframe.push_back(frame.line);
         return jframe;
     };

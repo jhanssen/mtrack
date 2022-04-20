@@ -13,9 +13,9 @@ class StringIndexer
 public:
     static StringIndexer* instance();
 
-    uint32_t index(const std::string& str);
+    int32_t index(const std::string& str);
 
-    const std::string& str(uint32_t index) const;
+    const std::string& str(int32_t index) const;
     size_t size() const;
 
     const std::vector<std::string>& strs() const;
@@ -27,7 +27,7 @@ private:
     static std::shared_ptr<StringIndexer> sIndexer;
 
     std::string mEmpty;
-    std::unordered_map<std::string, uint32_t> mStringMap;
+    std::unordered_map<std::string, int32_t> mStringMap;
     std::vector<std::string> mStringList;
 };
 
@@ -39,20 +39,20 @@ inline StringIndexer* StringIndexer::instance()
     return sIndexer.get();
 }
 
-inline uint32_t StringIndexer::index(const std::string& str)
+inline int32_t StringIndexer::index(const std::string& str)
 {
     if (str.empty())
-        return std::numeric_limits<uint32_t>::max();
+        return -1;
     auto it = mStringMap.find(str);
     if (it != mStringMap.end())
         return it->second;
-    const uint32_t id = static_cast<uint32_t>(mStringList.size());
+    const int32_t id = static_cast<int32_t>(mStringList.size());
     mStringMap.insert(std::make_pair(str, id));
     mStringList.push_back(str);
     return id;
 }
 
-inline const std::string& StringIndexer::str(uint32_t index) const
+inline const std::string& StringIndexer::str(int32_t index) const
 {
     if (index >= mStringList.size())
         return mEmpty;

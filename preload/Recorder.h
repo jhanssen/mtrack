@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Spinlock.h"
+#include <common/Version.h>
+#include <common/RecordType.h>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -8,16 +10,27 @@
 #include <cstdint>
 #include <thread>
 #include <vector>
+#include <concepts>
 
 class Recorder
 {
 public:
-    Recorder() = default;
+    Recorder();
 
-    void record(const char* fmt, ...);
+    template<typename... Ts>
+    void record(RecordType type, Ts... args);
 
     void initialize(const char* filename);
     void cleanup();
+
+    struct String
+    {
+        String(const char* s);
+        String(const char* s, size_t sz);
+
+        const char* const str { nullptr };
+        const uint32_t size { 0 };
+    };
 
 private:
     static void process(Recorder* recorder);
@@ -31,22 +44,105 @@ private:
     FILE* mFile { nullptr };
 };
 
-inline void Recorder::record(const char* fmt, ...)
+inline Recorder::Recorder()
 {
-    char buf[4096];
-    va_list ap;
-    va_start(ap, fmt);
-    const int len = vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
+    mData.resize(sizeof(FileVersion));
+    const auto version = FileVersion::Current;
+    memcpy(mData.data(), &version, sizeof(FileVersion));
+    mOffset = sizeof(FileVersion);
+}
 
-    // printf("recorded %d\n", len);
+inline Recorder::String::String(const char* s)
+    : str(s), size(static_cast<uint32_t>(strlen(s)))
+{
+}
+
+inline Recorder::String::String(const char* s, size_t sz)
+    : str(s), size(sz)
+{
+}
+
+namespace detail {
+template<typename T>
+inline size_t recordSize_helper(T) requires std::integral<T>
+{
+    return sizeof(T);
+}
+
+template<typename T>
+inline size_t recordSize_helper(T) requires std::is_enum_v<T>
+{
+    return sizeof(T);
+}
+
+template<typename T>
+inline size_t recordSize_helper(const T str) requires std::same_as<T, Recorder::String>
+{
+    return str.size + sizeof(uint32_t);
+}
+
+template<typename T>
+inline size_t recordSize(T arg)
+{
+    return recordSize_helper<T>(arg);
+}
+
+template<typename T, typename... Ts>
+inline size_t recordSize(T arg, Ts... args)
+{
+    return recordSize_helper<T>(arg) + recordSize(args...);
+}
+
+template<typename T>
+inline void record_helper(uint8_t*& data, T arg) requires std::integral<T>
+{
+    memcpy(data, &arg, sizeof(T));
+    data += sizeof(T);
+}
+
+template<typename T>
+inline void record_helper(uint8_t*& data, T arg) requires std::is_enum_v<T>
+{
+    memcpy(data, &arg, sizeof(T));
+    data += sizeof(T);
+}
+
+template<typename T>
+inline void record_helper(uint8_t*& data, const T str) requires std::same_as<T, Recorder::String>
+{
+    record_helper(data, str.size);
+    memcpy(data, str.str, str.size);
+    data += str.size;
+}
+
+template<typename T>
+inline void record(uint8_t*& data, T arg)
+{
+    record_helper<T>(data, arg);
+}
+
+template<typename T, typename... Ts>
+inline void record(uint8_t*& data, T arg, Ts... args)
+{
+    record_helper<T>(data, arg);
+    record(data, args...);
+}
+} // namespace detail
+
+template<typename... Ts>
+inline void Recorder::record(RecordType type, Ts... args)
+{
+    const auto size = detail::recordSize(args...) + 1;
 
     ScopedSpinlock lock(mLock);
-    if (mOffset + len >= mData.size()) {
-        mData.resize(mOffset + len);
+    if (mOffset + size >= mData.size()) {
+        mData.resize(mOffset + size);
     }
-    memcpy(&mData[mOffset], buf, len);
-    mOffset += len;
+
+    uint8_t* data = mData.data() + mOffset;
+    *data++ = static_cast<uint8_t>(type);
+    detail::record(data, args...);
+    mOffset += size;
 }
 
 inline void Recorder::cleanup()

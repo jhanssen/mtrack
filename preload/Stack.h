@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 #include <sys/ucontext.h>
 
@@ -21,13 +22,13 @@ public:
     bool atEnd() const { return mIndex == mPtrs.size(); }
     void next();
 
-    long long unsigned ip() const { return mPtrs[mIndex].first; }
-    long long unsigned sp() const { return mPtrs[mIndex].second; }
-    long long unsigned index() const { return mIndex; }
+    uint64_t ip() const { return mPtrs[mIndex].first; }
+    uint64_t sp() const { return mPtrs[mIndex].second; }
+    uint64_t index() const { return mIndex; }
 
 private:
     long long unsigned mIndex { 0 };
-    std::vector<std::pair<long long unsigned, long long unsigned>> mPtrs;
+    std::vector<std::pair<uint64_t, uint64_t>> mPtrs;
 };
 
 inline Stack::Stack()

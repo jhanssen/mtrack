@@ -70,7 +70,7 @@ void Stack::initialize(const StackInitializer& initializer)
         // printf("ip %lx sp %lx\n", ip, sp);
         if (ip > 0) {
             // not sure why but ip is consistently one past where I need it to be
-            mPtrs.push_back(std::make_pair<long long unsigned, long long unsigned>(ip - 1, sp));
+            mPtrs.push_back(std::make_pair(static_cast<uint64_t>(ip - 1), static_cast<uint64_t>(sp)));
         } else {
             break;
         }

@@ -159,12 +159,12 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, 
     }
 
     // assume no quotes in filename?
-    data->recorder.record("dl \"%s\" %zx\n", fileName, info->dlpi_addr);
+    data->recorder.record(RecordType::Library, Recorder::String(fileName), static_cast<uint64_t>(info->dlpi_addr));
 
     for (int i = 0; i < info->dlpi_phnum; i++) {
         const auto& phdr = info->dlpi_phdr[i];
         if (phdr.p_type == PT_LOAD) {
-            data->recorder.record("ph %zx %zx\n", phdr.p_vaddr, phdr.p_memsz);
+            data->recorder.record(RecordType::LibraryHeader, static_cast<uint64_t>(phdr.p_vaddr), static_cast<uint64_t>(phdr.p_memsz));
         }
     }
 
@@ -220,13 +220,13 @@ static void hookThread()
             // printf("- fault thread 3 0x%x\n", fault_msg.event);
             switch (fault_msg.event) {
             case UFFD_EVENT_PAGEFAULT: {
-                const auto place = fault_msg.arg.pagefault.address;
-                const auto ptid = fault_msg.arg.pagefault.feat.ptid;
+                const auto place = static_cast<uint64_t>(fault_msg.arg.pagefault.address);
+                const auto ptid = static_cast<uint32_t>(fault_msg.arg.pagefault.feat.ptid);
                 // printf("  - pagefault %u\n", ptid);
-                data->recorder.record("pf %p %u\n", place, ptid);
+                data->recorder.record(RecordType::PageFault, place, ptid);
                 ThreadStack stack(ptid);
                 while (!stack.atEnd()) {
-                    data->recorder.record("st %llx %llx\n", stack.ip(), stack.sp());
+                    data->recorder.record(RecordType::Stack, stack.ip());
                     stack.next();
                 }
                 uffdio_zeropage zero = {
@@ -337,7 +337,6 @@ void Hooks::hook()
     atexit(hookCleanup);
 
     data->recorder.initialize("./mtrack.data");
-    data->recorder.record("mt %x\n", MTrackFileVersion);
 
     // record the executable file
     char buf1[512];
@@ -348,8 +347,7 @@ void Hooks::hook()
         // badness
         fprintf(stderr, "no exe\n");
     } else {
-        buf2[l] = '\0';
-        data->recorder.record("ex \"%s\"\n", buf2);
+        data->recorder.record(RecordType::Executable, Recorder::String(buf2, l));
     }
 
     // record the working directory
@@ -358,7 +356,7 @@ void Hooks::hook()
         // badness
         fprintf(stderr, "no cwd\n");
     } else {
-        data->recorder.record("wd \"%s\"\n", buf2);
+        data->recorder.record(RecordType::WorkingDirectory, Recorder::String(buf2));
     }
 
     printf("hook.\n");
@@ -657,7 +655,7 @@ int pthread_setname_np(pthread_t thread, const char* name)
     std::call_once(hookOnce, Hooks::hook);
     // ### should fix this, this will drop unless we're the same thread
     if (pthread_equal(thread, pthread_self())) {
-        data->recorder.record("tn %d \"%s\"\n", gettid(), name);
+        data->recorder.record(RecordType::ThreadName, static_cast<uint32_t>(gettid()), Recorder::String(name));
     }
     return data->pthread_setname_np(thread, name);
 }

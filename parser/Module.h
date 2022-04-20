@@ -12,9 +12,9 @@ struct backtrace_state;
 
 struct Frame
 {
-    uint32_t function { std::numeric_limits<uint32_t>::max() };
-    uint32_t file { std::numeric_limits<uint32_t>::max() };
-    int line { 0 };
+    int32_t function { -1 };
+    int32_t file { -1 };
+    int32_t line { 0 };
 };
 
 struct Address

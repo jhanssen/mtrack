@@ -1,3 +1,6 @@
 #pragma once
 
-enum { MTrackFileVersion = 0x1 };
+enum class FileVersion : uint32_t
+{
+    Current = 3
+};
