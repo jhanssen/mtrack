@@ -14,8 +14,11 @@ public:
     static StringIndexer* instance();
 
     uint32_t index(const std::string& str);
+
     const std::string& str(uint32_t index) const;
     size_t size() const;
+
+    const std::vector<std::string>& strs() const;
 
 protected:
     StringIndexer() = default;
@@ -59,4 +62,9 @@ inline const std::string& StringIndexer::str(uint32_t index) const
 inline size_t StringIndexer::size() const
 {
     return mStringList.size();
+}
+
+inline const std::vector<std::string>& StringIndexer::strs() const
+{
+    return mStringList;
 }

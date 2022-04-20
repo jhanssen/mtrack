@@ -67,3 +67,5 @@ add_library(backtrace_shared SHARED ${LIBBACKTRACE_SOURCES})
 target_include_directories(backtrace_shared PUBLIC ${LIBBACKTRACE_INCLUDE_DIR})
 target_include_directories(backtrace_shared PRIVATE ${LIBBACKTRACE_GEN_DIR})
 add_library(backtrace::shared ALIAS backtrace_shared)
+
+add_subdirectory(json)

@@ -218,7 +218,7 @@ static void hookThread()
                 const auto place = fault_msg.arg.pagefault.address;
                 const auto ptid = fault_msg.arg.pagefault.feat.ptid;
                 // printf("  - pagefault %u\n", ptid);
-                data->recorder.record("mm %p %u\n", place, ptid);
+                data->recorder.record("pf %p %u\n", place, ptid);
                 ThreadStack stack(ptid);
                 while (!stack.atEnd()) {
                     data->recorder.record("st %llx %llx\n", stack.ip(), stack.sp());

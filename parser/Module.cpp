@@ -1,6 +1,7 @@
 #include "Module.h"
 #include "Creatable.h"
 #include "StringIndexer.h"
+#include <cassert>
 #include <cstring>
 #include <libbacktrace/backtrace.h>
 #include <cxxabi.h>
@@ -67,12 +68,13 @@ std::shared_ptr<Module> Module::create(const char* filename, uint64_t addr)
         return sModules[idx]->shared_from_this();
     auto mod = Creatable<Module>::create(filename, addr);
     if (idx >= sModules.size()) {
-        const auto num = sModules.size() - idx + 1;
+        const auto num = idx - sModules.size() + 1;
         sModules.reserve(sModules.size() + num);
         for (size_t i = 0; i < num; ++i) {
             sModules.push_back(nullptr);
         }
     }
+    assert(idx < sModules.size() && sModules[idx] == nullptr);
     sModules[idx] = mod.get();
     return mod;
 }

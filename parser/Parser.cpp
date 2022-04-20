@@ -5,6 +5,7 @@
 #include <climits>
 #include <cstdlib>
 #include <limits>
+#include <nlohmann/json.hpp>
 
 static inline std::pair<uint64_t, size_t> parseNumber(const char* data, int base = 10)
 {
@@ -62,7 +63,7 @@ void Parser::handleModule(const char* data)
         name = realpath((mCwd + name).c_str(), buf);
     }
 
-    printf("dlll '%s' %lx\n", name.c_str(), start);
+    // printf("dlll '%s' %lx\n", name.c_str(), start);
 
     auto mod = Module::create(name, start);
     mCurrentModule = mod;
@@ -86,7 +87,7 @@ void Parser::handleStack(const char* data)
     // two hex numbers
     const auto [ ip, off1 ] = parseNumber(data, 16);
     const auto [ sp, off2 ] = parseNumber(data + off1, 16);
-    printf("sttt %lx %lx\n", ip, sp);
+    // printf("sttt %lx %lx\n", ip, sp);
 
     if (mModulesDirty) {
         updateModuleCache();
@@ -101,18 +102,9 @@ void Parser::handleStack(const char* data)
         it = mModuleCache.begin();
     if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end) {
         auto mod = it->second.module;
-        printf("found module %s\n", mod->fileName().c_str());
-        auto resolved = mod->resolveAddress(ip);
-        auto indexer = StringIndexer::instance();
-        const auto& file = indexer->str(resolved.frame.file);
-        const auto& func = indexer->str(resolved.frame.function);
-        if (!file.empty()) {
-            printf("resolved to %s:%d\n", file.c_str(), resolved.frame.line);
-        } else if (!func.empty()) {
-            printf("resolved to %s\n", func.c_str());
-        } else {
-            printf("??\n");
-        }
+        // printf("found module %s\n", mod->fileName().c_str());
+        assert(!mAllocations.empty());
+        mAllocations.back().stack.push_back(mod->resolveAddress(ip));
     }
 }
 
@@ -123,7 +115,7 @@ void Parser::handleHeaderLoad(const char* data)
     const auto [ size, off2 ] = parseNumber(data + off1, 16);
 
     assert(mCurrentModule);
-    printf("phhh %lx %lx (%lx %lx)\n", addr, size, mCurrentModule->address() + addr, mCurrentModule->address() + addr + size);
+    // printf("phhh %lx %lx (%lx %lx)\n", addr, size, mCurrentModule->address() + addr, mCurrentModule->address() + addr + size);
     mCurrentModule->addHeader(addr, size);
     mModulesDirty = true;
 }
@@ -140,9 +132,29 @@ void Parser::handleCwd(const char* data)
     mCwd = std::move(wd) + "/";
 }
 
+void Parser::handleThreadName(const char* data)
+{
+    const auto [ name, off1 ] = parseString(data);
+    const auto [ tid, off2 ] = parseNumber(data + off1);
+    mThreadNames[tid] = name;
+}
+
+void Parser::handlePageFault(const char* data)
+{
+    const auto [ addr, off1 ] = parseNumber(data, 16);
+    const auto [ tid, off2 ] = parseNumber(data + off1, 10);
+
+    std::string tname;
+    auto tn = mThreadNames.find(tid);
+    if (tn != mThreadNames.end()) {
+        tname = tn->second;
+    }
+
+    mAllocations.emplace_back(addr, 4096, StringIndexer::instance()->index(tname), std::vector<Address> {});
+}
+
 bool Parser::parse(const std::string& line)
 {
-    printf("parsing '%s'\n", line.c_str());
     // first two bytes is the type of data
     if (line.size() < 2) {
         fprintf(stderr, "invalid line '%s'", line.c_str());
@@ -170,6 +182,60 @@ bool Parser::parse(const std::string& line)
     } else if (line[0] == 'w' && line[1] == 'd') {
         // working directory
         handleCwd(line.data() + 3);
+    } else if (line[0] == 't' && line[1] == 'n') {
+        // thread name
+        handleThreadName(line.data() + 3);
+    } else if (line[0] == 'p' && line[1] == 'f') {
+        // mmap page fault
+        handlePageFault(line.data() + 3);
+    } else {
+        fprintf(stderr, "unhandled '%s'\n", line.c_str());
     }
     return true;
+}
+
+std::string Parser::finalize() const
+{
+    using json = nlohmann::json;
+
+    json root;
+
+    root["strings"] = json(StringIndexer::instance()->strs());
+
+    auto makeFrame = [](const Frame& frame) {
+        json jframe;
+        if (frame.function != std::numeric_limits<uint32_t>::max()) {
+            jframe["function"] = frame.function;
+        }
+        if (frame.file != std::numeric_limits<uint32_t>::max()) {
+            jframe["file"] = frame.file;
+            jframe["line"] = frame.line;
+        }
+        return jframe;
+    };
+
+    json allocs;
+    for (const auto& alloc : mAllocations) {
+        json jalloc;
+        jalloc["addr"] = alloc.addr;
+        jalloc["size"] = alloc.size;
+        jalloc["thread"] = alloc.thread;
+        json stack;
+        for (const auto& addr : alloc.stack) {
+            auto frame = makeFrame(addr.frame);
+            if (!addr.inlined.empty()) {
+                json inlined;
+                for (const auto& inl : addr.inlined) {
+                    inlined.push_back(makeFrame(inl));
+                }
+                frame["inlined"] = std::move(inlined);
+            }
+            stack.push_back(std::move(frame));
+        }
+        jalloc["stack"] = std::move(stack);
+        allocs.push_back(std::move(jalloc));
+    }
+    root["allocs"] = std::move(allocs);
+
+    return root.dump();
 }
