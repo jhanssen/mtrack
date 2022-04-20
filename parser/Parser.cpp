@@ -134,8 +134,8 @@ void Parser::handleCwd(const char* data)
 
 void Parser::handleThreadName(const char* data)
 {
-    const auto [ name, off1 ] = parseString(data);
-    const auto [ tid, off2 ] = parseNumber(data + off1);
+    const auto [ tid, off1 ] = parseNumber(data);
+    const auto [ name, off2 ] = parseString(data + off1);
     mThreadNames[tid] = name;
 }
 
