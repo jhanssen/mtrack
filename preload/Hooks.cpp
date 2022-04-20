@@ -348,6 +348,7 @@ void Hooks::hook()
         // badness
         fprintf(stderr, "no exe\n");
     } else {
+        buf2[l] = '\0';
         data->recorder.record("ex \"%s\"\n", buf2);
     }
 
@@ -431,7 +432,8 @@ bool trackMmap(void* addr, size_t length, int prot, int flags)
                 .start = reinterpret_cast<__u64>(addr),
                 .len = alignOffset(length, PAGESIZE)
             },
-            .mode = UFFDIO_REGISTER_MODE_MISSING
+            .mode = UFFDIO_REGISTER_MODE_MISSING,
+            .ioctls = 0
         };
 
         if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) == -1) {
@@ -603,7 +605,8 @@ int mprotect(void* addr, size_t len, int prot)
                 .start = reinterpret_cast<__u64>(addr),
                 .len = alignOffset(len, PAGESIZE)
             },
-            .mode = UFFDIO_REGISTER_MODE_MISSING
+            .mode = UFFDIO_REGISTER_MODE_MISSING,
+            .ioctls = 0
         };
 
         if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) == -1)

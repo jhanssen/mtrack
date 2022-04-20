@@ -223,13 +223,9 @@ nlohmann::json StackEvent::stack_json() const
 
     auto makeFrame = [](const Frame& frame) {
         json jframe;
-        if (frame.function != std::numeric_limits<uint32_t>::max()) {
-            jframe["func"] = frame.function;
-        }
-        if (frame.file != std::numeric_limits<uint32_t>::max()) {
-            jframe["file"] = frame.file;
-            jframe["line"] = frame.line;
-        }
+        jframe.push_back(frame.function != std::numeric_limits<uint32_t>::max() ? frame.function : -1);
+        jframe.push_back(frame.file != std::numeric_limits<uint32_t>::max() ? frame.file : -1);
+        jframe.push_back(frame.line);
         return jframe;
     };
 
@@ -241,7 +237,7 @@ nlohmann::json StackEvent::stack_json() const
             for (const auto& inl : saddr.inlined) {
                 inlined.push_back(makeFrame(inl));
             }
-            frame["inlined"] = std::move(inlined);
+            frame.push_back(std::move(inlined));
         }
         jstack.push_back(std::move(frame));
     }
@@ -253,11 +249,11 @@ nlohmann::json Allocation::to_json() const
     using json = nlohmann::json;
 
     json jalloc;
-    jalloc["type"] = Type::Allocation;
-    jalloc["addr"] = addr;
-    jalloc["size"] = size;
-    jalloc["thread"] = thread;
-    jalloc["stack"] = stack_json();
+    jalloc.push_back(Type::Allocation);
+    jalloc.push_back(addr);
+    jalloc.push_back(size);
+    jalloc.push_back(thread);
+    jalloc.push_back(stack_json());
 
     return jalloc;
 }

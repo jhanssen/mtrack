@@ -5,6 +5,8 @@ set(SOURCES
     StringIndexer.cpp
     )
 
+set_source_files_properties(${SOURCES} PROPERTIES COMPILE_FLAGS "-O3")
+
 add_executable(mtrack_parser ${SOURCES})
 target_compile_features(mtrack_parser PRIVATE cxx_std_20)
 target_include_directories(mtrack_parser PRIVATE ${MTRACK_BASE_DIR})
