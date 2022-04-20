@@ -82,6 +82,11 @@ struct MmapWalker
     static void walk(void* addr, size_t len, Func&& func);
 };
 
+template<typename T>
+inline T alignOffset(T size, uint32_t alignment)
+{
+    return size + (((~size) + 1) & (static_cast<T>(alignment) - 1));
+}
 
 template<typename Func>
 void MmapWalker::walk(void* addr, size_t len, Func&& func)
@@ -420,22 +425,25 @@ bool trackMmap(void* addr, size_t length, int prot, int flags)
     // }
 
     if ((prot & (PROT_READ | PROT_WRITE)) && !(prot & PROT_EXEC)) {
-        // printf("ball %zu 0x%x 0x%x\n", length, prot, flags);
+        printf("ball %zu 0x%x 0x%x\n", length, prot, flags);
         uffdio_register reg = {
             .range = {
                 .start = reinterpret_cast<__u64>(addr),
-                .len = length
+                .len = alignOffset(length, PAGESIZE)
             },
             .mode = UFFDIO_REGISTER_MODE_MISSING
         };
 
-        if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) >= 0)
+        if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) == -1) {
+            printf("register failed (1) %m\n");
             return true;
+        }
 
         if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
-            printf("no range %m\n");
-            munmap(addr, length);
-            return false;
+            printf("no range (1) 0x%llx\n", reg.ioctls);
+            return true;
+        } else {
+            printf("got ok (1)\n");
         }
     }
 
@@ -593,17 +601,19 @@ int mprotect(void* addr, size_t len, int prot)
         uffdio_register reg = {
             .range = {
                 .start = reinterpret_cast<__u64>(addr),
-                .len = len
+                .len = alignOffset(len, PAGESIZE)
             },
             .mode = UFFDIO_REGISTER_MODE_MISSING
         };
 
-        if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) >= 0)
+        if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) == -1)
             return data->mprotect(addr, len, prot);
 
         if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
-            printf("no range %m\n");
-            return -1;
+            printf("no range (2) 0x%llx\n", reg.ioctls);
+            return data->mprotect(addr, len, prot);
+        } else {
+            printf("got ok (2)\n");
         }
     }
 
