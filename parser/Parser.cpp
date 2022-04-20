@@ -5,7 +5,6 @@
 #include <climits>
 #include <cstdlib>
 #include <limits>
-#include <nlohmann/json.hpp>
 
 static inline std::pair<uint64_t, size_t> parseNumber(const char* data, int base = 10)
 {
@@ -103,8 +102,9 @@ void Parser::handleStack(const char* data)
     if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end) {
         auto mod = it->second.module;
         // printf("found module %s\n", mod->fileName().c_str());
-        assert(!mAllocations.empty());
-        mAllocations.back().stack.push_back(mod->resolveAddress(ip));
+        assert(!mEvents.empty());
+        assert(mEvents.back()->type() == Event::Type::Allocation);
+        std::static_pointer_cast<Allocation>(mEvents.back())->stack.push_back(mod->resolveAddress(ip));
     }
 }
 
@@ -150,7 +150,7 @@ void Parser::handlePageFault(const char* data)
         tname = tn->second;
     }
 
-    mAllocations.emplace_back(addr, 4096, StringIndexer::instance()->index(tname), std::vector<Address> {});
+    mEvents.push_back(std::make_shared<Allocation>(addr, 4096, StringIndexer::instance()->index(tname)));
 }
 
 bool Parser::parse(const std::string& line)
@@ -202,6 +202,19 @@ std::string Parser::finalize() const
 
     root["strings"] = json(StringIndexer::instance()->strs());
 
+    json events;
+    for (const auto& event : mEvents) {
+        events.push_back(event->to_json());
+    }
+    root["events"] = std::move(events);
+
+    return root.dump();
+}
+
+nlohmann::json Allocation::to_json() const
+{
+    using json = nlohmann::json;
+
     auto makeFrame = [](const Frame& frame) {
         json jframe;
         if (frame.function != std::numeric_limits<uint32_t>::max()) {
@@ -214,28 +227,25 @@ std::string Parser::finalize() const
         return jframe;
     };
 
-    json allocs;
-    for (const auto& alloc : mAllocations) {
-        json jalloc;
-        jalloc["addr"] = alloc.addr;
-        jalloc["size"] = alloc.size;
-        jalloc["thread"] = alloc.thread;
-        json stack;
-        for (const auto& addr : alloc.stack) {
-            auto frame = makeFrame(addr.frame);
-            if (!addr.inlined.empty()) {
-                json inlined;
-                for (const auto& inl : addr.inlined) {
-                    inlined.push_back(makeFrame(inl));
-                }
-                frame["inlined"] = std::move(inlined);
-            }
-            stack.push_back(std::move(frame));
-        }
-        jalloc["stack"] = std::move(stack);
-        allocs.push_back(std::move(jalloc));
-    }
-    root["allocs"] = std::move(allocs);
 
-    return root.dump();
+    json jalloc;
+    jalloc["type"] = Type::Allocation;
+    jalloc["addr"] = addr;
+    jalloc["size"] = size;
+    jalloc["thread"] = thread;
+    json jstack;
+    for (const auto& saddr : stack) {
+        auto frame = makeFrame(saddr.frame);
+        if (!saddr.inlined.empty()) {
+            json inlined;
+            for (const auto& inl : saddr.inlined) {
+                inlined.push_back(makeFrame(inl));
+            }
+            frame["inlined"] = std::move(inlined);
+        }
+        jstack.push_back(std::move(frame));
+    }
+    jalloc["stack"] = std::move(jstack);
+
+    return jalloc;
 }

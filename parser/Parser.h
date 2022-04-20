@@ -5,13 +5,35 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <nlohmann/json.hpp>
 
-struct Allocation
+class Event
 {
+public:
+    enum class Type {
+        Allocation
+    };
+
+    Event(Type type);
+    virtual ~Event() = default;
+
+    Type type() const;
+    virtual nlohmann::json to_json() const = 0;
+
+private:
+    Type mType;
+};
+
+struct Allocation : public Event
+{
+    Allocation(uint64_t a, uint64_t s, uint32_t t);
+
     uint64_t addr;
     uint64_t size;
     uint32_t thread;
     std::vector<Address> stack;
+
+    virtual nlohmann::json to_json() const override;
 };
 
 class Parser
@@ -47,5 +69,20 @@ private:
     };
     std::map<uint64_t, ModuleEntry> mModuleCache;
     std::unordered_map<uint64_t, std::string> mThreadNames;
-    std::vector<Allocation> mAllocations;
+    std::vector<std::shared_ptr<Event>> mEvents;
 };
+
+inline Event::Event(Type type)
+    : mType(type)
+{
+}
+
+inline Event::Type Event::type() const
+{
+    return mType;
+}
+
+inline Allocation::Allocation(uint64_t a, uint64_t s, uint32_t t)
+    : Event(Type::Allocation), addr(a), size(s), thread(t)
+{
+}
