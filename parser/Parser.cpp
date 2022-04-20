@@ -224,7 +224,7 @@ nlohmann::json StackEvent::stack_json() const
     auto makeFrame = [](const Frame& frame) {
         json jframe;
         if (frame.function != std::numeric_limits<uint32_t>::max()) {
-            jframe["function"] = frame.function;
+            jframe["func"] = frame.function;
         }
         if (frame.file != std::numeric_limits<uint32_t>::max()) {
             jframe["file"] = frame.file;
