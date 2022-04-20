@@ -103,8 +103,14 @@ void Parser::handleStack(const char* data)
         auto mod = it->second.module;
         // printf("found module %s\n", mod->fileName().c_str());
         assert(!mEvents.empty());
-        assert(mEvents.back()->type() == Event::Type::Allocation);
-        std::static_pointer_cast<StackEvent>(mEvents.back())->stack.push_back(mod->resolveAddress(ip));
+        switch (mEvents.back()->type()) {
+        case Event::Type::Allocation:
+            static_cast<StackEvent*>(mEvents.back().get())->stack.push_back(mod->resolveAddress(ip));
+            break;
+        default:
+            fprintf(stderr, "invalid event for stack %u\n", static_cast<uint32_t>(mEvents.back()->type()));
+            assert(false && "invalid event for stack");
+        }
     }
 }
 
