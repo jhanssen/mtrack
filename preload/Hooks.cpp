@@ -27,6 +27,7 @@
 typedef void* (*MmapSig)(void*, size_t, int, int, int, off_t);
 typedef void* (*MremapSig)(void*, size_t, size_t, int, ...);
 typedef int (*MunmapSig)(void*, size_t);
+typedef int (*MadviseSig)(void*, size_t, int);
 typedef int (*MprotectSig)(void*, size_t, int);
 typedef void* (*DlOpenSig)(const char*, int);
 typedef int  (*DlCloseSig)(void*);
@@ -45,6 +46,7 @@ struct Data {
     MmapSig mmap, mmap64;
     MunmapSig munmap;
     MremapSig mremap;
+    MadviseSig madvise;
     MprotectSig mprotect;
     DlOpenSig dlopen;
     DlCloseSig dlclose;
@@ -308,6 +310,11 @@ void Hooks::hook()
         printf("no mremap\n");
         abort();
     }
+    data->madvise = reinterpret_cast<MadviseSig>(dlsym(RTLD_NEXT, "madvise"));
+    if (data->madvise == nullptr) {
+        printf("no madvise\n");
+        abort();
+    }
     data->mprotect = reinterpret_cast<MprotectSig>(dlsym(RTLD_NEXT, "mprotect"));
     if (data->mprotect == nullptr) {
         printf("no mprotect\n");
@@ -382,14 +389,16 @@ void Hooks::hook()
     printf("hook.\n");
 }
 
-bool trackMmap(void* addr, size_t length, int prot, int flags)
+uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
 {
+    uint64_t allocated = 0;
     // printf("-maping %p %zu flags 0x%x priv/anon %d\n", addr, length, flags, (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS));
-    MmapWalker::walk(addr, length, [flags](MmapWalker::RangeType type, auto it, void* addr, size_t& len, size_t used) {
+    MmapWalker::walk(addr, length, [flags, &allocated](MmapWalker::RangeType type, auto it, void* addr, size_t& len, size_t used) {
         assert(len > 0);
         switch (type) {
         case MmapWalker::RangeType::Empty:
             // printf("inserting %p %zu\n", addr, len);
+            allocated += len;
             return data->mmapRanges.insert(it, std::make_tuple(addr, len, flags)) + 1;
         case MmapWalker::RangeType::Start: {
             if (std::get<2>(*it) == flags) {
@@ -401,10 +410,12 @@ bool trackMmap(void* addr, size_t length, int prot, int flags)
             const auto oldlen = std::get<1>(*it);
             const auto oldflags = std::get<2>(*it);
             std::get<1>(*it) = reinterpret_cast<uint8_t*>(addr) - reinterpret_cast<uint8_t*>(std::get<0>(*it));
+            allocated += oldlen - std::get<1>(*it);
             it = data->mmapRanges.insert(it + 1, std::make_tuple(addr, oldlen - std::get<1>(*it), flags));
             // if addr is fully contained in this item, make another new item with old flags
             if (reinterpret_cast<uint8_t*>(addr) + len < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) {
                 const auto remlen = (reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) - (reinterpret_cast<uint8_t*>(addr) + len);
+                allocated += remlen;
                 it = data->mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(addr) + len, remlen, oldflags));
                 len = 0;
                 // printf("started, len is now %zu (%d)\n", len, __LINE__);
@@ -430,6 +441,7 @@ bool trackMmap(void* addr, size_t length, int prot, int flags)
             // printf("balli used %zu (%p %p) addr %p %zu\n", used, std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + used, addr, len);
             reinterpret_cast<uint8_t*&>(std::get<0>(*it)) += used + len;
             std::get<1>(*it) -= len;
+            allocated += len;
             it = data->mmapRanges.insert(it, std::make_tuple(addr, len, flags));
             len = 0;
             // printf("ended, len is now %zu (%d)\n", len, __LINE__);
@@ -456,18 +468,18 @@ bool trackMmap(void* addr, size_t length, int prot, int flags)
 
         if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) == -1) {
             printf("register failed (1) %m\n");
-            return true;
+            return allocated;
         }
 
         if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
             printf("no range (1) 0x%llx\n", reg.ioctls);
-            return true;
+            return allocated;
         } else {
             printf("got ok (1)\n");
         }
     }
 
-    return true;
+    return allocated;
 }
 
 extern "C" {
@@ -485,14 +497,15 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     NoHook nohook;
 
     bool tracked = false;
+    uint64_t allocated = 0;
     if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS) && fd == -1) {
-        trackMmap(ret, length, prot, flags);
+        allocated = trackMmap(ret, length, prot, flags);
         tracked = true;
     }
 
     Recorder::Scope recordScope(&data->recorder);
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
-                          reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length),
+                          reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length), allocated,
                           prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()));
 
     ThreadStack stack(0);
@@ -518,14 +531,15 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, off_t pgoff
     NoHook nohook;
 
     bool tracked = false;
+    uint64_t allocated = 0;
     if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS) && fd == -1) {
-        trackMmap(ret, length, prot, flags);
+        allocated = trackMmap(ret, length, prot, flags);
         tracked = true;
     }
 
     Recorder::Scope recordScope(&data->recorder);
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
-                          reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length),
+                          reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length), allocated,
                           prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()));
 
     ThreadStack stack(0);
@@ -552,56 +566,58 @@ int munmap(void* addr, size_t length)
     //     }
     // }
 
-    {
-        // printf("-unmaping %p(%p) %zu\n", addr, reinterpret_cast<uint8_t*>(addr) + len, len);
-        bool tracked = false;
-        MmapWalker::walk(addr, length, [&tracked](MmapWalker::RangeType type, auto it, void* waddr, size_t& wlength, size_t used) {
-            switch (type) {
-            case MmapWalker::RangeType::Start: {
-                // update start item
-                // printf("FUCK %p(%p) vs %p(%p)\n", addr, reinterpret_cast<uint8_t*>(addr) + len,
-                //        std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it));
-                tracked = true;
-                const auto oldlen = std::get<1>(*it);
-                std::get<1>(*it) = reinterpret_cast<uint8_t*>(waddr) - reinterpret_cast<uint8_t*>(std::get<0>(*it));
-                // if addr is fully contained in this item, make another new item at the end
-                if (reinterpret_cast<uint8_t*>(waddr) + wlength < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) {
-                    const auto remlen = (reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) - (reinterpret_cast<uint8_t*>(waddr) + wlength);
-                    it = data->mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(waddr) + wlength, remlen, std::get<2>(*it)));
-                    wlength = 0;
-                } else {
-                    // printf("FUCK AGAIN %zu vs %zu (%zu %zu)\n", len, oldlen - std::get<1>(*it), oldlen, std::get<1>(*it));
-                    assert(wlength >= oldlen - std::get<1>(*it));
-                    wlength -= oldlen - std::get<1>(*it);
-                }
-                return it + 1; }
-            case MmapWalker::RangeType::Middle:
-                tracked = true;
-                wlength -= std::get<1>(*it);
-                return data->mmapRanges.erase(it);
-            case MmapWalker::RangeType::End:
-                // update end item
-                tracked = true;
-                reinterpret_cast<uint8_t*&>(std::get<0>(*it)) += wlength;
-                std::get<1>(*it) -= wlength;
+    bool tracked = false;
+    uint64_t deallocated = 0;
+    MmapWalker::walk(addr, length, [&tracked, &deallocated](MmapWalker::RangeType type, auto it, void* waddr, size_t& wlength, size_t used) {
+        switch (type) {
+        case MmapWalker::RangeType::Start: {
+            // update start item
+            // printf("FUCK %p(%p) vs %p(%p)\n", addr, reinterpret_cast<uint8_t*>(addr) + len,
+            //        std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it));
+            tracked = true;
+            const auto oldlen = std::get<1>(*it);
+            std::get<1>(*it) = reinterpret_cast<uint8_t*>(waddr) - reinterpret_cast<uint8_t*>(std::get<0>(*it));
+            // if addr is fully contained in this item, make another new item at the end
+            if (reinterpret_cast<uint8_t*>(waddr) + wlength < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) {
+                const auto remlen = (reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) - (reinterpret_cast<uint8_t*>(waddr) + wlength);
+                it = data->mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(waddr) + wlength, remlen, std::get<2>(*it)));
+                deallocated += wlength;
                 wlength = 0;
-                return it + 1;
-            default:
-                return it + 1;
+            } else {
+                // printf("FUCK AGAIN %zu vs %zu (%zu %zu)\n", len, oldlen - std::get<1>(*it), oldlen, std::get<1>(*it));
+                assert(wlength >= oldlen - std::get<1>(*it));
+                deallocated += oldlen - std::get<1>(*it);
+                wlength -= oldlen - std::get<1>(*it);
             }
-            assert(false && "invalid MmapWalker::RangeType for mmap");
-            __builtin_unreachable();
-        });
+            return it + 1; }
+        case MmapWalker::RangeType::Middle:
+            tracked = true;
+            wlength -= std::get<1>(*it);
+            deallocated += std::get<1>(*it);
+            return data->mmapRanges.erase(it);
+        case MmapWalker::RangeType::End:
+            // update end item
+            tracked = true;
+            reinterpret_cast<uint8_t*&>(std::get<0>(*it)) += wlength;
+            std::get<1>(*it) -= wlength;
+            deallocated += wlength;
+            wlength = 0;
+            return it + 1;
+        default:
+            return it + 1;
+        }
+        assert(false && "invalid MmapWalker::RangeType for mmap");
+        __builtin_unreachable();
+    });
 
-        data->recorder.record(tracked ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
-                              reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length));
-        // if (updated) {
-        //     printf("2--\n");
-        //     for (const auto& item : data->mmapRanges) {
-        //         printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
-        //     }
-        // }
-    }
+    data->recorder.record(tracked ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
+                          reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length), deallocated);
+    // if (updated) {
+    //     printf("2--\n");
+    //     for (const auto& item : data->mmapRanges) {
+    //         printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
+    //     }
+    // }
 
     const auto ret = data->munmap(addr, length);
     // if (len > 1000000) {
@@ -691,6 +707,48 @@ void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
         return data->mremap(addr, old_size, new_size, flags, new_address);
     }
     return data->mremap(addr, old_size, new_size, flags);
+}
+
+int madvise(void* addr, size_t length, int advice)
+{
+    bool tracked = false;
+    uint64_t deallocated = 0;
+    if (advice == MADV_DONTNEED) {
+        MmapWalker::walk(addr, length, [&tracked, &deallocated](MmapWalker::RangeType type, auto it, void* waddr, size_t& wlength, size_t used) {
+            switch (type) {
+            case MmapWalker::RangeType::Start: {
+                tracked = true;
+                const auto atstart = reinterpret_cast<uint8_t*>(waddr) - reinterpret_cast<uint8_t*>(std::get<0>(*it));
+                if (reinterpret_cast<uint8_t*>(waddr) + wlength < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
+                    deallocated += wlength;
+                    wlength = 0;
+                } else {
+                    deallocated += std::get<1>(*it) - atstart;
+                    wlength -= std::get<1>(*it) - atstart;
+                }
+                return it + 1; }
+            case MmapWalker::RangeType::Middle:
+                tracked = true;
+                wlength -= std::get<1>(*it);
+                deallocated += std::get<1>(*it);
+                return it + 1;
+            case MmapWalker::RangeType::End:
+                tracked = true;
+                deallocated += wlength;
+                wlength = 0;
+                return it + 1;
+            default:
+                return it + 1;
+            }
+            assert(false && "invalid MmapWalker::RangeType for madvise");
+            __builtin_unreachable();
+        });
+    }
+
+    data->recorder.record(tracked ? RecordType::MadviseTracked : RecordType::MadviseUntracked,
+                          reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length), advice, deallocated);
+
+    return data->madvise(addr, length, advice);
 }
 
 void* dlopen(const char* filename, int flags)

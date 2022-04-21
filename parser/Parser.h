@@ -14,7 +14,8 @@ public:
     enum class Type {
         PageFault,
         Mmap,
-        Munmap
+        Munmap,
+        Madvise
     };
 
     Event(Type type);
@@ -51,11 +52,12 @@ public:
 class MmapEvent : public StackEvent
 {
 public:
-    MmapEvent(bool tr, uint64_t a, uint64_t s, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t);
+    MmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t al, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t);
 
     bool tracked;
     uint64_t addr;
     uint64_t size;
+    uint64_t allocated;
     int32_t prot;
     int32_t flags;
     int32_t fd;
@@ -68,11 +70,26 @@ public:
 class MunmapEvent : public Event
 {
 public:
-    MunmapEvent(bool tr, uint64_t a, uint64_t s);
+    MunmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t d);
 
     bool tracked;
     uint64_t addr;
     uint64_t size;
+    uint64_t deallocated;
+
+    virtual json to_json() const override;
+};
+
+class MadviseEvent : public Event
+{
+public:
+    MadviseEvent(bool tr, uint64_t a, uint64_t s, int32_t ad, uint64_t d);
+
+    bool tracked;
+    uint64_t addr;
+    uint64_t size;
+    int32_t advice;
+    uint64_t deallocated;
 
     virtual json to_json() const override;
 };
@@ -95,6 +112,7 @@ private:
     void handlePageFault();
     void handleMmap(bool tracked);
     void handleMunmap(bool tracked);
+    void handleMadvise(bool tracked);
 
     void updateModuleCache();
 
@@ -142,13 +160,18 @@ inline PageFaultEvent::PageFaultEvent(uint64_t a, uint64_t s, uint32_t t)
 {
 }
 
-inline MmapEvent::MmapEvent(bool tr, uint64_t a, uint64_t s, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t)
-    : StackEvent(Type::Mmap), tracked(tr), addr(a), size(s), prot(p), flags(f), fd(file), offset(o), thread(t)
+inline MadviseEvent::MadviseEvent(bool tr, uint64_t a, uint64_t s, int32_t ad, uint64_t d)
+    : Event(Type::Madvise), tracked(tr), addr(a), size(s), advice(ad), deallocated(d)
 {
 }
 
-inline MunmapEvent::MunmapEvent(bool tr, uint64_t a, uint64_t s)
-    : Event(Type::Munmap), tracked(tr), addr(a), size(s)
+inline MmapEvent::MmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t al, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t)
+    : StackEvent(Type::Mmap), tracked(tr), addr(a), size(s), allocated(al), prot(p), flags(f), fd(file), offset(o), thread(t)
+{
+}
+
+inline MunmapEvent::MunmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t d)
+    : Event(Type::Munmap), tracked(tr), addr(a), size(s), deallocated(d)
 {
 }
 

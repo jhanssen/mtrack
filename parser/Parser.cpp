@@ -117,10 +117,21 @@ void Parser::handlePageFault()
     mEvents.push_back(std::make_shared<PageFaultEvent>(addr, 4096, StringIndexer::instance()->index(tname)));
 }
 
+void Parser::handleMadvise(bool tracked)
+{
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
+    const auto advice = readData<int32_t>();
+    const auto allocated = readData<uint64_t>();
+
+    mEvents.push_back(std::make_shared<MadviseEvent>(tracked, addr, size, advice, allocated));
+}
+
 void Parser::handleMmap(bool tracked)
 {
     const auto addr = readData<uint64_t>();
     const auto size = readData<uint64_t>();
+    const auto allocated = readData<uint64_t>();
     const auto prot = readData<int32_t>();
     const auto flags = readData<int32_t>();
     const auto fd = readData<int32_t>();
@@ -133,15 +144,16 @@ void Parser::handleMmap(bool tracked)
         tname = tn->second;
     }
 
-    mEvents.push_back(std::make_shared<MmapEvent>(tracked, addr, size, prot, flags, fd, off, StringIndexer::instance()->index(tname)));
+    mEvents.push_back(std::make_shared<MmapEvent>(tracked, addr, size, allocated, prot, flags, fd, off, StringIndexer::instance()->index(tname)));
 }
 
 void Parser::handleMunmap(bool tracked)
 {
     const auto addr = readData<uint64_t>();
     const auto size = readData<uint64_t>();
+    const auto deallocated = readData<uint64_t>();
 
-    mEvents.push_back(std::make_shared<MunmapEvent>(tracked, addr, size));
+    mEvents.push_back(std::make_shared<MunmapEvent>(tracked, addr, size, deallocated));
 }
 
 bool Parser::parse(const uint8_t* data, size_t size)
@@ -178,7 +190,11 @@ bool Parser::parse(const uint8_t* data, size_t size)
         case RecordType::LibraryHeader:
             handleLibraryHeader();
             break;
-        case RecordType::Madvise:
+        case RecordType::MadviseTracked:
+            handleMadvise(true);
+            break;
+        case RecordType::MadviseUntracked:
+            handleMadvise(false);
             break;
         case RecordType::Malloc:
             break;
@@ -275,6 +291,7 @@ json MmapEvent::to_json() const
     jmmap.push_back(tracked ? 1 : 0);
     jmmap.push_back(addr);
     jmmap.push_back(size);
+    jmmap.push_back(allocated);
     jmmap.push_back(prot);
     jmmap.push_back(flags);
     jmmap.push_back(fd);
@@ -288,10 +305,24 @@ json MmapEvent::to_json() const
 json MunmapEvent::to_json() const
 {
     json jmunmap;
-    jmunmap.push_back(Type::Mmap);
+    jmunmap.push_back(Type::Munmap);
     jmunmap.push_back(tracked ? 1 : 0);
     jmunmap.push_back(addr);
     jmunmap.push_back(size);
+    jmunmap.push_back(deallocated);
 
     return jmunmap;
+}
+
+json MadviseEvent::to_json() const
+{
+    json jmadvise;
+    jmadvise.push_back(Type::Madvise);
+    jmadvise.push_back(tracked ? 1 : 0);
+    jmadvise.push_back(addr);
+    jmadvise.push_back(size);
+    jmadvise.push_back(advice);
+    jmadvise.push_back(deallocated);
+
+    return jmadvise;
 }
