@@ -393,57 +393,57 @@ uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
 {
     uint64_t allocated = 0;
     // printf("-maping %p %zu flags 0x%x priv/anon %d\n", addr, length, flags, (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS));
-    MmapWalker::walk(addr, length, [flags, &allocated](MmapWalker::RangeType type, auto it, void* addr, size_t& len, size_t used) {
-        assert(len > 0);
+    MmapWalker::walk(addr, length, [flags, &allocated](MmapWalker::RangeType type, auto it, void* waddr, size_t& wlength, size_t used) {
+        assert(wlength > 0);
         switch (type) {
         case MmapWalker::RangeType::Empty:
             // printf("inserting %p %zu\n", addr, len);
-            allocated += len;
-            return data->mmapRanges.insert(it, std::make_tuple(addr, len, flags)) + 1;
+            allocated += wlength;
+            return data->mmapRanges.insert(it, std::make_tuple(waddr, wlength, flags)) + 1;
         case MmapWalker::RangeType::Start: {
             if (std::get<2>(*it) == flags) {
-                len -= std::get<1>(*it);
+                wlength -= std::get<1>(*it);
                 // printf("started, len is now %zu (%d)\n", len, __LINE__);
                 return it + 1;
             }
             // split out start, add new item
             const auto oldlen = std::get<1>(*it);
             const auto oldflags = std::get<2>(*it);
-            std::get<1>(*it) = reinterpret_cast<uint8_t*>(addr) - reinterpret_cast<uint8_t*>(std::get<0>(*it));
+            std::get<1>(*it) = reinterpret_cast<uint8_t*>(waddr) - reinterpret_cast<uint8_t*>(std::get<0>(*it));
             allocated += oldlen - std::get<1>(*it);
-            it = data->mmapRanges.insert(it + 1, std::make_tuple(addr, oldlen - std::get<1>(*it), flags));
+            it = data->mmapRanges.insert(it + 1, std::make_tuple(waddr, oldlen - std::get<1>(*it), flags));
             // if addr is fully contained in this item, make another new item with old flags
-            if (reinterpret_cast<uint8_t*>(addr) + len < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) {
-                const auto remlen = (reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) - (reinterpret_cast<uint8_t*>(addr) + len);
+            if (reinterpret_cast<uint8_t*>(waddr) + wlength < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) {
+                const auto remlen = (reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) - (reinterpret_cast<uint8_t*>(waddr) + wlength);
                 allocated += remlen;
-                it = data->mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(addr) + len, remlen, oldflags));
-                len = 0;
+                it = data->mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(waddr) + wlength, remlen, oldflags));
+                wlength = 0;
                 // printf("started, len is now %zu (%d)\n", len, __LINE__);
             } else {
-                assert(len >= oldlen - std::get<1>(*it));
-                len -= oldlen - std::get<1>(*it);
+                assert(wlength >= oldlen - std::get<1>(*it));
+                wlength -= oldlen - std::get<1>(*it);
                 // printf("started, len is now %zu (%d)\n", len, __LINE__);
             }
             return it + 1; }
         case MmapWalker::RangeType::Middle:
             std::get<2>(*it) = flags;
-            assert(len >= std::get<1>(*it));
-            len -= std::get<1>(*it);
+            assert(wlength >= std::get<1>(*it));
+            wlength -= std::get<1>(*it);
             // printf("middled, len is now %zu (%d)\n", len, __LINE__);
             return it + 1;
         case MmapWalker::RangeType::End:
             if (std::get<2>(*it) == flags) {
-                len -= std::get<1>(*it);
+                wlength -= std::get<1>(*it);
                 // printf("ended, len is now %zu (%d)\n", len, __LINE__);
                 return it + 1;
             }
             // add new item, split out end
             // printf("balli used %zu (%p %p) addr %p %zu\n", used, std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + used, addr, len);
-            reinterpret_cast<uint8_t*&>(std::get<0>(*it)) += used + len;
-            std::get<1>(*it) -= len;
-            allocated += len;
-            it = data->mmapRanges.insert(it, std::make_tuple(addr, len, flags));
-            len = 0;
+            reinterpret_cast<uint8_t*&>(std::get<0>(*it)) += used + wlength;
+            std::get<1>(*it) -= wlength;
+            allocated += wlength;
+            it = data->mmapRanges.insert(it, std::make_tuple(waddr, wlength, flags));
+            wlength = 0;
             // printf("ended, len is now %zu (%d)\n", len, __LINE__);
             return it + 2;
         }
