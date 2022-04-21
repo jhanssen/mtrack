@@ -11,28 +11,18 @@
 class Event
 {
 public:
-    enum class Type {
-        Madvise,
-        Mmap,
-        Munmap,
-        PageFault,
-        Time
-    };
-
-    Event(Type type);
+    Event(RecordType type);
     virtual ~Event() = default;
 
-    Type type() const;
-    virtual json to_json() const = 0;
+    const RecordType type;
 
-private:
-    const Type mType;
+    virtual json to_json() const = 0;
 };
 
 class StackEvent : public Event
 {
 public:
-    StackEvent(Type type);
+    StackEvent(RecordType type);
 
     std::vector<Address> stack;
     json stack_json() const;
@@ -55,7 +45,6 @@ class MmapEvent : public StackEvent
 public:
     MmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t al, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t);
 
-    const bool tracked;
     const uint64_t addr;
     const uint64_t size;
     const uint64_t allocated;
@@ -73,7 +62,6 @@ class MunmapEvent : public Event
 public:
     MunmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t d);
 
-    const bool tracked;
     const uint64_t addr;
     const uint64_t size;
     const uint64_t deallocated;
@@ -86,7 +74,6 @@ class MadviseEvent : public Event
 public:
     MadviseEvent(bool tr, uint64_t a, uint64_t s, int32_t ad, uint64_t d);
 
-    const bool tracked;
     const uint64_t addr;
     const uint64_t size;
     const int32_t advice;
@@ -153,43 +140,38 @@ private:
     std::vector<std::shared_ptr<Event>> mEvents;
 };
 
-inline Event::Event(Type type)
-    : mType(type)
+inline Event::Event(RecordType t)
+    : type(t)
 {
 }
 
-inline Event::Type Event::type() const
-{
-    return mType;
-}
-
-inline StackEvent::StackEvent(Type type)
+inline StackEvent::StackEvent(RecordType type)
     : Event(type)
 {
 }
 
 inline PageFaultEvent::PageFaultEvent(uint64_t a, uint64_t s, uint32_t t)
-    : StackEvent(Type::PageFault), addr(a), size(s), thread(t)
+    : StackEvent(RecordType::PageFault), addr(a), size(s), thread(t)
 {
 }
 
 inline MadviseEvent::MadviseEvent(bool tr, uint64_t a, uint64_t s, int32_t ad, uint64_t d)
-    : Event(Type::Madvise), tracked(tr), addr(a), size(s), advice(ad), deallocated(d)
+    : Event(tr ? RecordType::MadviseTracked : RecordType::MadviseUntracked), addr(a), size(s), advice(ad), deallocated(d)
 {
 }
 
 inline MmapEvent::MmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t al, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t)
-    : StackEvent(Type::Mmap), tracked(tr), addr(a), size(s), allocated(al), prot(p), flags(f), fd(file), offset(o), thread(t)
+    : StackEvent(tr ? RecordType::MmapTracked : RecordType::MmapUntracked), addr(a), size(s), allocated(al), prot(p), flags(f), fd(file), offset(o), thread(t)
 {
 }
 
 inline MunmapEvent::MunmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t d)
-    : Event(Type::Munmap), tracked(tr), addr(a), size(s), deallocated(d)
+    : Event(tr ? RecordType::MunmapTracked : RecordType::MunmapUntracked), addr(a), size(s), deallocated(d)
 {
 }
 
 inline TimeEvent::TimeEvent(uint32_t t)
-    : Event(Type::Time), time(t)
+    : Event(RecordType::Time), time(t)
 {
 }
 

@@ -507,6 +507,12 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     }
 
     Recorder::Scope recordScope(&data->recorder);
+
+    if (data->modulesDirty.load(std::memory_order_acquire)) {
+        dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
+        data->modulesDirty.store(false, std::memory_order_release);
+    }
+
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
                           reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length), allocated,
                           prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()));
@@ -541,6 +547,12 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, off_t pgoff
     }
 
     Recorder::Scope recordScope(&data->recorder);
+
+    if (data->modulesDirty.load(std::memory_order_acquire)) {
+        dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
+        data->modulesDirty.store(false, std::memory_order_release);
+    }
+
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
                           reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length), allocated,
                           prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()));

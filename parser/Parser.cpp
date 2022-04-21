@@ -44,6 +44,8 @@ void Parser::updateModuleCache()
 
 void Parser::handleStack()
 {
+    assert(!mEvents.empty());
+
     // two hex numbers
     const auto ip = readData<uint64_t>();
     // printf("sttt %lx %lx\n", ip, sp);
@@ -59,19 +61,19 @@ void Parser::handleStack()
         --it;
     if (mModuleCache.size() == 1)
         it = mModuleCache.begin();
-    if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end) {
-        auto mod = it->second.module;
-        // printf("found module %s\n", mod->fileName().c_str());
-        assert(!mEvents.empty());
-        switch (mEvents.back()->type()) {
-        case Event::Type::PageFault:
-        case Event::Type::Mmap:
-            static_cast<StackEvent*>(mEvents.back().get())->stack.push_back(mod->resolveAddress(ip));
-            break;
-        default:
-            fprintf(stderr, "invalid event for stack %u\n", static_cast<uint32_t>(mEvents.back()->type()));
-            assert(false && "invalid event for stack");
-        }
+    Address address;
+    if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end)
+        address = it->second.module->resolveAddress(ip);
+
+    switch (mEvents.back()->type) {
+    case RecordType::PageFault:
+    case RecordType::MmapTracked:
+    case RecordType::MmapUntracked:
+        static_cast<StackEvent*>(mEvents.back().get())->stack.push_back(address);
+        break;
+    default:
+        fprintf(stderr, "invalid event for stack %u\n", static_cast<uint32_t>(mEvents.back()->type));
+        assert(false && "invalid event for stack");
     }
 }
 
@@ -206,9 +208,11 @@ bool Parser::parse(const uint8_t* data, size_t size)
         case RecordType::Malloc:
             break;
         case RecordType::MmapTracked:
+            // printf("mmap2\n");
             handleMmap(true);
             break;
         case RecordType::MmapUntracked:
+            // printf("mmap1\n");
             handleMmap(false);
             break;
         case RecordType::MunmapTracked:
@@ -218,12 +222,14 @@ bool Parser::parse(const uint8_t* data, size_t size)
             handleMunmap(true);
             break;
         case RecordType::PageFault:
+            //printf("pf\n");
             handlePageFault();
             break;
         case RecordType::Time:
             handleTime();
             break;
         case RecordType::Stack:
+            // printf("st\n");
             handleStack();
             break;
         case RecordType::ThreadName:
@@ -285,7 +291,7 @@ json StackEvent::stack_json() const
 json PageFaultEvent::to_json() const
 {
     json jpf;
-    jpf.push_back(Type::PageFault);
+    jpf.push_back(type);
     jpf.push_back(addr);
     jpf.push_back(size);
     jpf.push_back(thread);
@@ -297,7 +303,7 @@ json PageFaultEvent::to_json() const
 json TimeEvent::to_json() const
 {
     json jt;
-    jt.push_back(Type::Time);
+    jt.push_back(type);
     jt.push_back(time);
 
     return jt;
@@ -306,8 +312,7 @@ json TimeEvent::to_json() const
 json MmapEvent::to_json() const
 {
     json jmmap;
-    jmmap.push_back(Type::Mmap);
-    jmmap.push_back(tracked ? 1 : 0);
+    jmmap.push_back(type);
     jmmap.push_back(addr);
     jmmap.push_back(size);
     jmmap.push_back(allocated);
@@ -324,8 +329,7 @@ json MmapEvent::to_json() const
 json MunmapEvent::to_json() const
 {
     json jmunmap;
-    jmunmap.push_back(Type::Munmap);
-    jmunmap.push_back(tracked ? 1 : 0);
+    jmunmap.push_back(type);
     jmunmap.push_back(addr);
     jmunmap.push_back(size);
     jmunmap.push_back(deallocated);
@@ -336,8 +340,7 @@ json MunmapEvent::to_json() const
 json MadviseEvent::to_json() const
 {
     json jmadvise;
-    jmadvise.push_back(Type::Madvise);
-    jmadvise.push_back(tracked ? 1 : 0);
+    jmadvise.push_back(type);
     jmadvise.push_back(addr);
     jmadvise.push_back(size);
     jmadvise.push_back(advice);
