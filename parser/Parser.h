@@ -12,10 +12,11 @@ class Event
 {
 public:
     enum class Type {
-        PageFault,
+        Madvise,
         Mmap,
         Munmap,
-        Madvise
+        PageFault,
+        Time
     };
 
     Event(Type type);
@@ -25,7 +26,7 @@ public:
     virtual json to_json() const = 0;
 
 private:
-    Type mType;
+    const Type mType;
 };
 
 class StackEvent : public Event
@@ -42,9 +43,9 @@ class PageFaultEvent : public StackEvent
 public:
     PageFaultEvent(uint64_t a, uint64_t s, uint32_t t);
 
-    uint64_t addr;
-    uint64_t size;
-    uint32_t thread;
+    const uint64_t addr;
+    const uint64_t size;
+    const uint32_t thread;
 
     virtual json to_json() const override;
 };
@@ -54,15 +55,15 @@ class MmapEvent : public StackEvent
 public:
     MmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t al, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t);
 
-    bool tracked;
-    uint64_t addr;
-    uint64_t size;
-    uint64_t allocated;
-    int32_t prot;
-    int32_t flags;
-    int32_t fd;
-    uint64_t offset;
-    uint32_t thread;
+    const bool tracked;
+    const uint64_t addr;
+    const uint64_t size;
+    const uint64_t allocated;
+    const int32_t prot;
+    const int32_t flags;
+    const int32_t fd;
+    const uint64_t offset;
+    const uint32_t thread;
 
     virtual json to_json() const override;
 };
@@ -72,10 +73,10 @@ class MunmapEvent : public Event
 public:
     MunmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t d);
 
-    bool tracked;
-    uint64_t addr;
-    uint64_t size;
-    uint64_t deallocated;
+    const bool tracked;
+    const uint64_t addr;
+    const uint64_t size;
+    const uint64_t deallocated;
 
     virtual json to_json() const override;
 };
@@ -85,11 +86,22 @@ class MadviseEvent : public Event
 public:
     MadviseEvent(bool tr, uint64_t a, uint64_t s, int32_t ad, uint64_t d);
 
-    bool tracked;
-    uint64_t addr;
-    uint64_t size;
-    int32_t advice;
-    uint64_t deallocated;
+    const bool tracked;
+    const uint64_t addr;
+    const uint64_t size;
+    const int32_t advice;
+    const uint64_t deallocated;
+
+    virtual json to_json() const override;
+};
+
+class TimeEvent : public Event
+{
+public:
+    TimeEvent(uint32_t t);
+
+    // ms since app start
+    const uint32_t time;
 
     virtual json to_json() const override;
 };
@@ -110,6 +122,7 @@ private:
     void handleWorkingDirectory();
     void handleThreadName();
     void handlePageFault();
+    void handleTime();
     void handleMmap(bool tracked);
     void handleMunmap(bool tracked);
     void handleMadvise(bool tracked);
@@ -172,6 +185,11 @@ inline MmapEvent::MmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t al, int32_
 
 inline MunmapEvent::MunmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t d)
     : Event(Type::Munmap), tracked(tr), addr(a), size(s), deallocated(d)
+{
+}
+
+inline TimeEvent::TimeEvent(uint32_t t)
+    : Event(Type::Time), time(t)
 {
 }
 

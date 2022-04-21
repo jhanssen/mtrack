@@ -16,5 +16,6 @@ enum class RecordType : uint8_t {
     PageFault,
     Stack,
     ThreadName,
+    Time,
     WorkingDirectory
 };

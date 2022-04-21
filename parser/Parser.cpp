@@ -117,6 +117,13 @@ void Parser::handlePageFault()
     mEvents.push_back(std::make_shared<PageFaultEvent>(addr, 4096, StringIndexer::instance()->index(tname)));
 }
 
+void Parser::handleTime()
+{
+    const auto time = readData<uint32_t>();
+
+    mEvents.push_back(std::make_shared<TimeEvent>(time));
+}
+
 void Parser::handleMadvise(bool tracked)
 {
     const auto addr = readData<uint64_t>();
@@ -213,6 +220,9 @@ bool Parser::parse(const uint8_t* data, size_t size)
         case RecordType::PageFault:
             handlePageFault();
             break;
+        case RecordType::Time:
+            handleTime();
+            break;
         case RecordType::Stack:
             handleStack();
             break;
@@ -282,6 +292,15 @@ json PageFaultEvent::to_json() const
     jpf.push_back(stack_json());
 
     return jpf;
+}
+
+json TimeEvent::to_json() const
+{
+    json jt;
+    jt.push_back(Type::Time);
+    jt.push_back(time);
+
+    return jt;
 }
 
 json MmapEvent::to_json() const
