@@ -711,6 +711,13 @@ void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
 
 int madvise(void* addr, size_t length, int advice)
 {
+    std::call_once(hookOnce, Hooks::hook);
+
+    if (!data->hooked)
+        return data->madvise(addr, length, advice);
+
+    NoHook nohook;
+
     bool tracked = false;
     uint64_t deallocated = 0;
     if (advice == MADV_DONTNEED) {
