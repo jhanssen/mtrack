@@ -1,6 +1,8 @@
 #include "Recorder.h"
 #include <unistd.h>
 
+thread_local bool Recorder::tScoped = false;
+
 void Recorder::process(Recorder* r)
 {
     enum { SleepInterval = 250 };

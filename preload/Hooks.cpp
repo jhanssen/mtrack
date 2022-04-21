@@ -64,6 +64,23 @@ struct Data {
     static thread_local bool hooked;
 } *data = nullptr;
 
+class NoHook
+{
+public:
+    NoHook()
+        : wasHooked(data->hooked)
+    {
+        data->hooked = false;
+    }
+    ~NoHook()
+    {
+        data->hooked = wasHooked;
+    }
+
+private:
+    bool wasHooked;
+};
+
 static std::once_flag hookOnce = {};
 
 thread_local bool Data::hooked = true;
@@ -158,7 +175,7 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, 
         fileName = "s";
     }
 
-    // assume no quotes in filename?
+    Recorder::Scope recorderScope(&data->recorder);
     data->recorder.record(RecordType::Library, Recorder::String(fileName), static_cast<uint64_t>(info->dlpi_addr));
 
     for (int i = 0; i < info->dlpi_phnum; i++) {
@@ -223,11 +240,14 @@ static void hookThread()
                 const auto place = static_cast<uint64_t>(fault_msg.arg.pagefault.address);
                 const auto ptid = static_cast<uint32_t>(fault_msg.arg.pagefault.feat.ptid);
                 // printf("  - pagefault %u\n", ptid);
-                data->recorder.record(RecordType::PageFault, place, ptid);
-                ThreadStack stack(ptid);
-                while (!stack.atEnd()) {
-                    data->recorder.record(RecordType::Stack, stack.ip());
-                    stack.next();
+                {
+                    Recorder::Scope recorderScope(&data->recorder);
+                    data->recorder.record(RecordType::PageFault, place, ptid);
+                    ThreadStack stack(ptid);
+                    while (!stack.atEnd()) {
+                        data->recorder.record(RecordType::Stack, stack.ip());
+                        stack.next();
+                    }
                 }
                 uffdio_zeropage zero = {
                     .range = {
@@ -424,7 +444,7 @@ bool trackMmap(void* addr, size_t length, int prot, int flags)
     // }
 
     if ((prot & (PROT_READ | PROT_WRITE)) && !(prot & PROT_EXEC)) {
-        printf("ball %zu 0x%x 0x%x\n", length, prot, flags);
+        // printf("ball %zu 0x%x 0x%x\n", length, prot, flags);
         uffdio_register reg = {
             .range = {
                 .start = reinterpret_cast<__u64>(addr),
@@ -462,14 +482,18 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     if (!data->hooked || ret == MAP_FAILED)
         return ret;
 
+    NoHook nohook;
+
+    bool tracked = false;
     if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS) && fd == -1) {
         trackMmap(ret, length, prot, flags);
-        data->recorder.record(RecordType::MmapTracked, reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length),
-                              prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()));
-    } else {
-        data->recorder.record(RecordType::MmapUntracked, reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length),
-                              prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()));
+        tracked = true;
     }
+
+    Recorder::Scope recordScope(&data->recorder);
+    data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
+                          reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length),
+                          prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()));
 
     ThreadStack stack(0);
     while (!stack.atEnd()) {
@@ -491,14 +515,18 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, off_t pgoff
     if (!data->hooked || ret == MAP_FAILED)
         return ret;
 
+    NoHook nohook;
+
+    bool tracked = false;
     if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS) && fd == -1) {
         trackMmap(ret, length, prot, flags);
-        data->recorder.record(RecordType::MmapTracked, reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length),
-                              prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()));
-    } else {
-        data->recorder.record(RecordType::MmapUntracked, reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length),
-                              prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()));
+        tracked = true;
     }
+
+    Recorder::Scope recordScope(&data->recorder);
+    data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
+                          reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length),
+                          prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()));
 
     ThreadStack stack(0);
     while (!stack.atEnd()) {
@@ -513,6 +541,10 @@ int munmap(void* addr, size_t length)
 {
     std::call_once(hookOnce, Hooks::hook);
 
+    if (!data->hooked)
+        return data->munmap(addr, length);
+
+    NoHook nohook;
     // if (len > 1000000) {
     //     printf("3--\n");
     //     for (const auto& item : data->mmapRanges) {
@@ -680,6 +712,7 @@ int pthread_setname_np(pthread_t thread, const char* name)
     std::call_once(hookOnce, Hooks::hook);
     // ### should fix this, this will drop unless we're the same thread
     if (pthread_equal(thread, pthread_self())) {
+        NoHook nohook;
         data->recorder.record(RecordType::ThreadName, static_cast<uint32_t>(gettid()), Recorder::String(name));
     }
     return data->pthread_setname_np(thread, name);

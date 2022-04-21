@@ -117,7 +117,7 @@ void Parser::handlePageFault()
     mEvents.push_back(std::make_shared<PageFaultEvent>(addr, 4096, StringIndexer::instance()->index(tname)));
 }
 
-void Parser::handleMmap(RecordType type)
+void Parser::handleMmap(bool tracked)
 {
     const auto addr = readData<uint64_t>();
     const auto size = readData<uint64_t>();
@@ -133,7 +133,15 @@ void Parser::handleMmap(RecordType type)
         tname = tn->second;
     }
 
-    mEvents.push_back(std::make_shared<MmapEvent>(addr, size, prot, flags, fd, off, StringIndexer::instance()->index(tname)));
+    mEvents.push_back(std::make_shared<MmapEvent>(tracked, addr, size, prot, flags, fd, off, StringIndexer::instance()->index(tname)));
+}
+
+void Parser::handleMunmap(bool tracked)
+{
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
+
+    mEvents.push_back(std::make_shared<MunmapEvent>(tracked, addr, size));
 }
 
 bool Parser::parse(const uint8_t* data, size_t size)
@@ -157,7 +165,7 @@ bool Parser::parse(const uint8_t* data, size_t size)
 
     while (!mError && mData < mEnd) {
         const auto type = readData<RecordType>();
-        //printf("hello %u\n", static_cast<std::underlying_type_t<RecordType>>(type));
+        // printf("hello %u\n", static_cast<std::underlying_type_t<RecordType>>(type));
         switch (type) {
         case RecordType::Executable:
             handleExe();
@@ -175,17 +183,16 @@ bool Parser::parse(const uint8_t* data, size_t size)
         case RecordType::Malloc:
             break;
         case RecordType::MmapTracked:
-            handleMmap(RecordType::MmapTracked);
+            handleMmap(true);
             break;
         case RecordType::MmapUntracked:
-            handleMmap(RecordType::MmapUntracked);
-            printf("mmap untracked\n");
+            handleMmap(false);
             break;
         case RecordType::MunmapTracked:
-            printf("unmmap tracked\n");
+            handleMunmap(true);
             break;
         case RecordType::MunmapUntracked:
-            printf("unmmap untracked\n");
+            handleMunmap(true);
             break;
         case RecordType::PageFault:
             handlePageFault();
@@ -265,6 +272,7 @@ json MmapEvent::to_json() const
 {
     json jalloc;
     jalloc.push_back(Type::Mmap);
+    jalloc.push_back(tracked ? 1 : 0);
     jalloc.push_back(addr);
     jalloc.push_back(size);
     jalloc.push_back(prot);
@@ -273,6 +281,17 @@ json MmapEvent::to_json() const
     jalloc.push_back(offset);
     jalloc.push_back(thread);
     jalloc.push_back(stack_json());
+
+    return jalloc;
+}
+
+json MunmapEvent::to_json() const
+{
+    json jalloc;
+    jalloc.push_back(Type::Mmap);
+    jalloc.push_back(tracked ? 1 : 0);
+    jalloc.push_back(addr);
+    jalloc.push_back(size);
 
     return jalloc;
 }

@@ -32,6 +32,18 @@ public:
         const uint32_t size { 0 };
     };
 
+    class Scope
+    {
+    public:
+        Scope(Recorder* recorder);
+        ~Scope();
+
+    private:
+        Recorder* mRecorder;
+        ScopedSpinlock mLock;
+        bool mWasLocked;
+    };
+
 private:
     static void process(Recorder* recorder);
 
@@ -41,8 +53,21 @@ private:
     std::vector<uint8_t> mData;
     std::thread mThread;
     std::atomic<bool> mRunning;
+    static thread_local bool tScoped;
     FILE* mFile { nullptr };
 };
+
+inline Recorder::Scope::Scope(Recorder* recorder)
+    : mRecorder(recorder), mLock(recorder->mLock)
+{
+    mWasLocked = recorder->tScoped;
+    recorder->tScoped = true;
+}
+
+inline Recorder::Scope::~Scope()
+{
+    mRecorder->tScoped = mWasLocked;
+}
 
 inline Recorder::Recorder()
 {
@@ -134,7 +159,9 @@ inline void Recorder::record(RecordType type, Ts... args)
 {
     const auto size = detail::recordSize(args...) + 1;
 
-    ScopedSpinlock lock(mLock);
+    if (!tScoped)
+        mLock.lock();
+
     if (mOffset + size >= mData.size()) {
         mData.resize(mOffset + size);
     }
@@ -143,6 +170,9 @@ inline void Recorder::record(RecordType type, Ts... args)
     *data++ = static_cast<uint8_t>(type);
     detail::record(data, args...);
     mOffset += size;
+
+    if (!tScoped)
+        mLock.unlock();
 }
 
 inline void Recorder::cleanup()
