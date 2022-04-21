@@ -82,10 +82,6 @@ inline bool Recorder::isScoped() const
 
 inline Recorder::Recorder()
 {
-    mData.resize(sizeof(FileVersion));
-    const auto version = FileVersion::Current;
-    memcpy(mData.data(), &version, sizeof(FileVersion));
-    mOffset = sizeof(FileVersion);
 }
 
 inline Recorder::String::String(const char* s)

@@ -62,6 +62,17 @@ void Recorder::process(Recorder* r)
 void Recorder::initialize(const char* file)
 {
     mFile = fopen(file, "w");
+    if (!mFile) {
+        fprintf(stderr, "Unable to open recorder file %s %d %m\n", file, errno);
+        abort();
+    }
+
+    const uint32_t version = static_cast<uint32_t>(FileVersion::Current);
+    if (fwrite(&version, sizeof(uint32_t), 1, mFile) != 1) {
+        fprintf(stderr, "Failed to write file version to %s %d %m\n", file, errno);
+        abort();
+    }
+
     mRunning.store(true, std::memory_order_release);
 
     mThread = std::thread(Recorder::process, this);
