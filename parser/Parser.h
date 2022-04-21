@@ -1,24 +1,26 @@
 #pragma once
 
 #include "Module.h"
+#include "json.h"
+#include <common/RecordType.h>
 #include <map>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <nlohmann/json.hpp>
 
 class Event
 {
 public:
     enum class Type {
-        Allocation
+        PageFault,
+        Mmap
     };
 
     Event(Type type);
     virtual ~Event() = default;
 
     Type type() const;
-    virtual nlohmann::json to_json() const = 0;
+    virtual json to_json() const = 0;
 
 private:
     Type mType;
@@ -30,19 +32,35 @@ public:
     StackEvent(Type type);
 
     std::vector<Address> stack;
-    nlohmann::json stack_json() const;
+    json stack_json() const;
 };
 
-class Allocation : public StackEvent
+class PageFaultEvent : public StackEvent
 {
 public:
-    Allocation(uint64_t a, uint64_t s, uint32_t t);
+    PageFaultEvent(uint64_t a, uint64_t s, uint32_t t);
 
     uint64_t addr;
     uint64_t size;
     uint32_t thread;
 
-    virtual nlohmann::json to_json() const override;
+    virtual json to_json() const override;
+};
+
+class MmapEvent : public StackEvent
+{
+public:
+    MmapEvent(uint64_t a, uint64_t s, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t);
+
+    uint64_t addr;
+    uint64_t size;
+    int32_t prot;
+    int32_t flags;
+    int32_t fd;
+    uint64_t offset;
+    uint32_t thread;
+
+    virtual json to_json() const override;
 };
 
 class Parser
@@ -61,6 +79,7 @@ private:
     void handleWorkingDirectory();
     void handleThreadName();
     void handlePageFault();
+    void handleMmap(RecordType type);
 
     void updateModuleCache();
 
@@ -103,8 +122,13 @@ inline StackEvent::StackEvent(Type type)
 {
 }
 
-inline Allocation::Allocation(uint64_t a, uint64_t s, uint32_t t)
-    : StackEvent(Type::Allocation), addr(a), size(s), thread(t)
+inline PageFaultEvent::PageFaultEvent(uint64_t a, uint64_t s, uint32_t t)
+    : StackEvent(Type::PageFault), addr(a), size(s), thread(t)
+{
+}
+
+inline MmapEvent::MmapEvent(uint64_t a, uint64_t s, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t)
+    : StackEvent(Type::Mmap), addr(a), size(s), prot(p), flags(f), fd(file), offset(o), thread(t)
 {
 }
 

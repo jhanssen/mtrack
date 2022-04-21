@@ -1,6 +1,5 @@
 #include "Parser.h"
 #include "StringIndexer.h"
-#include <common/RecordType.h>
 #include <common/Version.h>
 #include <cassert>
 #include <climits>
@@ -65,7 +64,8 @@ void Parser::handleStack()
         // printf("found module %s\n", mod->fileName().c_str());
         assert(!mEvents.empty());
         switch (mEvents.back()->type()) {
-        case Event::Type::Allocation:
+        case Event::Type::PageFault:
+        case Event::Type::Mmap:
             static_cast<StackEvent*>(mEvents.back().get())->stack.push_back(mod->resolveAddress(ip));
             break;
         default:
@@ -114,7 +114,26 @@ void Parser::handlePageFault()
         tname = tn->second;
     }
 
-    mEvents.push_back(std::make_shared<Allocation>(addr, 4096, StringIndexer::instance()->index(tname)));
+    mEvents.push_back(std::make_shared<PageFaultEvent>(addr, 4096, StringIndexer::instance()->index(tname)));
+}
+
+void Parser::handleMmap(RecordType type)
+{
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
+    const auto prot = readData<int32_t>();
+    const auto flags = readData<int32_t>();
+    const auto fd = readData<int32_t>();
+    const auto off = readData<uint64_t>();
+    const auto tid = readData<uint32_t>();
+
+    std::string tname;
+    auto tn = mThreadNames.find(tid);
+    if (tn != mThreadNames.end()) {
+        tname = tn->second;
+    }
+
+    mEvents.push_back(std::make_shared<MmapEvent>(addr, size, prot, flags, fd, off, StringIndexer::instance()->index(tname)));
 }
 
 bool Parser::parse(const uint8_t* data, size_t size)
@@ -155,9 +174,18 @@ bool Parser::parse(const uint8_t* data, size_t size)
             break;
         case RecordType::Malloc:
             break;
-        case RecordType::Mmap:
+        case RecordType::MmapTracked:
+            handleMmap(RecordType::MmapTracked);
             break;
-        case RecordType::Munmap:
+        case RecordType::MmapUntracked:
+            handleMmap(RecordType::MmapUntracked);
+            printf("mmap untracked\n");
+            break;
+        case RecordType::MunmapTracked:
+            printf("unmmap tracked\n");
+            break;
+        case RecordType::MunmapUntracked:
+            printf("unmmap untracked\n");
             break;
         case RecordType::PageFault:
             handlePageFault();
@@ -183,8 +211,6 @@ bool Parser::parse(const uint8_t* data, size_t size)
 
 std::string Parser::finalize() const
 {
-    using json = nlohmann::json;
-
     json root;
 
     root["strings"] = json(StringIndexer::instance()->strs());
@@ -198,10 +224,8 @@ std::string Parser::finalize() const
     return root.dump();
 }
 
-nlohmann::json StackEvent::stack_json() const
+json StackEvent::stack_json() const
 {
-    using json = nlohmann::json;
-
     auto makeFrame = [](const Frame& frame) {
         json jframe;
         jframe.push_back(frame.function);
@@ -225,14 +249,28 @@ nlohmann::json StackEvent::stack_json() const
     return jstack;
 }
 
-nlohmann::json Allocation::to_json() const
+json PageFaultEvent::to_json() const
 {
-    using json = nlohmann::json;
-
     json jalloc;
-    jalloc.push_back(Type::Allocation);
+    jalloc.push_back(Type::PageFault);
     jalloc.push_back(addr);
     jalloc.push_back(size);
+    jalloc.push_back(thread);
+    jalloc.push_back(stack_json());
+
+    return jalloc;
+}
+
+json MmapEvent::to_json() const
+{
+    json jalloc;
+    jalloc.push_back(Type::Mmap);
+    jalloc.push_back(addr);
+    jalloc.push_back(size);
+    jalloc.push_back(prot);
+    jalloc.push_back(flags);
+    jalloc.push_back(fd);
+    jalloc.push_back(offset);
     jalloc.push_back(thread);
     jalloc.push_back(stack_json());
 

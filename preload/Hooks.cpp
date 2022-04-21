@@ -462,8 +462,19 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     if (!data->hooked || ret == MAP_FAILED)
         return ret;
 
-    if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)) {
+    if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS) && fd == -1) {
         trackMmap(ret, length, prot, flags);
+        data->recorder.record(RecordType::MmapTracked, reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length),
+                              prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()));
+    } else {
+        data->recorder.record(RecordType::MmapUntracked, reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length),
+                              prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()));
+    }
+
+    ThreadStack stack(0);
+    while (!stack.atEnd()) {
+        data->recorder.record(RecordType::Stack, stack.ip());
+        stack.next();
     }
 
     return ret;
@@ -480,14 +491,25 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, off_t pgoff
     if (!data->hooked || ret == MAP_FAILED)
         return ret;
 
-    if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)) {
+    if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS) && fd == -1) {
         trackMmap(ret, length, prot, flags);
+        data->recorder.record(RecordType::MmapTracked, reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length),
+                              prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()));
+    } else {
+        data->recorder.record(RecordType::MmapUntracked, reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length),
+                              prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()));
+    }
+
+    ThreadStack stack(0);
+    while (!stack.atEnd()) {
+        data->recorder.record(RecordType::Stack, stack.ip());
+        stack.next();
     }
 
     return ret;
 }
 
-int munmap(void* addr, size_t len)
+int munmap(void* addr, size_t length)
 {
     std::call_once(hookOnce, Hooks::hook);
 
@@ -500,37 +522,37 @@ int munmap(void* addr, size_t len)
 
     {
         // printf("-unmaping %p(%p) %zu\n", addr, reinterpret_cast<uint8_t*>(addr) + len, len);
-        bool updated = false;
-        MmapWalker::walk(addr, len, [&updated](MmapWalker::RangeType type, auto it, void* addr, size_t& len, size_t used) {
+        bool tracked = false;
+        MmapWalker::walk(addr, length, [&tracked](MmapWalker::RangeType type, auto it, void* waddr, size_t& wlength, size_t used) {
             switch (type) {
             case MmapWalker::RangeType::Start: {
                 // update start item
                 // printf("FUCK %p(%p) vs %p(%p)\n", addr, reinterpret_cast<uint8_t*>(addr) + len,
                 //        std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it));
-                updated = true;
+                tracked = true;
                 const auto oldlen = std::get<1>(*it);
-                std::get<1>(*it) = reinterpret_cast<uint8_t*>(addr) - reinterpret_cast<uint8_t*>(std::get<0>(*it));
+                std::get<1>(*it) = reinterpret_cast<uint8_t*>(waddr) - reinterpret_cast<uint8_t*>(std::get<0>(*it));
                 // if addr is fully contained in this item, make another new item at the end
-                if (reinterpret_cast<uint8_t*>(addr) + len < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) {
-                    const auto remlen = (reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) - (reinterpret_cast<uint8_t*>(addr) + len);
-                    it = data->mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(addr) + len, remlen, std::get<2>(*it)));
-                    len = 0;
+                if (reinterpret_cast<uint8_t*>(waddr) + wlength < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) {
+                    const auto remlen = (reinterpret_cast<uint8_t*>(std::get<0>(*it)) + oldlen) - (reinterpret_cast<uint8_t*>(waddr) + wlength);
+                    it = data->mmapRanges.insert(it + 1, std::make_tuple(reinterpret_cast<uint8_t*>(waddr) + wlength, remlen, std::get<2>(*it)));
+                    wlength = 0;
                 } else {
                     // printf("FUCK AGAIN %zu vs %zu (%zu %zu)\n", len, oldlen - std::get<1>(*it), oldlen, std::get<1>(*it));
-                    assert(len >= oldlen - std::get<1>(*it));
-                    len -= oldlen - std::get<1>(*it);
+                    assert(wlength >= oldlen - std::get<1>(*it));
+                    wlength -= oldlen - std::get<1>(*it);
                 }
                 return it + 1; }
             case MmapWalker::RangeType::Middle:
-                updated = true;
-                len -= std::get<1>(*it);
+                tracked = true;
+                wlength -= std::get<1>(*it);
                 return data->mmapRanges.erase(it);
             case MmapWalker::RangeType::End:
                 // update end item
-                updated = true;
-                reinterpret_cast<uint8_t*&>(std::get<0>(*it)) += len;
-                std::get<1>(*it) -= len;
-                len = 0;
+                tracked = true;
+                reinterpret_cast<uint8_t*&>(std::get<0>(*it)) += wlength;
+                std::get<1>(*it) -= wlength;
+                wlength = 0;
                 return it + 1;
             default:
                 return it + 1;
@@ -538,6 +560,9 @@ int munmap(void* addr, size_t len)
             assert(false && "invalid MmapWalker::RangeType for mmap");
             __builtin_unreachable();
         });
+
+        data->recorder.record(tracked ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
+                              reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length));
         // if (updated) {
         //     printf("2--\n");
         //     for (const auto& item : data->mmapRanges) {
@@ -546,7 +571,7 @@ int munmap(void* addr, size_t len)
         // }
     }
 
-    const auto ret = data->munmap(addr, len);
+    const auto ret = data->munmap(addr, length);
     // if (len > 1000000) {
     //     int j, nptrs;
     //     void *buffer[100];
