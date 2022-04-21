@@ -177,7 +177,7 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, 
         fileName = "s";
     }
 
-    Recorder::Scope recorderScope(&data->recorder);
+    assert(data->recorder.isScoped());
     data->recorder.record(RecordType::Library, Recorder::String(fileName), static_cast<uint64_t>(info->dlpi_addr));
 
     for (int i = 0; i < info->dlpi_phnum; i++) {
@@ -212,6 +212,9 @@ static void hookThread()
         // printf("- fault thread 0\n");
 
         if (data->modulesDirty.load(std::memory_order_acquire)) {
+            // need to lock the recorder scope here instead of inside the callback
+            // since frames above other calls to dl_iterate_phdr may have already locked our scope
+            Recorder::Scope recorderScope(&data->recorder);
             dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
             data->modulesDirty.store(false, std::memory_order_release);
         }

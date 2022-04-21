@@ -44,6 +44,8 @@ public:
         bool mWasLocked;
     };
 
+    bool isScoped() const;
+
 private:
     static void process(Recorder* recorder);
 
@@ -58,15 +60,24 @@ private:
 };
 
 inline Recorder::Scope::Scope(Recorder* recorder)
-    : mRecorder(recorder), mLock(recorder->mLock)
+    : mRecorder(recorder), mLock(recorder->mLock, false)
 {
     mWasLocked = recorder->tScoped;
-    recorder->tScoped = true;
+    if (!mWasLocked) {
+        recorder->tScoped = true;
+        mLock.lock();
+    }
 }
 
 inline Recorder::Scope::~Scope()
 {
-    mRecorder->tScoped = mWasLocked;
+    if (!mWasLocked)
+        mRecorder->tScoped = mWasLocked;
+}
+
+inline bool Recorder::isScoped() const
+{
+    return tScoped;
 }
 
 inline Recorder::Recorder()

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Waiter.h"
+#include <cassert>
 
 class Spinlock
 {
@@ -23,17 +24,36 @@ inline Spinlock::Spinlock()
 class ScopedSpinlock
 {
 public:
-    ScopedSpinlock(Spinlock& lock)
-        : mLock(lock)
+    ScopedSpinlock(Spinlock& lock, bool dolock = true)
+        : mLock(lock), mLocked(false)
     {
-        mLock.lock();
+        if (dolock) {
+            mLocked = true;
+            mLock.lock();
+        }
     }
 
     ~ScopedSpinlock()
     {
+        if (mLocked)
+            mLock.unlock();
+    }
+
+    void lock()
+    {
+        assert(!mLocked);
+        mLocked = true;
+        mLock.lock();
+    }
+
+    void unlock()
+    {
+        assert(mLocked);
+        mLocked = false;
         mLock.unlock();
     }
 
 private:
     Spinlock& mLock;
+    bool mLocked;
 };
