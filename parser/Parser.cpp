@@ -258,40 +258,40 @@ json StackEvent::stack_json() const
 
 json PageFaultEvent::to_json() const
 {
-    json jalloc;
-    jalloc.push_back(Type::PageFault);
-    jalloc.push_back(addr);
-    jalloc.push_back(size);
-    jalloc.push_back(thread);
-    jalloc.push_back(stack_json());
+    json jpf;
+    jpf.push_back(Type::PageFault);
+    jpf.push_back(addr);
+    jpf.push_back(size);
+    jpf.push_back(thread);
+    jpf.push_back(stack_json());
 
-    return jalloc;
+    return jpf;
 }
 
 json MmapEvent::to_json() const
 {
-    json jalloc;
-    jalloc.push_back(Type::Mmap);
-    jalloc.push_back(tracked ? 1 : 0);
-    jalloc.push_back(addr);
-    jalloc.push_back(size);
-    jalloc.push_back(prot);
-    jalloc.push_back(flags);
-    jalloc.push_back(fd);
-    jalloc.push_back(offset);
-    jalloc.push_back(thread);
-    jalloc.push_back(stack_json());
+    json jmmap;
+    jmmap.push_back(Type::Mmap);
+    jmmap.push_back(tracked ? 1 : 0);
+    jmmap.push_back(addr);
+    jmmap.push_back(size);
+    jmmap.push_back(prot);
+    jmmap.push_back(flags);
+    jmmap.push_back(fd);
+    jmmap.push_back(offset);
+    jmmap.push_back(thread);
+    jmmap.push_back(stack_json());
 
-    return jalloc;
+    return jmmap;
 }
 
 json MunmapEvent::to_json() const
 {
-    json jalloc;
-    jalloc.push_back(Type::Mmap);
-    jalloc.push_back(tracked ? 1 : 0);
-    jalloc.push_back(addr);
-    jalloc.push_back(size);
+    json jmunmap;
+    jmunmap.push_back(Type::Mmap);
+    jmunmap.push_back(tracked ? 1 : 0);
+    jmunmap.push_back(addr);
+    jmunmap.push_back(size);
 
-    return jalloc;
+    return jmunmap;
 }
