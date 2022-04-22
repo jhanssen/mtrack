@@ -195,6 +195,7 @@ bool Parser::parse(const uint8_t* data, size_t size)
 
 
     while (!mError && mData < mEnd) {
+        ++mRecordings;
         const auto type = readData<RecordType>();
         // printf("hello %u\n", static_cast<std::underlying_type_t<RecordType>>(type));
         switch (type) {
@@ -296,6 +297,11 @@ std::string Parser::finalize() const
         events.push_back(event->to_json());
     }
     root["events"] = std::move(events);
+
+    printf("%zu events. %zu recordings.\n%zu strings %zu hits %zu misses. %zu stacks %zu hits %zu misses\n",
+           mEvents.size(), mRecordings,
+           mStringIndexer.size(), mStringIndexer.hits(), mStringIndexer.misses(),
+           mStackIndexer.size(), mStackIndexer.hits(), mStackIndexer.misses());
 
     return root.dump();
 }

@@ -145,6 +145,7 @@ private:
     std::map<uint64_t, ModuleEntry> mModuleCache;
     std::unordered_map<uint64_t, std::string> mThreadNames;
     std::vector<std::shared_ptr<Event>> mEvents;
+    size_t mRecordings {};
 };
 
 inline Event::Event(RecordType t)

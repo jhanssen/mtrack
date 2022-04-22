@@ -21,10 +21,14 @@ public:
 
     const std::vector<T>& values() const;
 
+    size_t hits() const;
+    size_t misses() const;
+
 private:
     T mEmpty;
     std::unordered_map<T, int32_t> mValueMap;
     std::vector<T> mValueList;
+    size_t mHits {}, mMisses {};
 };
 
 template<typename T>
@@ -33,8 +37,11 @@ inline int32_t Indexer<T>::index(const T& str)
     if (str.empty())
         return -1;
     auto it = mValueMap.find(str);
-    if (it != mValueMap.end())
+    if (it != mValueMap.end()) {
+        ++mHits;
         return it->second;
+    }
+    ++mMisses;
     const int32_t id = static_cast<int32_t>(mValueList.size());
     mValueMap.insert(std::make_pair(str, id));
     mValueList.push_back(str);
@@ -59,4 +66,16 @@ template<typename T>
 inline const std::vector<T>& Indexer<T>::values() const
 {
     return mValueList;
+}
+
+template<typename T>
+inline size_t Indexer<T>::hits() const
+{
+    return mHits;
+}
+
+template<typename T>
+inline size_t Indexer<T>::misses() const
+{
+    return mMisses;
 }
