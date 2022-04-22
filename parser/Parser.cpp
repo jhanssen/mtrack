@@ -5,6 +5,25 @@
 #include <cstdlib>
 #include <limits>
 
+void Parser::updateModuleCache()
+{
+    mModuleCache.clear();
+
+    for (const auto& m : mModules) {
+        const auto& rs = m->ranges();
+        for (const auto& r : rs) {
+            mModuleCache.insert(std::make_pair(r.first, ModuleEntry { r.second, m.get() }));
+        }
+    }
+}
+
+int32_t Parser::hashStack()
+{
+    const auto idx = mStackIndexer.index(mCurrentStack);
+    mCurrentStack.clear();
+    return idx;
+}
+
 void Parser::handleLibrary()
 {
     auto name = readData<std::string>();
@@ -27,25 +46,6 @@ void Parser::handleLibrary()
     auto mod = Module::create(mStringIndexer, name, start);
     mCurrentModule = mod;
     mModules.insert(mod);
-}
-
-void Parser::updateModuleCache()
-{
-    mModuleCache.clear();
-
-    for (const auto& m : mModules) {
-        const auto& rs = m->ranges();
-        for (const auto& r : rs) {
-            mModuleCache.insert(std::make_pair(r.first, ModuleEntry { r.second, m.get() }));
-        }
-    }
-}
-
-int32_t Parser::hashStack()
-{
-    const auto idx = mStackIndexer.index(mCurrentStack);
-    mCurrentStack.clear();
-    return idx;
 }
 
 void Parser::handleStack()
@@ -277,19 +277,18 @@ std::string Parser::finalize() const
 
         json jstack;
         for (const auto& saddr : stack) {
-            auto frame = makeFrame(saddr.frame);
+            auto jframe = makeFrame(saddr.frame);
             if (!saddr.inlined.empty()) {
                 json inlined;
                 for (const auto& inl : saddr.inlined) {
                     inlined.push_back(makeFrame(inl));
                 }
-                frame.push_back(std::move(inlined));
+                jframe.push_back(std::move(inlined));
             }
-            jstack.push_back(std::move(frame));
+            jstack.push_back(std::move(jframe));
         }
         jstacks.push_back(std::move(jstack));
     }
-
     root["stacks"] = std::move(jstacks);
 
     json events;
