@@ -1,3 +1,4 @@
+cmake_minimum_required(VERSION 3.13)
 set(SOURCES
     main.cpp
     Module.cpp
