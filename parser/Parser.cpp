@@ -28,7 +28,7 @@ void Parser::handleLibrary()
 {
     auto name = readData<std::string>();
     auto start = readData<uint64_t>();
-    if (name.substr(0, 13) == "linux-vdso.so") {
+    if (name.substr(0, 13) == "linux-vdso.so" || name.substr(0, 13) == "linux-gate.so") {
         // skip this
         return;
     }
