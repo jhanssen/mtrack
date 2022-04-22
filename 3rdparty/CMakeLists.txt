@@ -6,12 +6,10 @@ if (${CMAKE_CURRENT_BINARY_DIR} STREQUAL ${CMAKE_CURRENT_LIST_DIR})
     set(UNWIND_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/install/libunwind)
 endif ()
 
+set(UNWIND_EXTERNAL_LIB ${UNWIND_BINARY_DIR}/prefix/lib/libunwind.so)
 set(UNWIND_CONFIGURE ${UNWIND_BINARY_DIR}/configure --prefix ${UNWIND_BINARY_DIR}/prefix --disable-tests --disable-documentation --disable-coredump --disable-ptrace --disable-setjmp --disable-debug-frame --disable-minidebuginfo --disable-per-thread-cache --disable-cxx-exceptions --disable-debug --disable-weak-backtrace --disable-unwind-header)
 if (${MTRACK_32})
-    set(UNWIND_CONFIGURE ${UNWIND_CONFIGURE} --host i686-libnux-gnu --build i686-libnux-gnu CFLAGS=-m32)
-    set(UNWIND_EXTERNAL_LIB ${UNWIND_BINARY_DIR}/prefix/lib/libunwind-x86.so)
-else ()
-    set(UNWIND_EXTERNAL_LIB ${UNWIND_BINARY_DIR}/prefix/lib/libunwind.so)
+    set(UNWIND_CONFIGURE ${UNWIND_CONFIGURE} --host=i686-pc-linux-gnu CFLAGS=-m32 LDFLAGS=-m32)
 endif ()
 
 ExternalProject_Add(unwind_external
