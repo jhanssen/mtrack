@@ -25,6 +25,15 @@ ExternalProject_Add(unwind_external
     BUILD_BYPRODUCTS ${UNWIND_EXTERNAL_LIB}
     )
 
+file(MAKE_DIRECTORY ${UNWIND_BINARY_DIR}/include)
+
+add_library(unwind_static STATIC IMPORTED GLOBAL)
+add_dependencies(unwind_static unwind_external)
+target_include_directories(unwind_static INTERFACE ${UNWIND_BINARY_DIR}/include)
+set_target_properties(unwind_static PROPERTIES IMPORTED_LOCATION ${UNWIND_EXTERNAL_LIB})
+add_library(unwind::static ALIAS unwind_static)
+
+
 # patch libbacktrace
 find_program(PATCH
     NAMES patch
@@ -41,17 +50,9 @@ if (NOT SHELL)
     message(FATAL_ERROR "No shell program")
 endif()
 
-file(MAKE_DIRECTORY ${UNWIND_BINARY_DIR}/include)
-
-add_library(unwind_static STATIC IMPORTED GLOBAL)
-add_dependencies(unwind_static unwind_external)
-target_include_directories(unwind_static INTERFACE ${UNWIND_BINARY_DIR}/include)
-set_target_properties(unwind_static PROPERTIES IMPORTED_LOCATION ${UNWIND_EXTERNAL_LIB})
-add_library(unwind::static ALIAS unwind_static)
-
-set(LIBBACKTRACE_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR})
+# set(LIBBACKTRACE_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR})
 set(LIBBACKTRACE_DIR ${CMAKE_CURRENT_LIST_DIR}/libbacktrace)
-set(LIBBACKTRACE_GEN_DIR ${CMAKE_CURRENT_LIST_DIR}/libbacktrace_gen)
+# set(LIBBACKTRACE_GEN_DIR ${CMAKE_CURRENT_LIST_DIR}/libbacktrace_gen)
 
 # this needs a revisit
 file(MD5 ${LIBBACKTRACE_DIR}/internal.h INTERNAL_MD5)
@@ -62,23 +63,34 @@ if (NOT ${INTERNAL_MD5} STREQUAL "d9df3726dddb9356f78b10af5d1942c5")
         )
 endif()
 
-set(LIBBACKTRACE_SOURCES
-    ${LIBBACKTRACE_DIR}/atomic.c
-    ${LIBBACKTRACE_DIR}/dwarf.c
-    ${LIBBACKTRACE_DIR}/fileline.c
-    ${LIBBACKTRACE_DIR}/posix.c
-    ${LIBBACKTRACE_DIR}/print.c
-    ${LIBBACKTRACE_DIR}/sort.c
-    ${LIBBACKTRACE_DIR}/state.c
-    ${LIBBACKTRACE_DIR}/backtrace.c
-    ${LIBBACKTRACE_DIR}/simple.c
-    ${LIBBACKTRACE_DIR}/elf.c
-    ${LIBBACKTRACE_DIR}/mmapio.c
-    ${LIBBACKTRACE_DIR}/mmap.c)
+set(BACKTRACE_DIR ${CMAKE_CURRENT_LIST_DIR}/libbacktrace)
+set(BACKTRACE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/libbacktrace)
+if (${CMAKE_CURRENT_BINARY_DIR} STREQUAL ${CMAKE_CURRENT_LIST_DIR})
+    set(BACKTRACE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/install/libbacktrace)
+endif ()
 
-add_library(backtrace_static OBJECT ${LIBBACKTRACE_SOURCES})
-target_include_directories(backtrace_static PUBLIC ${LIBBACKTRACE_INCLUDE_DIR})
-target_include_directories(backtrace_static PRIVATE ${LIBBACKTRACE_GEN_DIR})
+set(BACKTRACE_EXTERNAL_LIB ${BACKTRACE_BINARY_DIR}/prefix/lib/libbacktrace.a)
+set(BACKTRACE_CONFIGURE ${BACKTRACE_DIR}/configure --prefix ${BACKTRACE_BINARY_DIR}/prefix --disable-shared)
+if (${MTRACK_32})
+    set(BACKTRACE_CONFIGURE ${BACKTRACE_CONFIGURE} --host=i686-pc-linux-gnu "CFLAGS=-m32 -fPIC" LDFLAGS=-m32)
+else ()
+    set(BACKTRACE_CONFIGURE ${BACKTRACE_CONFIGURE} CFLAGS=-fPIC)
+endif ()
+
+ExternalProject_Add(backtrace_external
+    CONFIGURE_COMMAND ${BACKTRACE_CONFIGURE}
+    SOURCE_DIR ${BACKTRACE_DIR}
+    BINARY_DIR ${BACKTRACE_BINARY_DIR}
+    INSTALL_DIR ${BACKTRACE_BINARY_DIR}
+    BUILD_BYPRODUCTS ${BACKTRACE_EXTERNAL_LIB}
+    )
+
+file(MAKE_DIRECTORY ${BACKTRACE_BINARY_DIR}/include)
+
+add_library(backtrace_static STATIC IMPORTED GLOBAL)
+add_dependencies(backtrace_static backtrace_external)
+target_include_directories(backtrace_static INTERFACE ${BACKTRACE_DIR})
+set_target_properties(backtrace_static PROPERTIES IMPORTED_LOCATION ${BACKTRACE_EXTERNAL_LIB})
 add_library(backtrace::static ALIAS backtrace_static)
 
 add_subdirectory(json)
