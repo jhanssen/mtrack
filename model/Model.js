@@ -46,7 +46,7 @@ class Range
 
     remove(range)
     {
-        console.log("removing range", range, this.intersects(range));
+        // console.log("removing range", range, this.intersects(range));
         switch (this.intersects(range)) {
         case Range.Entire:
             return undefined;
@@ -89,7 +89,26 @@ class Ranges
         this.remove(range);
         // insertion sort?
         this.ranges.push(range);
-        this.sort();
+        this.ranges = this.ranges.sort((l, r) => {
+            if (r.start >= l.start && r.end < l.end) {
+                throw new Error(`Overlapping ranges ${r} ${l}`);
+            }
+            if (l.start >= r.start && l.end < r.end) {
+                throw new Error(`Overlapping ranges ${r} ${l}`);
+            }
+            return l.start - r.start;
+        });
+        let idx=1;
+        while (idx < this.ranges.length) {
+            const prev = this.ranges[idx - 1];
+            const cur = this.ranges[idx];
+            if (prev.end == cur.start) {
+                prev.length += cur.length;
+                this.ranges.splice(idx);
+            } else {
+                ++idx;
+            }
+        }
     }
 
     remove(range)
@@ -121,30 +140,14 @@ class Ranges
             }
         }
     }
-
-    sort()
-    {
-        this.ranges = this.ranges.sort((l, r) => {
-            if (r.start >= l.start && r.end < l.end) {
-                throw new Error(`Overlapping ranges ${r} ${l}`);
-            }
-            if (l.start >= r.start && l.end < r.end) {
-                throw new Error(`Overlapping ranges ${r} ${l}`);
-            }
-            return l.start - r.start;
-        });
-        let idx=0;
-        while (idx < this.ranges.length) {
-
-        }
-    }
 };
 
-const ranges = new Ranges();
-ranges.add(new Range(0, 100));
-ranges.add(new Range(0, 50));
+// const ranges = new Ranges();
+// ranges.add(new Range(0, 100));
+// ranges.add(new Range(0, 50));
+// ranges.remove(new Range(0, 100));
 
-console.log(ranges);
+// console.log(ranges);
 
 class Model
 {
