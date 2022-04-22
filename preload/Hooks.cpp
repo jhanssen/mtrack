@@ -517,7 +517,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     }
 
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
-                          reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length), allocated,
+                          reinterpret_cast<uint64_t>(ret), static_cast<uint64_t>(length), allocated,
                           prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()));
 
     ThreadStack stack(0);
@@ -558,7 +558,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
     }
 
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
-                          reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length), allocated,
+                          reinterpret_cast<uint64_t>(ret), static_cast<uint64_t>(length), allocated,
                           prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()));
 
     ThreadStack stack(0);
