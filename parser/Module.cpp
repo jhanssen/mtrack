@@ -2,11 +2,11 @@
 #include "Creatable.h"
 #include <cassert>
 #include <cstring>
-#include <libbacktrace/backtrace.h>
+#include <backtrace.h>
 #include <cxxabi.h>
 
 extern "C" {
-#include <libbacktrace/internal.h>
+#include <internal.h>
 }
 
 std::vector<Module*> Module::sModules;
