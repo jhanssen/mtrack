@@ -1,16 +1,20 @@
 cmake_minimum_required(VERSION 3.13)
 include(ExternalProject)
 
-set(UNWIND_EXTERNAL_LIB ${CMAKE_CURRENT_BINARY_DIR}/libunwind/lib/libunwind.so)
+set(UNWIND_PREFIX ${CMAKE_CURRENT_BINARY_DIR}/libunwind)
+if (${CMAKE_CURRENT_BINARY_DIR} STREQUAL ${CMAKE_CURRENT_LIST_DIR})
+    set(UNWIND_PREFIX ${CMAKE_CURRENT_BINARY_DIR}/install/libunwind)
+endif ()
+set(UNWIND_EXTERNAL_LIB ${UNWIND_PREFIX}/lib/libunwind.so)
 
 ExternalProject_Add(unwind_external
     URL https://download.savannah.nongnu.org/releases/libunwind/libunwind-1.6.2.tar.gz
     URL_HASH SHA256=4a6aec666991fb45d0889c44aede8ad6eb108071c3554fcdff671f9c94794976
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_LIST_DIR}/libunwind/configure --prefix ${CMAKE_CURRENT_BINARY_DIR}/libunwind
+    CONFIGURE_COMMAND ${CMAKE_CURRENT_LIST_DIR}/libunwind/configure --prefix ${UNWIND_PREFIX}
     DOWNLOAD_DIR ${CMAKE_CURRENT_LIST_DIR}/libunwind
     SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/libunwind
-    BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/libunwind-build
-    INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/libunwind
+    BINARY_DIR ${UNWIND_PREFIX}/build
+    INSTALL_DIR ${UNWIND_PREFIX}
     BUILD_BYPRODUCTS ${UNWIND_EXTERNAL_LIB}
     )
 
@@ -30,11 +34,11 @@ if (NOT SHELL)
     message(FATAL_ERROR "No shell program")
 endif()
 
-file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libunwind/include)
+file(MAKE_DIRECTORY ${UNWIND_PREFIX}/include)
 
 add_library(unwind_shared SHARED IMPORTED GLOBAL)
 add_dependencies(unwind_shared unwind_external)
-target_include_directories(unwind_shared INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/libunwind/include)
+target_include_directories(unwind_shared INTERFACE ${UNWIND_PREFIX}/include)
 set_target_properties(unwind_shared PROPERTIES IMPORTED_LOCATION ${UNWIND_EXTERNAL_LIB})
 add_library(unwind::shared ALIAS unwind_shared)
 
