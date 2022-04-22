@@ -1,20 +1,27 @@
 cmake_minimum_required(VERSION 3.13)
 include(ExternalProject)
 
-set(UNWIND_PREFIX ${CMAKE_CURRENT_BINARY_DIR}/libunwind)
+set(UNWIND_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/libunwind)
 if (${CMAKE_CURRENT_BINARY_DIR} STREQUAL ${CMAKE_CURRENT_LIST_DIR})
-    set(UNWIND_PREFIX ${CMAKE_CURRENT_BINARY_DIR}/install/libunwind)
+    set(UNWIND_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/install/libunwind)
 endif ()
-set(UNWIND_EXTERNAL_LIB ${UNWIND_PREFIX}/lib/libunwind.so)
+
+set(UNWIND_CONFIGURE ${UNWIND_BINARY_DIR}/configure --prefix ${UNWIND_BINARY_DIR}/prefix)
+if (${MTRACK_32})
+    set(UNWIND_CONFIGURE ${UNWIND_CONFIGURE} "CFLAGS=-m32" LDFLAGS=-m32 --target x86)
+    set(UNWIND_EXTERNAL_LIB ${UNWIND_BINARY_DIR}/prefix/lib/libunwind-x86.so)
+else ()
+    set(UNWIND_EXTERNAL_LIB ${UNWIND_BINARY_DIR}/prefix/lib/libunwind.so)
+endif ()
 
 ExternalProject_Add(unwind_external
     URL https://download.savannah.nongnu.org/releases/libunwind/libunwind-1.6.2.tar.gz
     URL_HASH SHA256=4a6aec666991fb45d0889c44aede8ad6eb108071c3554fcdff671f9c94794976
-    CONFIGURE_COMMAND ${CMAKE_CURRENT_LIST_DIR}/libunwind/configure --prefix ${UNWIND_PREFIX}
-    DOWNLOAD_DIR ${CMAKE_CURRENT_LIST_DIR}/libunwind
-    SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/libunwind
-    BINARY_DIR ${UNWIND_PREFIX}/build
-    INSTALL_DIR ${UNWIND_PREFIX}
+    CONFIGURE_COMMAND ${UNWIND_CONFIGURE}
+    DOWNLOAD_DIR ${UNWIND_BINARY_DIR}
+    SOURCE_DIR ${UNWIND_BINARY_DIR}
+    BINARY_DIR ${UNWIND_BINARY_DIR}
+    INSTALL_DIR ${UNWIND_BINARY_DIR}
     BUILD_BYPRODUCTS ${UNWIND_EXTERNAL_LIB}
     )
 
@@ -34,11 +41,11 @@ if (NOT SHELL)
     message(FATAL_ERROR "No shell program")
 endif()
 
-file(MAKE_DIRECTORY ${UNWIND_PREFIX}/include)
+file(MAKE_DIRECTORY ${UNWIND_BINARY_DIR}/include)
 
 add_library(unwind_shared SHARED IMPORTED GLOBAL)
 add_dependencies(unwind_shared unwind_external)
-target_include_directories(unwind_shared INTERFACE ${UNWIND_PREFIX}/include)
+target_include_directories(unwind_shared INTERFACE ${UNWIND_BINARY_DIR}/include)
 set_target_properties(unwind_shared PROPERTIES IMPORTED_LOCATION ${UNWIND_EXTERNAL_LIB})
 add_library(unwind::shared ALIAS unwind_shared)
 

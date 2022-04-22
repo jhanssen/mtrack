@@ -528,7 +528,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     return ret;
 }
 
-void* mmap64(void* addr, size_t length, int prot, int flags, int fd, off_t pgoffset)
+void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t pgoffset)
 {
     std::call_once(hookOnce, Hooks::hook);
 
