@@ -34,6 +34,11 @@ typedef void* (*DlOpenSig)(const char*, int);
 typedef int  (*DlCloseSig)(void*);
 typedef int (*PthreadSetnameSig)(pthread_t thread, const char* name);
 
+inline uint64_t ptr_cast(void *ptr)
+{
+    return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr));
+}
+
 class Hooks
 {
 public:
@@ -517,7 +522,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     }
 
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
-                          reinterpret_cast<uint64_t>(ret), static_cast<uint64_t>(length), allocated,
+                          ptr_cast(ret), static_cast<uint64_t>(length), allocated,
                           prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()));
 
     ThreadStack stack(0);
@@ -558,7 +563,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
     }
 
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
-                          reinterpret_cast<uint64_t>(ret), static_cast<uint64_t>(length), allocated,
+                          ptr_cast(ret), static_cast<uint64_t>(length), allocated,
                           prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()));
 
     ThreadStack stack(0);
@@ -631,7 +636,7 @@ int munmap(void* addr, size_t length)
     });
 
     data->recorder.record(tracked ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
-                          reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length), deallocated);
+                          ptr_cast(addr), static_cast<uint64_t>(length), deallocated);
     // if (updated) {
     //     printf("2--\n");
     //     for (const auto& item : data->mmapRanges) {
@@ -773,7 +778,7 @@ int madvise(void* addr, size_t length, int advice)
     }
 
     data->recorder.record(tracked ? RecordType::MadviseTracked : RecordType::MadviseUntracked,
-                          reinterpret_cast<uint64_t>(addr), static_cast<uint64_t>(length), advice, deallocated);
+                          ptr_cast(addr), static_cast<uint64_t>(length), advice, deallocated);
 
     return data->madvise(addr, length, advice);
 }
