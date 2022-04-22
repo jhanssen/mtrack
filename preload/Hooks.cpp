@@ -25,6 +25,7 @@
 #define PAGESIZE 4096
 
 typedef void* (*MmapSig)(void*, size_t, int, int, int, off_t);
+typedef void* (*Mmap64Sig)(void*, size_t, int, int, int, __off64_t);
 typedef void* (*MremapSig)(void*, size_t, size_t, int, ...);
 typedef int (*MunmapSig)(void*, size_t);
 typedef int (*MadviseSig)(void*, size_t, int);
@@ -43,7 +44,8 @@ private:
 };
 
 struct Data {
-    MmapSig mmap, mmap64;
+    MmapSig mmap;
+    Mmap64Sig mmap64;
     MunmapSig munmap;
     MremapSig mremap;
     MadviseSig madvise;
@@ -299,7 +301,7 @@ void Hooks::hook()
         printf("no mmap\n");
         abort();
     }
-    data->mmap64 = reinterpret_cast<MmapSig>(dlsym(RTLD_NEXT, "mmap64"));
+    data->mmap64 = reinterpret_cast<Mmap64Sig>(dlsym(RTLD_NEXT, "mmap64"));
     if (data->mmap64 == nullptr) {
         printf("no mmap64\n");
         abort();

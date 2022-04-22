@@ -9,7 +9,9 @@ endif ()
 set(UNWIND_EXTERNAL_LIB ${UNWIND_BINARY_DIR}/prefix/lib/libunwind.a)
 set(UNWIND_CONFIGURE ${UNWIND_BINARY_DIR}/configure --prefix ${UNWIND_BINARY_DIR}/prefix --disable-tests --disable-documentation --disable-coredump --disable-ptrace --disable-setjmp --disable-debug-frame --disable-minidebuginfo --disable-per-thread-cache --disable-cxx-exceptions --disable-debug --disable-weak-backtrace --disable-unwind-header --disable-shared)
 if (${MTRACK_32})
-    set(UNWIND_CONFIGURE ${UNWIND_CONFIGURE} --host=i686-pc-linux-gnu CFLAGS=-m32 LDFLAGS=-m32)
+    set(UNWIND_CONFIGURE ${UNWIND_CONFIGURE} --host=i686-pc-linux-gnu "CFLAGS=-m32 -fPIC" LDFLAGS=-m32)
+else ()
+    set(UNWIND_CONFIGURE ${UNWIND_CONFIGURE} CFLAGS=-fPIC)
 endif ()
 
 ExternalProject_Add(unwind_external
