@@ -45,24 +45,20 @@ void Stack::initialize(const StackInitializer& initializer)
 
     // set regs from other thread
 #ifdef __i386__
-#warning what goes here?
-    // unw_set_reg(&cursor, UNW_X86_R15, initializer.gregs[REG_R15]);
-    // unw_set_reg(&cursor, UNW_X86_R14, initializer.gregs[REG_R14]);
-    // unw_set_reg(&cursor, UNW_X86_R13, initializer.gregs[REG_R13]);
-    // unw_set_reg(&cursor, UNW_X86_R12, initializer.gregs[REG_R12]);
-    // unw_set_reg(&cursor, UNW_X86_RBP, initializer.gregs[REG_RBP]);
-    // unw_set_reg(&cursor, UNW_X86_RBX, initializer.gregs[REG_RBX]);
-    // unw_set_reg(&cursor, UNW_X86_R11, initializer.gregs[REG_R11]);
-    // unw_set_reg(&cursor, UNW_X86_R10, initializer.gregs[REG_R10]);
-    // unw_set_reg(&cursor, UNW_X86_R9,  initializer.gregs[REG_R9]);
-    // unw_set_reg(&cursor, UNW_X86_R8,  initializer.gregs[REG_R8]);
-    // unw_set_reg(&cursor, UNW_X86_RAX, initializer.gregs[REG_RAX]);
-    // unw_set_reg(&cursor, UNW_X86_RCX, initializer.gregs[REG_RCX]);
-    // unw_set_reg(&cursor, UNW_X86_RDX, initializer.gregs[REG_RDX]);
-    // unw_set_reg(&cursor, UNW_X86_RSI, initializer.gregs[REG_RSI]);
-    // unw_set_reg(&cursor, UNW_X86_RDI, initializer.gregs[REG_RDI]);
-    // unw_set_reg(&cursor, UNW_X86_RIP, initializer.gregs[REG_RIP]);
-    // unw_set_reg(&cursor, UNW_X86_RSP, initializer.gregs[REG_RSP]);
+    unw_set_reg(&cursor, UNW_X86_FS, initializer.gregs[REG_FS]);
+    unw_set_reg(&cursor, UNW_X86_ES, initializer.gregs[REG_ES]);
+    unw_set_reg(&cursor, UNW_X86_DS, initializer.gregs[REG_DS]);
+    unw_set_reg(&cursor, UNW_X86_EDI, initializer.gregs[REG_EDI]);
+    unw_set_reg(&cursor, UNW_X86_ESI, initializer.gregs[REG_ESI]);
+    unw_set_reg(&cursor, UNW_X86_EBP, initializer.gregs[REG_EBP]);
+    unw_set_reg(&cursor, UNW_X86_ESP, initializer.gregs[REG_ESP]);
+    unw_set_reg(&cursor, UNW_X86_EBX, initializer.gregs[REG_EBX]);
+    unw_set_reg(&cursor, UNW_X86_EDX, initializer.gregs[REG_EDX]);
+    unw_set_reg(&cursor, UNW_X86_ECX, initializer.gregs[REG_ECX]);
+    unw_set_reg(&cursor, UNW_X86_EAX, initializer.gregs[REG_EAX]);
+    unw_set_reg(&cursor, UNW_X86_EIP, initializer.gregs[REG_EIP]);
+    unw_set_reg(&cursor, UNW_X86_CS, initializer.gregs[REG_CS]);
+    unw_set_reg(&cursor, UNW_X86_SS, initializer.gregs[REG_SS]);
 #else
     unw_set_reg(&cursor, UNW_X86_64_R15, initializer.gregs[REG_R15]);
     unw_set_reg(&cursor, UNW_X86_64_R14, initializer.gregs[REG_R14]);
