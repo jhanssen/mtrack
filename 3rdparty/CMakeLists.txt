@@ -43,11 +43,11 @@ endif()
 
 file(MAKE_DIRECTORY ${UNWIND_BINARY_DIR}/include)
 
-add_library(unwind_shared SHARED IMPORTED GLOBAL)
-add_dependencies(unwind_shared unwind_external)
-target_include_directories(unwind_shared INTERFACE ${UNWIND_BINARY_DIR}/include)
-set_target_properties(unwind_shared PROPERTIES IMPORTED_LOCATION ${UNWIND_EXTERNAL_LIB})
-add_library(unwind::shared ALIAS unwind_shared)
+add_library(unwind_static STATIC IMPORTED GLOBAL)
+add_dependencies(unwind_static unwind_external)
+target_include_directories(unwind_static INTERFACE ${UNWIND_BINARY_DIR}/include)
+set_target_properties(unwind_static PROPERTIES IMPORTED_LOCATION ${UNWIND_EXTERNAL_LIB})
+add_library(unwind::static ALIAS unwind_static)
 
 set(LIBBACKTRACE_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR})
 set(LIBBACKTRACE_DIR ${CMAKE_CURRENT_LIST_DIR}/libbacktrace)
