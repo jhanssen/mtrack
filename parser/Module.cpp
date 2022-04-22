@@ -1,6 +1,5 @@
 #include "Module.h"
 #include "Creatable.h"
-#include "StringIndexer.h"
 #include <cassert>
 #include <cstring>
 #include <libbacktrace/backtrace.h>
@@ -31,8 +30,8 @@ static inline std::string demangle(const char* function)
 }
 
 
-Module::Module(const char* filename, uint64_t addr)
-    : mFileName(filename), mAddr(addr)
+Module::Module(Indexer<std::string>& indexer, const std::string& filename, uint64_t addr)
+    : mIndexer(indexer), mFileName(filename), mAddr(addr)
 {
     auto state = backtrace_create_state(mFileName.c_str(), false, btErrorHandler, this);
     if (!state)
@@ -60,13 +59,13 @@ void Module::btErrorHandler(void* data, const char* msg, int errnum)
     fprintf(stderr, "libbacktrace error %s: %s - %s(%d)\n", module->mFileName.c_str(), msg, strerror(errnum), errnum);
 };
 
-std::shared_ptr<Module> Module::create(const char* filename, uint64_t addr)
+std::shared_ptr<Module> Module::create(Indexer<std::string>& indexer, const std::string& filename, uint64_t addr)
 {
     // assume we'll never have a hash collision?
-    const uint32_t idx = StringIndexer::instance()->index(filename);
+    const uint32_t idx = indexer.index(filename);
     if (idx < sModules.size() && sModules[idx] != nullptr)
         return sModules[idx]->shared_from_this();
-    auto mod = Creatable<Module>::create(filename, addr);
+    auto mod = Creatable<Module>::create(indexer, filename, addr);
     if (idx >= sModules.size()) {
         const auto num = idx - sModules.size() + 1;
         sModules.reserve(sModules.size() + num);
@@ -86,42 +85,50 @@ void Module::addHeader(uint64_t addr, uint64_t len)
 
 Address Module::resolveAddress(uint64_t addr)
 {
-    Address resolvedAddr;
+    struct ModuleCallback
+    {
+        Module* module;
+        Address resolvedAddr;
+    } moduleCallback = {
+        this,
+        Address {}
+    };
 
     backtrace_pcinfo(
         mState, addr,
         [](void* data, uintptr_t /*addr*/, const char* file, int line, const char* function) -> int {
             // printf("pc frame %s %s %d\n", demangle(function).c_str(), file ? file : "(no file)", line);
-            auto indexer = StringIndexer::instance();
+            auto resolved = reinterpret_cast<ModuleCallback*>(data);
+            Indexer<std::string>* indexer = &resolved->module->mIndexer;
             Frame frame { indexer->index(demangle(function)), indexer->index(file ? std::string(file) : std::string {}), line };
-            auto resolved = reinterpret_cast<Address*>(data);
-            if (!resolved->valid()) {
-                resolved->frame = std::move(frame);
+            if (!resolved->resolvedAddr.valid()) {
+                resolved->resolvedAddr.frame = std::move(frame);
             } else {
-                resolved->inlined.push_back(std::move(frame));
+                resolved->resolvedAddr.inlined.push_back(std::move(frame));
             }
             return 0;
         },
         [](void* /*data*/, const char* msg, int errnum) {
             printf("pc frame bad %s %d\n", msg, errnum);
         },
-        &resolvedAddr);
+        &moduleCallback);
 
-    if (!resolvedAddr.valid()) {
+    if (!moduleCallback.resolvedAddr.valid()) {
         backtrace_syminfo(
             mState, addr,
             [](void* data, uintptr_t /*pc*/, const char* symname, uintptr_t /*symval*/, uintptr_t /*symsize*/) {
                 // printf("syminfo instead %s\n", demangle(symname).c_str());
-                auto resolved = reinterpret_cast<Address*>(data);
-                if (!resolved->valid()) {
-                    resolved->frame.function = StringIndexer::instance()->index(demangle(symname));
+                auto resolved = reinterpret_cast<ModuleCallback*>(data);
+                Indexer<std::string>* indexer = &resolved->module->mIndexer;
+                if (!resolved->resolvedAddr.valid()) {
+                    resolved->resolvedAddr.frame.function = indexer->index(demangle(symname));
                 }
             },
             [](void* /*data*/, const char* msg, int errnum) {
                 printf("syminfo frame bad %s %d\n", msg, errnum);
             },
-            &resolvedAddr);
+            &moduleCallback);
     }
 
-    return resolvedAddr;
+    return moduleCallback.resolvedAddr;
 }

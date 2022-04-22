@@ -253,6 +253,7 @@ static void hookThread()
                         data->recorder.record(RecordType::Stack, stack.ip());
                         stack.next();
                     }
+                    data->recorder.record(RecordType::Stack, std::numeric_limits<uint64_t>::max());
                 }
                 uffdio_zeropage zero = {
                     .range = {
@@ -522,6 +523,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
         data->recorder.record(RecordType::Stack, stack.ip());
         stack.next();
     }
+    data->recorder.record(RecordType::Stack, std::numeric_limits<uint64_t>::max());
 
     return ret;
 }
@@ -562,6 +564,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, off_t pgoff
         data->recorder.record(RecordType::Stack, stack.ip());
         stack.next();
     }
+    data->recorder.record(RecordType::Stack, std::numeric_limits<uint64_t>::max());
 
     return ret;
 }

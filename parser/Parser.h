@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Indexer.h"
 #include "Module.h"
 #include "json.h"
 #include <common/RecordType.h>
@@ -24,8 +25,7 @@ class StackEvent : public Event
 public:
     StackEvent(RecordType type);
 
-    std::vector<Address> stack;
-    json stack_json() const;
+    uint64_t stack {};
 };
 
 class PageFaultEvent : public StackEvent
@@ -114,6 +114,8 @@ private:
     void handleMunmap(bool tracked);
     void handleMadvise(bool tracked);
 
+    int32_t hashStack();
+
     void updateModuleCache();
 
     template<typename T>
@@ -129,6 +131,11 @@ private:
     const uint8_t* mData { nullptr };
     const uint8_t* mEnd { nullptr };
     bool mError { false };
+
+    std::vector<Address> mCurrentStack;
+
+    Indexer<std::string> mStringIndexer;
+    Indexer<std::vector<Address>> mStackIndexer;
 
     struct ModuleEntry
     {

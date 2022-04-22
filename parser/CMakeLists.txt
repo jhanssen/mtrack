@@ -2,7 +2,6 @@ set(SOURCES
     main.cpp
     Module.cpp
     Parser.cpp
-    StringIndexer.cpp
     )
 
 set_source_files_properties(${SOURCES} PROPERTIES COMPILE_FLAGS "-O3")

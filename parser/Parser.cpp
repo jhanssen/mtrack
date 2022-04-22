@@ -1,5 +1,4 @@
 #include "Parser.h"
-#include "StringIndexer.h"
 #include <common/Version.h>
 #include <cassert>
 #include <climits>
@@ -25,7 +24,7 @@ void Parser::handleLibrary()
 
     // printf("dlll '%s' %lx\n", name.c_str(), start);
 
-    auto mod = Module::create(name, start);
+    auto mod = Module::create(mStringIndexer, name, start);
     mCurrentModule = mod;
     mModules.insert(mod);
 }
@@ -42,6 +41,13 @@ void Parser::updateModuleCache()
     }
 }
 
+int32_t Parser::hashStack()
+{
+    const auto idx = mStackIndexer.index(mCurrentStack);
+    mCurrentStack.clear();
+    return idx;
+}
+
 void Parser::handleStack()
 {
     assert(!mEvents.empty());
@@ -55,25 +61,29 @@ void Parser::handleStack()
         mModulesDirty = false;
     }
 
-    // find ip in module cache
-    auto it = mModuleCache.upper_bound(ip);
-    if (it != mModuleCache.begin())
-        --it;
-    if (mModuleCache.size() == 1)
-        it = mModuleCache.begin();
-    Address address;
-    if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end)
-        address = it->second.module->resolveAddress(ip);
+    if (ip == std::numeric_limits<uint64_t>::max()) {
+        switch (mEvents.back()->type) {
+        case RecordType::PageFault:
+        case RecordType::MmapTracked:
+        case RecordType::MmapUntracked:
+            static_cast<StackEvent*>(mEvents.back().get())->stack = hashStack();
+            break;
+        default:
+            fprintf(stderr, "invalid event for stack %u\n", static_cast<uint32_t>(mEvents.back()->type));
+            assert(false && "invalid event for stack");
+        }
+    } else {
+        // find ip in module cache
+        auto it = mModuleCache.upper_bound(ip);
+        if (it != mModuleCache.begin())
+            --it;
+        if (mModuleCache.size() == 1)
+            it = mModuleCache.begin();
+        Address address;
+        if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end)
+            address = it->second.module->resolveAddress(ip);
 
-    switch (mEvents.back()->type) {
-    case RecordType::PageFault:
-    case RecordType::MmapTracked:
-    case RecordType::MmapUntracked:
-        static_cast<StackEvent*>(mEvents.back().get())->stack.push_back(address);
-        break;
-    default:
-        fprintf(stderr, "invalid event for stack %u\n", static_cast<uint32_t>(mEvents.back()->type));
-        assert(false && "invalid event for stack");
+        mCurrentStack.push_back(address);
     }
 }
 
@@ -116,7 +126,7 @@ void Parser::handlePageFault()
         tname = tn->second;
     }
 
-    mEvents.push_back(std::make_shared<PageFaultEvent>(addr, 4096, StringIndexer::instance()->index(tname)));
+    mEvents.push_back(std::make_shared<PageFaultEvent>(addr, 4096, mStringIndexer.index(tname)));
 }
 
 void Parser::handleTime()
@@ -153,7 +163,7 @@ void Parser::handleMmap(bool tracked)
         tname = tn->second;
     }
 
-    mEvents.push_back(std::make_shared<MmapEvent>(tracked, addr, size, allocated, prot, flags, fd, off, StringIndexer::instance()->index(tname)));
+    mEvents.push_back(std::make_shared<MmapEvent>(tracked, addr, size, allocated, prot, flags, fd, off, mStringIndexer.index(tname)));
 }
 
 void Parser::handleMunmap(bool tracked)
@@ -252,7 +262,34 @@ std::string Parser::finalize() const
 {
     json root;
 
-    root["strings"] = json(StringIndexer::instance()->strs());
+    root["strings"] = json(mStringIndexer.values());
+
+    json jstacks;
+    for (const auto& stack : mStackIndexer.values()) {
+        auto makeFrame = [](const Frame& frame) {
+            json jframe;
+            jframe.push_back(frame.function);
+            jframe.push_back(frame.file);
+            jframe.push_back(frame.line);
+            return jframe;
+        };
+
+        json jstack;
+        for (const auto& saddr : stack) {
+            auto frame = makeFrame(saddr.frame);
+            if (!saddr.inlined.empty()) {
+                json inlined;
+                for (const auto& inl : saddr.inlined) {
+                    inlined.push_back(makeFrame(inl));
+                }
+                frame.push_back(std::move(inlined));
+            }
+            jstack.push_back(std::move(frame));
+        }
+        jstacks.push_back(std::move(jstack));
+    }
+
+    root["stacks"] = std::move(jstacks);
 
     json events;
     for (const auto& event : mEvents) {
@@ -263,31 +300,6 @@ std::string Parser::finalize() const
     return root.dump();
 }
 
-json StackEvent::stack_json() const
-{
-    auto makeFrame = [](const Frame& frame) {
-        json jframe;
-        jframe.push_back(frame.function);
-        jframe.push_back(frame.file);
-        jframe.push_back(frame.line);
-        return jframe;
-    };
-
-    json jstack;
-    for (const auto& saddr : stack) {
-        auto frame = makeFrame(saddr.frame);
-        if (!saddr.inlined.empty()) {
-            json inlined;
-            for (const auto& inl : saddr.inlined) {
-                inlined.push_back(makeFrame(inl));
-            }
-            frame.push_back(std::move(inlined));
-        }
-        jstack.push_back(std::move(frame));
-    }
-    return jstack;
-}
-
 json PageFaultEvent::to_json() const
 {
     json jpf;
@@ -295,7 +307,7 @@ json PageFaultEvent::to_json() const
     jpf.push_back(addr);
     jpf.push_back(size);
     jpf.push_back(thread);
-    jpf.push_back(stack_json());
+    jpf.push_back(stack);
 
     return jpf;
 }
@@ -321,7 +333,7 @@ json MmapEvent::to_json() const
     jmmap.push_back(fd);
     jmmap.push_back(offset);
     jmmap.push_back(thread);
-    jmmap.push_back(stack_json());
+    jmmap.push_back(stack);
 
     return jmmap;
 }
