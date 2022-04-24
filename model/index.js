@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-const fs = require("fs");
 const Model = require("Model");
+const fs = require("fs");
+const readline = require("readline");
 
 function usage(out)
 {
@@ -75,5 +76,53 @@ try {
     process.exit(1);
 }
 
-const model = new Model(data);
-model.process(until);
+const model = new Model(data, until);
+
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+function prompt()
+{
+    rl.question("$ ", undefined, input => {
+        input = input.split(" ").map(x => x.trim()).filter(x => x);
+        const help = "help|h|?\nq|quit\ns|stacks\npf|printPageFaults <stackid>\npfm|printPageFaultsAtMmapStack <stackid>";
+        switch (input[0]) {
+        case "help":
+        case "h":
+        case "?":
+            console.log(help);
+            break;
+        case "q":
+        case "quit":
+            process.exit();
+        case "s":
+        case "stacks":
+            console.log(model.stacks().join("\n"));
+            break;
+        case "pf":
+        case "printPageFaults":
+            if (isNaN(parseInt(input[1]))) {
+                console.error("Invalid stack id", input[1]);
+                break;
+            }
+
+            model.printPageFaultsAtStack(parseInt(input[1]));
+            break;
+        case "pfm":
+        case "printPageFaultsByMmap":
+            if (isNaN(parseInt(input[1]))) {
+                console.error("Invalid stack id", input[1]);
+                break;
+            }
+            model.printPageFaultsAtMmapStack(parseInt(input[1]));
+            break;
+        default:
+            console.error("Invalid command", input[0], "\n", help);
+            break;
+        }
+        // console.log(input);
+        prompt();
+    });
+}
+
+prompt();
+

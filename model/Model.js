@@ -1,26 +1,69 @@
-const assert = require("assert");
-const Range = require("./Range");
-const PageFault = require("./PageFault");
 const Mmap = require("./Mmap");
+const PageFault = require("./PageFault");
+const Range = require("./Range");
+const Stack = require("./Stack");
+const assert = require("assert");
+const prettyBytes = require("pretty-bytes");
+const prettyMS = require("pretty-ms");
 
 class Model
 {
-    constructor(data)
+    constructor(data, until)
     {
         this.data = data;
         this.pageFaults = [];
         this.mmaps = [];
-        this.allocationsByPageFaultStack = new Map();
-        this.allocationsByMmapStack = new Map();
-    }
-
-    process(until)
-    {
+        this.pageFaultsByStack = new Map();
+        this.pageFaultsByMmapStack = new Map();
         let count = this.data.events.length;
-        if (until.event) {
+        if (until?.event) {
             count = Math.min(until.event, count);
         }
         let time = 0;
+
+        const removePageFaults = removeRange => {
+            // return;
+            // console.log("removing", removeRange);
+            // this.ranges.remove(new Range(event[1], event[2], true));
+            this.pageFaults = this.pageFaults.filter(pageFault => {
+                switch (removeRange.intersects(pageFault.range)) {
+                case Range.Entire:
+                    break;
+                case Range.Before:
+                case Range.After:
+                    return true;
+                case Range.Beginning:
+                case Range.End:
+                case Range.Middle:
+                    throw new Error(`Partial munmap match for pageFault ${pageFault.range} ${removeRange} ${removeRange.intersects(pageFault.range)} ${pageFault.range.intersects(removeRange)}`);
+                }
+                let pageFaults = this.pageFaultsByStack.get(pageFault.pageFaultStack);
+                let idx = pageFaults ? pageFaults.indexOf(pageFault) : -1;
+                if (idx === -1) {
+                    throw new Error(`Didn't find pageFault ${pageFault} in pageFaultsByStack ${Array.from(this.pageFaultsByStack.keys())}`);
+                }
+                if (pageFaults.length === 1) {
+                    this.pageFaultsByStack.delete(pageFault.pageFaultStack);
+                } else {
+                    pageFaults.splice(idx, 1);
+                }
+                if (pageFault.mmapStack !== undefined) {
+                    pageFaults = this.pageFaultsByMmapStack.get(pageFault.mmapStack);
+                    idx = pageFaults ? pageFaults.indexOf(pageFault) : -1;
+                    if (idx === -1) {
+                        throw new Error(`Didn't find pageFault at ${pageFault.range} in pageFaultsByMmapStack with stack: ${pageFault.pageFaultStack}`);
+                    }
+                    if (pageFaults.length === 1) {
+                        this.pageFaultsByMmapStack.delete(pageFault.pageFaultStack);
+                    } else {
+                        pageFaults.splice(idx, 1);
+                    }
+                }
+                // console.log("Removing a dude", removeRange, pageFault);
+                return false;
+            });
+        };
+
         for (let idx=0; idx<count; ++idx) {
             let range;
             let mmapStack;
@@ -28,6 +71,9 @@ class Model
             switch (event[0]) {
             case Model.Time:
                 time = event[1];
+                if (until?.time < time) {
+                    idx = count;
+                }
                 break;
             case Model.MmapUntracked:
             case Model.MunmapUntracked:
@@ -39,7 +85,7 @@ class Model
                 break;
             case Model.MunmapTracked:
                 range = new Range(event[1], event[2]);
-                this.removePageFaults(range);
+                removePageFaults(range);
                 this.mmaps = this.mmaps.filter(mmap => {
                     const intersectedRange = range.intersection(mmap.range);
                     if (intersectedRange) {
@@ -58,84 +104,93 @@ class Model
                     let intersection = this.mmaps[idx].range.intersects(range);
                     if (intersection === Range.Entire) {
                         mmapStack = this.mmaps[idx].stack;
+                        process.exit();
                         break;
                     } else if (intersection >= 0) {
-                        this.mmaps[idx].range.intersects(range, true);
                         throw new Error(`Partial mmap match ${intersection} for pageFault ${range} ${this.mmaps[idx].range}`);
                     }
                 }
                 let pageFault = new PageFault(range, event[4], mmapStack, event[3], time);
-                let allocations = this.allocationsByPageFaultStack.get(pageFault.pageFaultStack);
+                let pageFaults = this.pageFaultsByStack.get(pageFault.pageFaultStack);
                 this.pageFaults.push(pageFault);
-                if (!allocations) {
-                    this.allocationsByPageFaultStack.set(pageFault.pageFaultStack, [ pageFault ]);
+                if (!pageFaults) {
+                    this.pageFaultsByStack.set(pageFault.pageFaultStack, [ pageFault ]);
                 } else {
-                    allocations.push(pageFault);
+                    pageFaults.push(pageFault);
                 }
                 if (mmapStack) {
-                    allocations = this.allocationsByMmapStack.get(pageFault.mmapStack);
-                    if (!allocations) {
-                        this.allocationsByMmapStack.set(pageFault.mmapStack, [ pageFault ]);
+                    pageFaults = this.pageFaultsByMmapStack.get(pageFault.mmapStack);
+                    if (!pageFaults) {
+                        this.pageFaultsByMmapStack.set(pageFault.mmapStack, [ pageFault ]);
                     } else {
-                        allocations.push(pageFault);
+                        pageFaults.push(pageFault);
                     }
+                    console.log("fucker", Array.from(this.pageFaultsByMmapStack.keys()));
                 }
                 break;
             case Model.MadviseTracked:
-                this.removePageFaults(new Range(event[1], event[2]));
+                removePageFaults(new Range(event[1], event[2]));
                 break;
             default:
                 throw new Error("Unknown event " + JSON.stringify(event));
             }
             // console.log("Got event", this.data.events[idx]);
         }
-        // console.log(this.strings);
-        // console.log(this.stacks);
-        // console.log(until, Object.keys(this.data));
-        // console.log(this.ranges);
+        // console.log(this.pageFaults.length,
+        //             Array.from(this.pageFaultsByStack.keys()),
+        //             Array.from(this.pageFaultsByMmapStack.keys()));
     }
 
-    removePageFaults(range)
+    printPageFaultsAtStack(stack)
     {
-        // console.log("removing", event[1], event[2], idx);
-        // this.ranges.remove(new Range(event[1], event[2], true));
-        this.pageFaults = this.pageFaults.filter(pageFault => {
-            switch (range.intersects(pageFault.range)) {
-            case Range.Entire:
-                break;
-            case Range.Before:
-            case Range.After:
-                return true;
-            case Range.Beginning:
-            case Range.End:
-            case Range.Middle:
-                throw new Error(`Partial munmap match for pageFault ${pageFault.range} ${range} ${range.intersects(pageFault.range)} ${pageFault.range.intersects(range)}`);
-            }
-            let allocations = this.allocationsByPageFaultStack.get(pageFault.pageFaultStack);
-            let idx = allocations ? allocations.indexOf(pageFault) : -1;
-            if (idx === -1) {
-                throw new Error(`Didn't find pageFault ${pageFault} in allocationsByPageFaultStack ${Array.from(this.allocationsByPageFaultStack.keys())}`);
-            }
-            if (allocations.length === 1) {
-                this.allocationsByPageFaultStack.delete(pageFault.pageFaultStack);
-            } else {
-                allocations.splice(idx, 1);
-            }
-            if (pageFault.mmapStack !== undefined) {
-                allocations = this.allocationsByMmapStack.get(pageFault.mmapStack);
-                idx = allocations ? allocations.indexOf(pageFault) : -1;
-                if (idx === -1) {
-                    throw new Error(`Didn't find pageFault at ${pageFault.range} in allocationsByMmapStack with stack: ${pageFault.pageFaultStack}`);
-                }
-                if (allocations.length === 1) {
-                    this.allocationsByMmapStack.delete(pageFault.pageFaultStack);
-                } else {
-                    allocations.splice(idx, 1);
-                }
+        let byStack = this.pageFaultsByStack.get(stack);
+        if (byStack) {
+            this.printPageFaults(stack, byStack);
+        } else {
+            console.log("No page faults with stack", stack, "\n", Array.from(this.pageFaultsByStack.keys()));
+        }
+    }
 
-            }
-            return false;
-        });
+    printPageFaultsAtMmapStack(stack)
+    {
+        let byStack = this.pageFaultsByMmapStack.get(stack);
+        if (byStack) {
+            this.printPageFaults(stack, byStack);
+        } else {
+            console.log("No page faults with mmap stack", stack);
+        }
+    }
+
+    printPageFaults(stack, pageFaults)
+    {
+        assert(pageFaults.length > 0);
+        let first = Number.MAX_SAFE_INTEGER, last = 0;
+        const threads = [];
+        const total = pageFaults.reduce((current, pageFault) => {
+            first = Math.min(first, pageFault.time);
+            last = Math.max(last, pageFault.time);
+            if (threads.indexOf(pageFault.thread) === -1)
+                threads.push(pageFault.thread);
+            return current + pageFault.range.length;
+        }, 0);
+
+        console.log(total);
+        console.log(`Got ${pageFaults.length} pageFault(s) for a total of ${prettyBytes(total)}`);
+        if (pageFaults.length === 1) {
+            console.log(`The page fault happened at ${prettyMS(first)} in the "${this.data.strings[threads[0]]}"`);
+        } else {
+            console.log(`The page faults happened between ${prettyMS(first)} and ${last}ms in these threads: ${threads.map(x => "\"" + this.data.strings[x] + "\"")}`);
+        }
+        console.log(Stack.print(this.data.stacks[stack], this.data.strings));
+    }
+
+    stacks()
+    {
+        const ret = new Set(this.pageFaultsByStack.keys());
+        for (const [ key ] of this.pageFaultsByMmapStack) {
+            ret.add(key);
+        }
+        return Array.from(ret);
     }
 }
 
