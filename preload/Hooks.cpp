@@ -22,7 +22,7 @@
 #include <thread>
 #include <tuple>
 
-#define PAGESIZE 4096
+static constexpr uint64_t PAGESIZE = 4096;
 
 typedef void* (*MmapSig)(void*, size_t, int, int, int, off_t);
 typedef void* (*Mmap64Sig)(void*, size_t, int, int, int, __off64_t);
@@ -33,11 +33,6 @@ typedef int (*MprotectSig)(void*, size_t, int);
 typedef void* (*DlOpenSig)(const char*, int);
 typedef int  (*DlCloseSig)(void*);
 typedef int (*PthreadSetnameSig)(pthread_t thread, const char* name);
-
-inline uint64_t ptr_cast(void *ptr)
-{
-    return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr));
-}
 
 class Hooks
 {
@@ -108,10 +103,15 @@ struct MmapWalker
     static void walk(void* addr, size_t len, Func&& func);
 };
 
-template<typename T>
-inline T alignOffset(T size, uint32_t alignment)
+inline uint64_t alignOffset(uint64_t size)
 {
-    return size + (((~size) + 1) & (static_cast<T>(alignment) - 1));
+    return size + (((~size) + 1) & (PAGESIZE - 1));
+}
+
+inline uint64_t ptr_cast(void *ptr)
+{
+    const uint64_t ret = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr));
+    return ret + (PAGESIZE - (ret % PAGESIZE)) - PAGESIZE;
 }
 
 template<typename Func>
@@ -471,7 +471,7 @@ uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
         uffdio_register reg = {
             .range = {
                 .start = reinterpret_cast<__u64>(addr),
-                .len = alignOffset(length, PAGESIZE)
+                .len = alignOffset(length)
             },
             .mode = UFFDIO_REGISTER_MODE_MISSING,
             .ioctls = 0
@@ -699,7 +699,7 @@ int mprotect(void* addr, size_t len, int prot)
         uffdio_register reg = {
             .range = {
                 .start = reinterpret_cast<__u64>(addr),
-                .len = alignOffset(len, PAGESIZE)
+                .len = alignOffset(len)
             },
             .mode = UFFDIO_REGISTER_MODE_MISSING,
             .ioctls = 0
