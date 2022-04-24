@@ -1,160 +1,17 @@
 const assert = require("assert");
-
-class Range
-{
-    constructor(start, length)
-    {
-        this.start = start;
-        this.length = length;
-    }
-
-    get end()
-    {
-        return this.start + this.length;
-    }
-
-    toString()
-    {
-        return `${this.start}-${this.end} length: ${this.length}`;
-    }
-
-    intersects(range)
-    {
-        if (range.end <= this.start) {
-            return Range.Before;
-        }
-
-        if (range.start >= this.end) {
-            return Range.After;
-        }
-
-        // range overlaps the start of this
-        if (range.start <= this.start) {
-            if (range.end >= this.end) {
-                return Range.Entire;
-            }
-            return Range.Beginning;
-        }
-
-        // range overlaps the end of this
-        if (range.end >= this.end) {
-            return Range.End;
-        }
-
-        return Range.Middle;
-    }
-
-    remove(range)
-    {
-        // console.log("removing range", range, this.intersects(range));
-        switch (this.intersects(range)) {
-        case Range.Entire:
-            return undefined;
-        case Range.Beginning:
-            this.length = range.end - this.start;
-            this.start = range.end;
-            return this;
-        case Range.End:
-            this.length = range.start - this.start;
-            return this;
-        case Range.Middle:
-            return [
-                new Range(this.start, range.start - this.start),
-                new Range(range.end, this.end - range.end)
-            ];
-        default:
-            break;
-        }
-
-        throw new Error(`Ranges do not intersect ${this} vs ${range}`);
-    }
-};
-
-Range.Before = 1;
-Range.After = 2;
-Range.Entire = 3;
-Range.Beginning = 4;
-Range.End = 5;
-Range.Middle = 6;
-
-class Ranges
-{
-    constructor()
-    {
-        this.ranges = [];
-    }
-
-    add(range)
-    {
-        this.remove(range);
-        // insertion sort?
-        this.ranges.push(range);
-        this.ranges = this.ranges.sort((l, r) => {
-            if (r.start >= l.start && r.end < l.end) {
-                throw new Error(`Overlapping ranges ${r} ${l}`);
-            }
-            if (l.start >= r.start && l.end < r.end) {
-                throw new Error(`Overlapping ranges ${r} ${l}`);
-            }
-            return l.start - r.start;
-        });
-        let idx=1;
-        while (idx < this.ranges.length) {
-            const prev = this.ranges[idx - 1];
-            const cur = this.ranges[idx];
-            if (prev.end == cur.start) {
-                prev.length += cur.length;
-                this.ranges.splice(idx);
-            } else {
-                ++idx;
-            }
-        }
-    }
-
-    remove(range)
-    {
-        // binary search?
-        let idx = 0;
-        while (idx < this.ranges.length) {
-            const r = this.ranges[idx];
-            switch (r.intersects(range)) {
-            case Range.Before:
-                ++idx;
-                break;
-            case Range.After:
-                return; // we're done
-            case Range.Entire:
-                this.ranges.splice(idx, 1);
-                break;
-            case Range.Beginning:
-                this.ranges[idx] = r.remove(range);
-                return;
-            case Range.End:
-                this.ranges[idx] = r.remove(range);
-                ++idx;
-                break;
-            case Range.Middle:
-                const removed = r.remove(range);
-                this.ranges.splice(idx, 1, removed[0], removed[1]);
-                return;
-            }
-        }
-    }
-};
-
-// const ranges = new Ranges();
-// ranges.add(new Range(0, 100));
-// ranges.add(new Range(0, 50));
-// ranges.remove(new Range(0, 100));
-
-// console.log(ranges);
+const Range = require("./Range");
+const PageFault = require("./PageFault");
+const Mmap = require("./Mmap");
 
 class Model
 {
     constructor(data)
     {
         this.data = data;
-        this.allocationsByInstructionPointer = new Map();
+        this.pageFaults = [];
+        this.mmaps = [];
+        this.allocationsByPageFaultStack = new Map();
+        this.allocationsByMmapStack = new Map();
     }
 
     process(until)
@@ -165,21 +22,67 @@ class Model
         }
         let time = 0;
         for (let idx=0; idx<count; ++idx) {
+            let range;
+            let mmapStack;
             const event = this.data.events[idx];
             switch (event[0]) {
             case Model.Time:
-                this.time = event[1];
+                time = event[1];
                 break;
             case Model.MmapUntracked:
             case Model.MunmapUntracked:
             case Model.MadviseUntracked:
                 break;
             case Model.MmapTracked:
-                console.log("Got mmap tracked", event);
+                range = new Range(event[1], event[2], false);
+                this.mmaps.push(new Mmap(range, event[8], event[7], time));
                 break;
             case Model.MunmapTracked:
+                range = new Range(event[1], event[2]);
+                this.removePageFaults(range);
+                this.mmaps = this.mmaps.filter(mmap => {
+                    const intersectedRange = range.intersection(mmap.range);
+                    if (intersectedRange) {
+                        if (intersectedRange.equals(mmap.range))
+                            return false;
+                        mmap.range = intersectedRange;
+                    }
+
+                    return true;
+                });
+                break;
             case Model.PageFault:
+                range = new Range(event[1], event[2]);
+                let mmapStack;
+                for (let idx=this.mmaps.length - 1; idx>=0; --idx) {
+                    let intersection = this.mmaps[idx].range.intersects(range);
+                    if (intersection === Range.Entire) {
+                        mmapStack = this.mmaps[idx].stack;
+                        break;
+                    } else if (intersection >= 0) {
+                        this.mmaps[idx].range.intersects(range, true);
+                        throw new Error(`Partial mmap match ${intersection} for pageFault ${range} ${this.mmaps[idx].range}`);
+                    }
+                }
+                let pageFault = new PageFault(range, event[4], mmapStack, event[3], time);
+                let allocations = this.allocationsByPageFaultStack.get(pageFault.pageFaultStack);
+                this.pageFaults.push(pageFault);
+                if (!allocations) {
+                    this.allocationsByPageFaultStack.set(pageFault.pageFaultStack, [ pageFault ]);
+                } else {
+                    allocations.push(pageFault);
+                }
+                if (mmapStack) {
+                    allocations = this.allocationsByMmapStack.get(pageFault.mmapStack);
+                    if (!allocations) {
+                        this.allocationsByMmapStack.set(pageFault.mmapStack, [ pageFault ]);
+                    } else {
+                        allocations.push(pageFault);
+                    }
+                }
+                break;
             case Model.MadviseTracked:
+                this.removePageFaults(new Range(event[1], event[2]));
                 break;
             default:
                 throw new Error("Unknown event " + JSON.stringify(event));
@@ -189,6 +92,50 @@ class Model
         // console.log(this.strings);
         // console.log(this.stacks);
         // console.log(until, Object.keys(this.data));
+        // console.log(this.ranges);
+    }
+
+    removePageFaults(range)
+    {
+        // console.log("removing", event[1], event[2], idx);
+        // this.ranges.remove(new Range(event[1], event[2], true));
+        this.pageFaults = this.pageFaults.filter(pageFault => {
+            switch (range.intersects(pageFault.range)) {
+            case Range.Entire:
+                break;
+            case Range.Before:
+            case Range.After:
+                return true;
+            case Range.Beginning:
+            case Range.End:
+            case Range.Middle:
+                throw new Error(`Partial munmap match for pageFault ${pageFault.range} ${range} ${range.intersects(pageFault.range)} ${pageFault.range.intersects(range)}`);
+            }
+            let allocations = this.allocationsByPageFaultStack.get(pageFault.pageFaultStack);
+            let idx = allocations ? allocations.indexOf(pageFault) : -1;
+            if (idx === -1) {
+                throw new Error(`Didn't find pageFault ${pageFault} in allocationsByPageFaultStack ${Array.from(this.allocationsByPageFaultStack.keys())}`);
+            }
+            if (allocations.length === 1) {
+                this.allocationsByPageFaultStack.delete(pageFault.pageFaultStack);
+            } else {
+                allocations.splice(idx, 1);
+            }
+            if (pageFault.mmapStack !== undefined) {
+                allocations = this.allocationsByMmapStack.get(pageFault.mmapStack);
+                idx = allocations ? allocations.indexOf(pageFault) : -1;
+                if (idx === -1) {
+                    throw new Error(`Didn't find pageFault at ${pageFault.range} in allocationsByMmapStack with stack: ${pageFault.pageFaultStack}`);
+                }
+                if (allocations.length === 1) {
+                    this.allocationsByMmapStack.delete(pageFault.pageFaultStack);
+                } else {
+                    allocations.splice(idx, 1);
+                }
+
+            }
+            return false;
+        });
     }
 }
 
