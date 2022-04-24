@@ -181,6 +181,8 @@ class Model
         } else {
             console.log(`The page faults happened between ${prettyMS(first)} and ${last}ms in these threads: ${threads.map(x => "\"" + this.data.strings[x] + "\"")}`);
         }
+        console.log(this.data.stacks[stack]);
+        console.log(this.data.strings[397]);
         console.log(Stack.print(this.data.stacks[stack], this.data.strings));
     }
 

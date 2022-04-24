@@ -1,21 +1,21 @@
 /*
-  Frame: [ function: number, file: number, line: number ],
-  Frame with inlines: [ function: number, file: number, line: number, ...rest: Frame[] ]
+  Frame: number[] [ function, file, line ],
+  Frame with inlines: [ function, file, line, ...rest: Frame[] ]
   stack: Frame[]
 */
 
 function stringifyFrame(frame, stringTable)
 {
     let str;
-    if (frame.function === -1) {
+    if (frame[0] === -1) {
         str = "<unknown>";
     } else {
-        str = stringTable[frame.function];
+        str = stringTable[frame[0]];
     }
-    if (frame.file !== -1) {
-        str += ` ${stringTable[frame.file]}`;
-        if (frame.line !== 0) {
-            str += `:${frame.line}`;
+    if (frame[1] !== -1) {
+        str += ` ${stringTable[frame[1]]}`;
+        if (frame[2] !== 0) {
+            str += `:${frame[2]}`;
         }
     }
     return str;
@@ -27,6 +27,7 @@ class Stack
     {
         this.frames = [];
         stack.forEach(frame => {
+            // console.log("got dude", frame);
             this.frames.push(stringifyFrame(frame, stringTable));
             if (frame.inlines) {
                 frame.inlines.forEach(inline => {
