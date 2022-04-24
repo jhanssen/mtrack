@@ -18,3 +18,4 @@ cmake_install.cmake
 /preload/libmtrack_preload.so
 /samples/mmap/CMakeFiles/
 /samples/mmap/mmap_sample
+/model/node_modules/
