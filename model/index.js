@@ -79,7 +79,8 @@ try {
     process.exit(1);
 }
 
-const model = new Model(data, until);
+const model = new Model(data);
+model.parse(until);
 const printer = new Printer(model);
 
 let history;

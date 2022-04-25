@@ -4,9 +4,13 @@ import { Range } from "./Range.js";
 
 class Model
 {
-    constructor(data, until)
+    constructor(data)
     {
         this.data = data;
+    }
+
+    parse(until)
+    {
         this.pageFaults = [];
         this.mmaps = [];
         this.pageFaultsByStack = new Map();
