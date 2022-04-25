@@ -297,7 +297,7 @@ std::string Parser::finalize() const
     }
     root["events"] = std::move(events);
 
-    printf("%zu events. %zu recordings.\n%zu strings %zu hits %zu misses. %zu stacks %zu hits %zu misses\n",
+    printf("%zu events. %zu recordings.\n%zu strings %zu hits %zu misses. %zu stacks %zu hits %zu misses.\n",
            mEvents.size(), mRecordings,
            mStringIndexer.size(), mStringIndexer.hits(), mStringIndexer.misses(),
            mStackIndexer.size(), mStackIndexer.hits(), mStackIndexer.misses());

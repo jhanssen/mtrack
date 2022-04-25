@@ -57,7 +57,7 @@ static void parse(const std::string& inf, const std::string& outf)
     }
 
     fclose(fi);
-    fprintf(stdout, "wrote '%s'\n", outf.c_str());
+    fprintf(stdout, "wrote '%s'.\n", outf.c_str());
 }
 
 int main(int argc, char** argv)
