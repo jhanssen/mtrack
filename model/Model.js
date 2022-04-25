@@ -181,15 +181,12 @@ class Model
             return current + pageFault.range.length;
         }, 0);
 
-        console.log(total);
         console.log(`Got ${pageFaults.length} pageFault(s) for a total of ${prettyBytes(total)}`);
         if (pageFaults.length === 1) {
             console.log(`The page fault happened at ${prettyMS(first)} in "${this.data.strings[threads[0]]}"`);
         } else {
             console.log(`The page faults happened between ${prettyMS(first)} and ${last}ms in these threads: ${threads.map(x => "\"" + this.data.strings[x] + "\"")}`);
         }
-        console.log(this.data.stacks[stack]);
-        console.log(this.data.strings[397]);
         console.log(Stack.print(this.data.stacks[stack], this.data.strings));
     }
 
@@ -206,6 +203,20 @@ class Model
     mmaps()
     {
         return this.mmap;
+    }
+
+    dump()
+    {
+        let sorted = [];
+        for (const [key, value] of this.pageFaultsByStack) {
+            sorted.push({ stack: key, length: value.reduce((cur, x, idx) => cur + x.range.length, 0) });
+        }
+        sorted.sort((a, b) => a.length - b.length).forEach((x, idx) => {
+            if (idx < 10) {
+                this.printPageFaultsAtStack(x.stack);
+            }
+        });
+
     }
 }
 
