@@ -7,6 +7,9 @@ class Model
 {
     constructor(data)
     {
+        if (!data || typeof data !== "object") {
+            throw new Error(`Invalid data ${data}`);
+        }
         this.data = data;
     }
 
