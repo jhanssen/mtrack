@@ -48,4 +48,4 @@ Stack.print = function(stack, stringTable)
     return new Stack(stack, stringTable).toString();
 }
 
-module.exports = Stack;
+export { Stack };

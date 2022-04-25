@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-const Model = require("Model");
-const fs = require("fs");
-const os = require('os');
-const path = require("path");
-const readline = require("readline");
+import { Model } from "./Model.js";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import readline from "readline";
 
 function usage(out)
 {

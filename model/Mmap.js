@@ -14,4 +14,4 @@ class Mmap
     }
 };
 
-module.exports = Mmap;
+export { Mmap };

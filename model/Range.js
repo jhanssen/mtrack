@@ -130,4 +130,4 @@ Range.Beginning = 1;
 Range.End = 1;
 Range.Middle = 3;
 
-module.exports = Range;
+export { Range };

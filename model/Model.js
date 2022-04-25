@@ -1,10 +1,10 @@
-const Mmap = require("./Mmap");
-const PageFault = require("./PageFault");
-const Range = require("./Range");
-const Stack = require("./Stack");
-const assert = require("assert");
-const prettyBytes = require("pretty-bytes");
-const prettyMS = require("pretty-ms");
+import { Mmap } from "./Mmap.js";
+import { PageFault } from "./PageFault.js";
+import { Range } from "./Range.js";
+import { Stack } from "./Stack.js";
+import assert from "assert";
+import prettyBytes from "pretty-bytes";
+import prettyMS from "pretty-ms";
 
 class Model
 {
@@ -239,4 +239,4 @@ Model.Time = 15;
 Model.WorkingDirectory = 16;
 
 
-module.exports = Model;
+export { Model };

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "license": "MIT",
+  "type": "module",
   "dependencies": {
     "pretty-bytes": "5.0.0",
     "pretty-ms": "^7.0.1"

@@ -15,4 +15,4 @@ class PageFault
     }
 };
 
-module.exports = PageFault;
+export { PageFault };
