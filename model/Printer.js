@@ -46,7 +46,7 @@ class Printer
         if (pageFaults.length === 1) {
             console.log(`The page fault happened at ${prettyMS(first)} in "${this.model.data.strings[threads[0]]}"`);
         } else {
-            console.log(`The page faults happened between ${prettyMS(first)} and ${last}ms in these thread(s): ${threads.map(x => "\"" + this.model.data.strings[x] + "\"")}`);
+            console.log(`The page faults happened between ${prettyMS(first)} and ${last}ms in these thread(s): ${threads.map(x => "\"" + this.model.data.strings[x] + "\"").join("\n")}`);
         }
         console.log(Stack.print(this.model.data.stacks[stack], this.model.data.strings));
     }
