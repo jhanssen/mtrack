@@ -157,7 +157,7 @@ function prompt()
         case "sm":
         case "stacksMmap":
             line = [];
-            printermodel.pageFaultMmapStacks().forEach(x => {
+            printer.pageFaultMmapStacks().forEach(x => {
                 line.push(x);
                 if (line.length === 8) {
                     console.log(line.join("\t"));
