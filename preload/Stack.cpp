@@ -75,13 +75,12 @@ void Stack::initialize(const StackInitializer& initializer)
 #endif
     // printf("hallo %u\n", gettid());
     while (unw_step(&cursor) > 0) {
-        unw_word_t ip = 0, sp = 0;
+        unw_word_t ip = 0;
         unw_get_reg(&cursor, UNW_REG_IP, &ip);
-        unw_get_reg(&cursor, UNW_REG_SP, &sp);
         // printf("ip %lx sp %lx\n", ip, sp);
         if (ip > 0) {
             // not sure why but ip is consistently one past where I need it to be
-            mPtrs.push_back(std::make_pair(static_cast<uint64_t>(ip - 1), static_cast<uint64_t>(sp)));
+            mPtrs.push_back(static_cast<uint64_t>(ip - 1));
         } else {
             break;
         }

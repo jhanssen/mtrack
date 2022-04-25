@@ -19,8 +19,7 @@ public:
     bool atEnd() const { return mIndex == mPtrs.size(); }
     void next();
 
-    uint64_t ip() const { return mPtrs[mIndex].first; }
-    uint64_t sp() const { return mPtrs[mIndex].second; }
+    uint64_t ip() const { return mPtrs[mIndex]; }
     uint64_t index() const { return mIndex; }
 
 private:
@@ -31,7 +30,7 @@ private:
     void initialize(const StackInitializer& initializer);
 
     long long unsigned mIndex { 0 };
-    std::vector<std::pair<uint64_t, uint64_t>> mPtrs;
+    std::vector<uint64_t> mPtrs;
 };
 
 inline void Stack::next()
