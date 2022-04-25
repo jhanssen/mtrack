@@ -43,17 +43,20 @@ private:
     Hooks() = delete;
 };
 
-struct Data {
-    MmapSig mmap;
-    Mmap64Sig mmap64;
-    MunmapSig munmap;
-    MremapSig mremap;
-    MadviseSig madvise;
-    MprotectSig mprotect;
-    DlOpenSig dlopen;
-    DlCloseSig dlclose;
-    PthreadSetnameSig pthread_setname_np;
+struct Callbacks
+{
+    MmapSig mmap { nullptr };
+    Mmap64Sig mmap64 { nullptr };
+    MunmapSig munmap { nullptr };
+    MremapSig mremap { nullptr };
+    MadviseSig madvise { nullptr };
+    MprotectSig mprotect { nullptr };
+    DlOpenSig dlopen { nullptr };
+    DlCloseSig dlclose { nullptr };
+    PthreadSetnameSig pthread_setname_np { nullptr };
+} callbacks;
 
+struct Data {
     int faultFd;
     std::thread thread;
     std::atomic_flag isShutdown = ATOMIC_FLAG_INIT;
@@ -308,48 +311,48 @@ static void hookCleanup()
 void Hooks::hook()
 {
     data = new Data();
-    data->mmap = reinterpret_cast<MmapSig>(dlsym(RTLD_NEXT, "mmap"));
-    if (data->mmap == nullptr) {
+    callbacks.mmap = reinterpret_cast<MmapSig>(dlsym(RTLD_NEXT, "mmap"));
+    if (callbacks.mmap == nullptr) {
         printf("no mmap\n");
         abort();
     }
-    data->mmap64 = reinterpret_cast<Mmap64Sig>(dlsym(RTLD_NEXT, "mmap64"));
-    if (data->mmap64 == nullptr) {
+    callbacks.mmap64 = reinterpret_cast<Mmap64Sig>(dlsym(RTLD_NEXT, "mmap64"));
+    if (callbacks.mmap64 == nullptr) {
         printf("no mmap64\n");
         abort();
     }
-    data->munmap = reinterpret_cast<MunmapSig>(dlsym(RTLD_NEXT, "munmap"));
-    if (data->munmap == nullptr) {
+    callbacks.munmap = reinterpret_cast<MunmapSig>(dlsym(RTLD_NEXT, "munmap"));
+    if (callbacks.munmap == nullptr) {
         printf("no munmap\n");
         abort();
     }
-    data->mremap = reinterpret_cast<MremapSig>(dlsym(RTLD_NEXT, "mremap"));
-    if (data->mremap == nullptr) {
+    callbacks.mremap = reinterpret_cast<MremapSig>(dlsym(RTLD_NEXT, "mremap"));
+    if (callbacks.mremap == nullptr) {
         printf("no mremap\n");
         abort();
     }
-    data->madvise = reinterpret_cast<MadviseSig>(dlsym(RTLD_NEXT, "madvise"));
-    if (data->madvise == nullptr) {
+    callbacks.madvise = reinterpret_cast<MadviseSig>(dlsym(RTLD_NEXT, "madvise"));
+    if (callbacks.madvise == nullptr) {
         printf("no madvise\n");
         abort();
     }
-    data->mprotect = reinterpret_cast<MprotectSig>(dlsym(RTLD_NEXT, "mprotect"));
-    if (data->mprotect == nullptr) {
+    callbacks.mprotect = reinterpret_cast<MprotectSig>(dlsym(RTLD_NEXT, "mprotect"));
+    if (callbacks.mprotect == nullptr) {
         printf("no mprotect\n");
         abort();
     }
-    data->dlopen = reinterpret_cast<DlOpenSig>(dlsym(RTLD_NEXT, "dlopen"));
-    if (data->dlopen == nullptr) {
+    callbacks.dlopen = reinterpret_cast<DlOpenSig>(dlsym(RTLD_NEXT, "dlopen"));
+    if (callbacks.dlopen == nullptr) {
         printf("no dlopen\n");
         abort();
     }
-    data->dlclose = reinterpret_cast<DlCloseSig>(dlsym(RTLD_NEXT, "dlclose"));
-    if (data->dlclose == nullptr) {
+    callbacks.dlclose = reinterpret_cast<DlCloseSig>(dlsym(RTLD_NEXT, "dlclose"));
+    if (callbacks.dlclose == nullptr) {
         printf("no dlclose\n");
         abort();
     }
-    data->pthread_setname_np = reinterpret_cast<PthreadSetnameSig>(dlsym(RTLD_NEXT, "pthread_setname_np"));
-    if (data->pthread_setname_np == nullptr) {
+    callbacks.pthread_setname_np = reinterpret_cast<PthreadSetnameSig>(dlsym(RTLD_NEXT, "pthread_setname_np"));
+    if (callbacks.pthread_setname_np == nullptr) {
         printf("no pthread_setname_np\n");
         abort();
     }
@@ -506,7 +509,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     std::call_once(hookOnce, Hooks::hook);
 
     // printf("mmap?? %p\n", addr);
-    auto ret = data->mmap(addr, length, prot, flags, fd, offset);
+    auto ret = callbacks.mmap(addr, length, prot, flags, fd, offset);
     // printf("mmap %p??\n", ret);
 
     if (!data->hooked || ret == MAP_FAILED)
@@ -547,7 +550,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
     std::call_once(hookOnce, Hooks::hook);
 
     // printf("mmap64?? %p\n", addr);
-    auto ret = data->mmap64(addr, length, prot, flags, fd, pgoffset);
+    auto ret = callbacks.mmap64(addr, length, prot, flags, fd, pgoffset);
     // printf("mmap64 %p??\n", ret);
 
     if (!data->hooked || ret == MAP_FAILED)
@@ -588,7 +591,7 @@ int munmap(void* addr, size_t length)
     std::call_once(hookOnce, Hooks::hook);
 
     if (!data->hooked)
-        return data->munmap(addr, length);
+        return callbacks.munmap(addr, length);
 
     NoHook nohook;
     // if (len > 1000000) {
@@ -651,7 +654,7 @@ int munmap(void* addr, size_t length)
     //     }
     // }
 
-    const auto ret = data->munmap(addr, length);
+    const auto ret = callbacks.munmap(addr, length);
     // if (len > 1000000) {
     //     int j, nptrs;
     //     void *buffer[100];
@@ -686,8 +689,8 @@ int mprotect(void* addr, size_t len, int prot)
     {
         ScopedSpinlock lock(data->mmapRangeLock);
         auto it = std::upper_bound(data->mmapRanges.begin(), data->mmapRanges.end(), addr, [](auto addr, const auto& item) {
-            return addr < std::get<0>(item);
-        });
+                return addr < std::get<0>(item);
+            });
         if (it != data->mmapRanges.begin() && !data->mmapRanges.empty())
             --it;
         // if (it != data->mmapRanges.end()) {
@@ -713,17 +716,17 @@ int mprotect(void* addr, size_t len, int prot)
         };
 
         if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) == -1)
-            return data->mprotect(addr, len, prot);
+            return callbacks.mprotect(addr, len, prot);
 
         if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
             printf("no range (2) 0x%llx\n", reg.ioctls);
-            return data->mprotect(addr, len, prot);
+            return callbacks.mprotect(addr, len, prot);
         } else {
             printf("got ok (2)\n");
         }
     }
 
-    return data->mprotect(addr, len, prot);
+    return callbacks.mprotect(addr, len, prot);
 }
 
 void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
@@ -736,9 +739,9 @@ void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
         void* new_address = va_arg(ap, void*);
         va_end(ap);
 
-        return data->mremap(addr, old_size, new_size, flags, new_address);
+        return callbacks.mremap(addr, old_size, new_size, flags, new_address);
     }
-    return data->mremap(addr, old_size, new_size, flags);
+    return callbacks.mremap(addr, old_size, new_size, flags);
 }
 
 int madvise(void* addr, size_t length, int advice)
@@ -746,7 +749,7 @@ int madvise(void* addr, size_t length, int advice)
     std::call_once(hookOnce, Hooks::hook);
 
     if (!data->hooked)
-        return data->madvise(addr, length, advice);
+        return callbacks.madvise(addr, length, advice);
 
     NoHook nohook;
 
@@ -787,21 +790,23 @@ int madvise(void* addr, size_t length, int advice)
     data->recorder.record(tracked ? RecordType::MadviseTracked : RecordType::MadviseUntracked,
                           ptr_cast(addr), static_cast<uint64_t>(length), advice, deallocated);
 
-    return data->madvise(addr, length, advice);
+    return callbacks.madvise(addr, length, advice);
 }
 
 void* dlopen(const char* filename, int flags)
 {
     std::call_once(hookOnce, Hooks::hook);
     data->modulesDirty.store(true, std::memory_order_release);
-    return data->dlopen(filename, flags);
+    return callbacks.dlopen(filename, flags);
 }
 
 int dlclose(void* handle)
 {
     std::call_once(hookOnce, Hooks::hook);
-    data->modulesDirty.store(true, std::memory_order_release);
-    return data->dlclose(handle);
+    if (data) {
+        data->modulesDirty.store(true, std::memory_order_release);
+    }
+    return callbacks.dlclose(handle);
 }
 
 int pthread_setname_np(pthread_t thread, const char* name)
@@ -812,7 +817,7 @@ int pthread_setname_np(pthread_t thread, const char* name)
         NoHook nohook;
         data->recorder.record(RecordType::ThreadName, static_cast<uint32_t>(gettid()), Recorder::String(name));
     }
-    return data->pthread_setname_np(thread, name);
+    return callbacks.pthread_setname_np(thread, name);
 }
 
 } // extern "C"
