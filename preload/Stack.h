@@ -14,6 +14,8 @@ struct StackInitializer
 class Stack
 {
 public:
+    enum { MaxFrames = 512 };
+
     Stack(unsigned ptid);
 
     bool atEnd() const { return mIndex == mCount; }
@@ -29,7 +31,6 @@ private:
 
     inline void initialize(const StackInitializer& initializer);
 
-    enum { MaxFrames = 512 };
     size_t mIndex { 0 };
     size_t mCount { 0 };
     std::array<void *, MaxFrames> mPtrs;
