@@ -23,13 +23,6 @@ struct {
 
 static void handler(int sig)
 {
-    printf("[%d %p %p]\n", sig, data.ptrs, data.count);
-    if (!data.ptrs) {
-        _exit(22);
-    }
-    if (!data.count) {
-        _exit(22);
-    }
     *data.count = ::backtrace(data.ptrs->data(), Stack::MaxFrames);
     Waiter wl(data.handled);
     wl.notify();
@@ -109,7 +102,6 @@ Stack::Stack(unsigned ptid)
 
         data.ptrs = &mPtrs;
         data.count = &mCount;
-        printf("BALL %p %p\n", &mPtrs, &mCount);
 
         syscall(SYS_tkill, ptid, SIGUSR1);
 
