@@ -80,8 +80,8 @@ try {
 }
 
 const model = new Model(data);
-model.parse(until);
-const printer = new Printer(model);
+const parsed = model.parse(until);
+const printer = new Printer(model, parsed);
 
 let history;
 try {

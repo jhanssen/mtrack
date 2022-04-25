@@ -150,7 +150,12 @@ class Model
         // console.log(this.pageFaults.length,
         //             Array.from(this.pageFaultsByStack.keys()),
         //             Array.from(this.pageFaultsByMmapStack.keys()));
-        console.log(`Loaded ${count} events spanning ${time}ms creating ${pageFaultsCreated} pageFauls, currently ${this.pageFaults.length} are mapped in`);
+        return {
+            events: count,
+            pageFaults: pageFaultsCreated,
+            mapped: this.pageFaults.length,
+            time
+        };
     }
 }
 

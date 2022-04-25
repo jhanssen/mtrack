@@ -4,9 +4,10 @@ import { Stack } from "./Stack.js";
 
 class Printer
 {
-    constructor(model)
+    constructor(model, parsed)
     {
         this.model = model;
+        console.log(`Loaded ${parsed.events} events spanning ${prettyMS(parsed.time)} creating ${parsed.pageFaults} pageFaults, currently ${parsed.mapped} are mapped in`);
     }
 
     printPageFaultsAtStack(stack)
