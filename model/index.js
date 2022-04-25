@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import { Model } from "./Model.js";
 import fs from "fs";
 import os from "os";
 import path from "path";
 import readline from "readline";
+import { Model } from "./Model.js";
+import { Printer } from "./Printer.js";
 
 function usage(out)
 {
@@ -79,6 +80,7 @@ try {
 }
 
 const model = new Model(data, until);
+const printer = new Printer(model);
 
 let history;
 try {
@@ -135,12 +137,12 @@ function prompt()
             process.exit();
         case "mmaps":
         case "m":
-            console.log(model.mmaps());
+            console.log(printer.mmaps());
             break;
         case "s":
         case "stacks":
             line = [];
-            model.pageFaultStacks().forEach(x => {
+            printer.pageFaultStacks().forEach(x => {
                 line.push(x);
                 if (line.length === 8) {
                     console.log(line.join("\t"));
@@ -154,7 +156,7 @@ function prompt()
         case "sm":
         case "stacksMmap":
             line = [];
-            model.pageFaultMmapStacks().forEach(x => {
+            printermodel.pageFaultMmapStacks().forEach(x => {
                 line.push(x);
                 if (line.length === 8) {
                     console.log(line.join("\t"));
@@ -167,7 +169,7 @@ function prompt()
             break;
         case "dump":
         case "d":
-            model.dump();
+            printer.dump();
             break;
         case "pf":
         case "printPageFaults":
@@ -176,7 +178,7 @@ function prompt()
                 break;
             }
 
-            model.printPageFaultsAtStack(parseInt(input[1]));
+            printer.printPageFaultsAtStack(parseInt(input[1]));
             break;
         case "pfm":
         case "printPageFaultsByMmap":
@@ -184,7 +186,7 @@ function prompt()
                 console.error("Invalid stack id", input[1]);
                 break;
             }
-            model.printPageFaultsAtMmapStack(parseInt(input[1]));
+            printer.printPageFaultsAtMmapStack(parseInt(input[1]));
             break;
         default:
             console.error("Invalid command", input[0], "\n", help);
