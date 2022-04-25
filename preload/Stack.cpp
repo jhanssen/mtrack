@@ -15,15 +15,28 @@
 #include <libunwind.h>
 
 struct {
+#ifdef __i386__
+    gregset_t gregs;
+#else
     std::array<void*, Stack::MaxFrames> *ptrs { nullptr };
     size_t* count { nullptr };
+#endif
+
     std::atomic<bool> handled = false;
     bool siginstalled = false;
 } data;
 
 static void handler(int sig)
 {
+#ifdef __i386__
+    ucontext_t ctx;
+    getcontext(&ctx);
+
+    memcpy(&data.gregs, &ctx.uc_mcontext.gregs, sizeof(gregset_t));
+#else
     *data.count = ::backtrace(data.ptrs->data(), Stack::MaxFrames);
+#endif
+
     Waiter wl(data.handled);
     wl.notify();
 }
@@ -100,14 +113,20 @@ Stack::Stack(unsigned ptid)
             data.siginstalled = true;
         }
 
+#ifndef __i386__
         data.ptrs = &mPtrs;
         data.count = &mCount;
+#endif
 
         syscall(SYS_tkill, ptid, SIGUSR1);
 
         Waiter wl(data.handled);
         wl.wait();
-        // data.ptrs = nullptr;
-        // data.count = nullptr;
+
+#ifdef __i386__
+        StackInitializer init;
+        memcpy(&init.gregs, &data.gregs, sizeof(gregset_t));
+        initialize(init);
+#endif
     }
 }
