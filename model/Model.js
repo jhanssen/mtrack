@@ -1,5 +1,6 @@
 import { Mmap } from "./Mmap.js";
 import { PageFault } from "./PageFault.js";
+import { Snapshot } from "./Snapshot.js";
 import { Range } from "./Range.js";
 
 class Model
@@ -9,7 +10,7 @@ class Model
         this.data = data;
     }
 
-    parse(until)
+    parse(until, callback)
     {
         this.pageFaults = [];
         this.mmaps = [];
@@ -20,6 +21,7 @@ class Model
             count = Math.min(until.event, count);
         }
         let time = 0;
+        let currentMemoryUsage = 0;
         let pageFaultsCreated = 0;
 
         const removePageFaults = removeRange => {
@@ -49,6 +51,7 @@ class Model
                 } else {
                     pageFaults.splice(idx, 1);
                 }
+                currentMemoryUsage -= pageFaults.range.length;
                 if (pageFault.mmapStack !== undefined) {
                     pageFaults = this.pageFaultsByMmapStack.get(pageFault.mmapStack);
                     idx = pageFaults ? pageFaults.indexOf(pageFault) : -1;
@@ -78,6 +81,9 @@ class Model
                 time = event[1];
                 if (until?.ms < time) {
                     idx = count;
+                }
+                if (callback) {
+                    callback(new Snapshot(currentMemoryUsage, time, idx));
                 }
                 break;
             case Model.MmapUntracked:
@@ -124,6 +130,7 @@ class Model
                 ++pageFaultsCreated;
                 let pageFaults = this.pageFaultsByStack.get(pageFault.pageFaultStack);
                 this.pageFaults.push(pageFault);
+                currentMemoryUsage += pageFault.range.length;
                 if (!pageFaults) {
                     this.pageFaultsByStack.set(pageFault.pageFaultStack, [ pageFault ]);
                 } else {
