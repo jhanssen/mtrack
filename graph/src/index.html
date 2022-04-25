@@ -8,12 +8,12 @@
   <link rel="stylesheet" type="text/css" href="../node_modules/d3-flame-graph/dist/d3-flamegraph.css"></link>
 </head>
 <body>
-  <div id="chartholder"></div>
+  <div id="linechart"></div>
   <br/>
-  <div>Value: <span id="message"></span></div>
+  <div>Value: <span id="linemessage"></span></div>
 
   <script type="text/javascript">
-
+    /*
     var colors = d3.ez.palette.categorical(3);
     var chart = d3.ez.chart.lineChart()
         .colors(colors)
@@ -56,7 +56,7 @@
     d3.select('#chartholder')
     .datum(data)
     .call(myChart);
-
+    */
   </script>
 
   <div class="container">
@@ -75,14 +75,15 @@
       </nav>
       <h3 class="text-muted">d3-flame-graph</h3>
     </div>
-    <div id="chart">
+    <div id="flamechart">
     </div>
     <hr>
-    <div id="details">
+    <div id="flamedetails">
     </div>
   </div>
 
   <script type="text/javascript">
+    /*
     var flameGraph = flamegraph()
         .width(960)
         .cellHeight(18)
@@ -95,7 +96,7 @@
     .title("")
     .onClick(onClick)
     .selfValue(false);
-
+    */
 
     // Example on how to use custom tooltips using d3-tip.
     // var tip = d3.tip()
@@ -106,8 +107,10 @@
 
     // flameGraph.tooltip(tip);
 
+    /*
     var details = document.getElementById("details");
     flameGraph.setDetailsElement(details);
+    */
 
     // Example on how to use custom labels
     // var label = function(d) {
@@ -118,6 +121,7 @@
     // Example of how to set fixed chart height
     // flameGraph.height(540);
 
+    /*
     d3.json("stacks.json", function(error, data) {
         if (error) return console.warn(error);
         d3.select("#chart")
@@ -147,7 +151,9 @@
     function onClick(d) {
         console.info("Clicked on " + d.data.name);
     }
+    */
   </script>
+  <script type="module" src="./index.js"></script>
 
 </body>
 </html>
