@@ -2,7 +2,6 @@ import { Mmap } from "./Mmap.js";
 import { PageFault } from "./PageFault.js";
 import { Range } from "./Range.js";
 import { Stack } from "./Stack.js";
-import assert from "assert";
 import prettyBytes from "pretty-bytes";
 import prettyMS from "pretty-ms";
 
@@ -170,7 +169,6 @@ class Model
 
     printPageFaults(stack, pageFaults)
     {
-        assert(pageFaults.length > 0);
         let first = Number.MAX_SAFE_INTEGER, last = 0;
         const threads = [];
         const total = pageFaults.reduce((current, pageFault) => {
