@@ -31,11 +31,6 @@ static void handler(int sig)
     wl.notify();
 }
 
-Stack::Stack(const StackInitializer& initializer)
-{
-    initialize(initializer);
-}
-
 void Stack::initialize(const StackInitializer& initializer)
 {
     unw_context_t context = {};
@@ -94,7 +89,7 @@ void Stack::initialize(const StackInitializer& initializer)
     // printf("donezo\n");
 }
 
-ThreadStack::ThreadStack(unsigned ptid)
+Stack::Stack(unsigned ptid)
 {
     // dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
 

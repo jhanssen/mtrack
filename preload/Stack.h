@@ -14,10 +14,7 @@ struct StackInitializer
 class Stack
 {
 public:
-    Stack();
-    Stack(const StackInitializer& initializer);
-
-    void initialize(const StackInitializer& initializer);
+    Stack(unsigned ptid);
 
     bool atEnd() const { return mIndex == mPtrs.size(); }
     void next();
@@ -27,13 +24,15 @@ public:
     uint64_t index() const { return mIndex; }
 
 private:
+    Stack(const Stack &) = delete;
+    Stack &operator=(const Stack &) = delete;
+
+    Stack(const StackInitializer& initializer);
+    void initialize(const StackInitializer& initializer);
+
     long long unsigned mIndex { 0 };
     std::vector<std::pair<uint64_t, uint64_t>> mPtrs;
 };
-
-inline Stack::Stack()
-{
-}
 
 inline void Stack::next()
 {
@@ -41,9 +40,3 @@ inline void Stack::next()
         return;
     ++mIndex;
 }
-
-class ThreadStack : public Stack
-{
-public:
-    ThreadStack(unsigned ptid);
-};

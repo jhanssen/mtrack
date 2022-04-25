@@ -258,7 +258,7 @@ static void hookThread()
                 {
                     Recorder::Scope recorderScope(&data->recorder);
                     data->recorder.record(RecordType::PageFault, place, ptid);
-                    ThreadStack stack(ptid);
+                    Stack stack(ptid);
                     while (!stack.atEnd()) {
                         data->recorder.record(RecordType::Stack, stack.ip());
                         stack.next();
@@ -535,7 +535,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
                           ptr_cast(ret), alignOffset(length), allocated,
                           prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()));
 
-    ThreadStack stack(0);
+    Stack stack(0);
     while (!stack.atEnd()) {
         data->recorder.record(RecordType::Stack, stack.ip());
         stack.next();
@@ -576,7 +576,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
                           ptr_cast(ret), alignOffset(length), allocated,
                           prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()));
 
-    ThreadStack stack(0);
+    Stack stack(0);
     while (!stack.atEnd()) {
         data->recorder.record(RecordType::Stack, stack.ip());
         stack.next();
