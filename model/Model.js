@@ -51,7 +51,7 @@ class Model
                 } else {
                     pageFaults.splice(idx, 1);
                 }
-                currentMemoryUsage -= pageFaults.range.length;
+                currentMemoryUsage -= pageFault.range.length;
                 if (pageFault.mmapStack !== undefined) {
                     pageFaults = this.pageFaultsByMmapStack.get(pageFault.mmapStack);
                     idx = pageFaults ? pageFaults.indexOf(pageFault) : -1;
