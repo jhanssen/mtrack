@@ -5,6 +5,7 @@ class PageFault
         this.range = range;
         this.pageFaultStack = pageFaultStack;
         this.mmapStack = mmapStack;
+        this.thread = thread;
         this.time = time;
     }
 

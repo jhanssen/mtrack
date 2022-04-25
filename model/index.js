@@ -2,6 +2,8 @@
 
 const Model = require("Model");
 const fs = require("fs");
+const os = require('os');
+const path = require("path");
 const readline = require("readline");
 
 function usage(out)
@@ -78,13 +80,50 @@ try {
 
 const model = new Model(data, until);
 
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+let history;
+try {
+    history = fs.readFileSync(path.join(os.homedir(), ".mtrack-model-history"), "utf8").split("\n");
+} catch (err) {
+}
+
+const completions = "help h ? quit q stacks s pf mmaps m printPageFaults pfm printPageFaultsByMmap".split(" ");
+function completer(line) {
+    const split = line.split(" ").filter(x => x);
+    if (split.length === 1) {
+        switch (split[0]) {
+        case "pf":
+        case "printPageFaults":
+            return [model.pageFaultStacks().map(x => `${split[0]} ${x}`), line];
+        case "pfm":
+        case "printPageFaultsByMmap":
+            return [model.pageFaultMmapStacks().map(x => `${split[0]} ${x}`), line];
+        }
+    }
+    const hits = completions.filter((c) => c.startsWith(line));
+    return [hits.length ? hits : completions, line];
+}
+
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    history,
+    completer,
+    removeHistoryDuplicates: true
+});
+
+rl.on("history", historyArray => {
+    try {
+        fs.writeFileSync(path.join(os.homedir(), ".mtrack-model-history"), historyArray.join("\n"));
+    } catch (err) {
+    }
+});
 
 function prompt()
 {
     rl.question("$ ", undefined, input => {
         input = input.split(" ").map(x => x.trim()).filter(x => x);
-        const help = "help|h|?\nq|quit\ns|stacks\npf|printPageFaults <stackid>\npfm|printPageFaultsAtMmapStack <stackid>";
+        const help = "help|h|?\nq|quit\ns|stacks\nsm stacksMmap|mmaps|m\npf|printPageFaults <stackid>\npfm|printPageFaultsAtMmapStack <stackid>";
+        let line;
         switch (input[0]) {
         case "help":
         case "h":
@@ -94,9 +133,37 @@ function prompt()
         case "q":
         case "quit":
             process.exit();
+        case "mmaps":
+        case "m":
+            console.log(model.mmaps());
+            break;
         case "s":
         case "stacks":
-            console.log(model.stacks().join("\n"));
+            line = [];
+            model.pageFaultStacks().forEach(x => {
+                line.push(x);
+                if (line.length === 8) {
+                    console.log(line.join("\t"));
+                    line = [];
+                }
+            });
+            if (line.length) {
+                console.log(line.join("\t"));
+            }
+            break;
+        case "sm":
+        case "stacksMmap":
+            line = [];
+            model.pageFaultMmapStacks().forEach(x => {
+                line.push(x);
+                if (line.length === 8) {
+                    console.log(line.join("\t"));
+                    line = [];
+                }
+            });
+            if (line.length) {
+                console.log(line.join("\t"));
+            }
             break;
         case "pf":
         case "printPageFaults":

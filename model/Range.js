@@ -1,10 +1,9 @@
 class Range
 {
-    constructor(start, length, data)
+    constructor(start, length)
     {
         this.start = start;
         this.length = length;
-        this.data = data && data === "object" ? Object.assign({}, data) : data;
     }
 
     get end()
@@ -23,12 +22,12 @@ class Range
 
     toString()
     {
-        return `${this.start}-${this.end} length: ${this.length} ${this.data || ""}`;
+        return `${this.start}-${this.end} length: ${this.length}`;
     }
 
     clone()
     {
-        return new Range(this.start, this.length, this.data);
+        return new Range(this.start, this.length);
     }
 
     // returns type of intersection
@@ -76,11 +75,11 @@ class Range
         case Range.Entire:
             return this.clone();
         case Range.Beginning:
-            const ret = new Range(range.start, this.length, this.data);
+            const ret = new Range(range.start, this.length);
             ret.end = this.end;
             return ret;
         case Range.End:
-            return new Range(this.start, range.end - this.start, this.data);
+            return new Range(this.start, range.end - this.start);
         case Range.Middle:
             return range.clone();
         default:
@@ -113,8 +112,8 @@ class Range
         case Range.Middle:
             // return a range for the parts at the start and end of range
             return [
-                new Range(this.start, range.start - this.start, this.data),
-                new Range(range.end, this.end - range.end, this.data)
+                new Range(this.start, range.start - this.start),
+                new Range(range.end, this.end - range.end)
             ];
         default:
             break;
