@@ -118,8 +118,8 @@ class Range
         default:
             break;
         }
-
-        throw new Error(`Ranges do not intersect ${this} vs ${range}`);
+        // unchanged
+        return this;
     }
 };
 

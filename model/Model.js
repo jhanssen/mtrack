@@ -91,16 +91,21 @@ class Model
                 range = new Range(event[1], event[2]);
                 removePageFaults(range);
                 // console.log("munmap tracked removed", removed, "now we have", this.pageFaults.length);
-                this.mmap = this.mmap.filter(mmap => {
-                    const intersectedRange = range.intersection(mmap.range);
-                    if (intersectedRange) {
-                        if (intersectedRange.equals(mmap.range))
-                            return false;
-                        mmap.range = intersectedRange;
+                let i = 0;
+                while (i < this.mmap.length) {
+                    const ret = this.mmap[i].range.remove(range);
+                    if (!ret) {
+                        this.mmap.splice(i, 1);
+                        continue;
                     }
-
-                    return true;
-                });
+                    if (Array.isArray(ret)) {
+                        const newMmaps = ret.map(range => this.mmap[i].clone(range));
+                        this.mmap.splice(idx, 1, newMmaps[0], newMmaps[1]);
+                        i += 2;
+                    } else {
+                        ++i;
+                    }
+                }
                 break;
             case Model.PageFault:
                 range = new Range(event[1], event[2]);

@@ -8,6 +8,11 @@ class Mmap
         this.time = time;
     }
 
+    clone(range)
+    {
+        return new Mmap(range || this.range.clone(), this.stack, this.thread, this.time);
+    }
+
     toString()
     {
         return `Mmap(range: {this.range}, stack: ${this.stack}, thread: ${this.thread}, time: ${this.time})`;
