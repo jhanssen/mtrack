@@ -278,6 +278,9 @@ static void hookThread()
                 break; }
             }
         }
+        if (evt[1].revents & POLLIN) {
+            break;
+        }
         // printf("- fault thread 4\n");
     }
     printf("- end of fault thread\n");
@@ -291,6 +294,10 @@ static void hookCleanup()
             close(data->faultFd);
             data->faultFd = -1;
         }
+        int w;
+        do {
+            w = ::write(data->pipe[1], "q", 1);
+        } while (w == -1 && errno == EINTR);
         data->thread.join();
     }
     data->recorder.cleanup();
