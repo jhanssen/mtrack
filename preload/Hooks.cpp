@@ -144,7 +144,8 @@ void MmapWalker::walk(void* addr, size_t len, Func&& func)
             it = func(RangeType::Start, it, addr, rem, used);
             used += remtmp - rem;
             // printf("used1 %zu %zu (%zu %zu)\n", used, len, remtmp, rem);
-            if (it != data->mmapRanges.end() && addr >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) && addr < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
+            if (rem > 0 && it != data->mmapRanges.end() && addr >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) && addr < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
+                assert(reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend) >= rem);
                 newstart = reinterpret_cast<uint8_t*>(std::get<0>(*it));
                 rem -= reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend);
                 used += reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend);
@@ -155,7 +156,7 @@ void MmapWalker::walk(void* addr, size_t len, Func&& func)
         // printf("fuckety2 %p (%p) vs %p (%p)\n",
         //        addr, reinterpret_cast<uint8_t*>(addr) + len,
         //        std::get<0>(*it), reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it));
-        while (it != data->mmapRanges.end() && addr <= std::get<0>(*it) && (reinterpret_cast<uint8_t*>(addr) + len >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it))) {
+        while (rem > 0 && it != data->mmapRanges.end() && addr <= std::get<0>(*it) && (reinterpret_cast<uint8_t*>(addr) + len >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it))) {
             oldend = reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it);
             remtmp = rem;
             // printf("walked right into it %p %p (%zu) -> %p %p\n",
@@ -172,7 +173,7 @@ void MmapWalker::walk(void* addr, size_t len, Func&& func)
             }
             assert(used <= len);
         }
-        if (it != data->mmapRanges.end() && rem > 0 && reinterpret_cast<uint8_t*>(addr) + used >= std::get<0>(*it) && reinterpret_cast<uint8_t*>(addr) + len < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
+        if (rem > 0 && it != data->mmapRanges.end() && reinterpret_cast<uint8_t*>(addr) + used >= std::get<0>(*it) && reinterpret_cast<uint8_t*>(addr) + len < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
             it = func(RangeType::End, it, addr, rem, used);
         }
     } else {
@@ -423,7 +424,7 @@ uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
             return data->mmapRanges.insert(it, std::make_tuple(waddr, wlength, flags)) + 1;
         case MmapWalker::RangeType::Start: {
             if (std::get<2>(*it) == flags) {
-                wlength -= std::get<1>(*it);
+                wlength -= std::min(std::get<1>(*it), wlength);
                 // printf("started, len is now %zu (%d)\n", len, __LINE__);
                 return it + 1;
             }
@@ -448,13 +449,12 @@ uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
             return it + 1; }
         case MmapWalker::RangeType::Middle:
             std::get<2>(*it) = flags;
-            assert(wlength >= std::get<1>(*it));
-            wlength -= std::get<1>(*it);
+            wlength -= std::min(std::get<1>(*it), wlength);
             // printf("middled, len is now %zu (%d)\n", len, __LINE__);
             return it + 1;
         case MmapWalker::RangeType::End:
             if (std::get<2>(*it) == flags) {
-                wlength -= std::get<1>(*it);
+                wlength -= std::min(std::get<1>(*it), wlength);
                 // printf("ended, len is now %zu (%d)\n", len, __LINE__);
                 return it + 1;
             }
@@ -622,12 +622,13 @@ int munmap(void* addr, size_t length)
                 // printf("FUCK AGAIN %zu vs %zu (%zu %zu)\n", len, oldlen - std::get<1>(*it), oldlen, std::get<1>(*it));
                 assert(wlength >= oldlen - std::get<1>(*it));
                 deallocated += oldlen - std::get<1>(*it);
-                wlength -= oldlen - std::get<1>(*it);
+                assert(std::min(oldlen - std::get<1>(*it), wlength) <= wlength);
+                wlength -= std::min(oldlen - std::get<1>(*it), wlength);
             }
             return it + 1; }
         case MmapWalker::RangeType::Middle:
             tracked = true;
-            wlength -= std::get<1>(*it);
+            wlength -= std::min(std::get<1>(*it), wlength);
             deallocated += std::get<1>(*it);
             return data->mmapRanges.erase(it);
         case MmapWalker::RangeType::End:
@@ -766,12 +767,13 @@ int madvise(void* addr, size_t length, int advice)
                     wlength = 0;
                 } else {
                     deallocated += std::get<1>(*it) - atstart;
-                    wlength -= std::get<1>(*it) - atstart;
+                    assert(std::min(std::get<1>(*it) - atstart, wlength) <= wlength);
+                    wlength -= std::min(std::get<1>(*it) - atstart, wlength);
                 }
                 return it + 1; }
             case MmapWalker::RangeType::Middle:
                 tracked = true;
-                wlength -= std::get<1>(*it);
+                wlength -= std::min(std::get<1>(*it), wlength);
                 deallocated += std::get<1>(*it);
                 return it + 1;
             case MmapWalker::RangeType::End:
