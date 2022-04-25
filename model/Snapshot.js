@@ -7,3 +7,5 @@ class Snapshot
         this.eventIndex = eventIndex;
     }
 };
+
+export { Snapshot };
