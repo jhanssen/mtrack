@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
+#include <array>
 #include <sys/ucontext.h>
 
 struct StackInitializer
@@ -29,8 +29,10 @@ private:
     Stack(const StackInitializer& initializer);
     void initialize(const StackInitializer& initializer);
 
-    long long unsigned mIndex { 0 };
-    std::vector<uint64_t> mPtrs;
+    enum { MaxFrames = 512 };
+    size_t mIndex { 0 };
+    size_t mCount { 0 };
+    std::array<uint64_t, MaxFrames> mPtrs;
 };
 
 inline void Stack::next()
