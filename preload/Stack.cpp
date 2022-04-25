@@ -31,7 +31,7 @@ static void handler(int sig)
     wl.notify();
 }
 
-void Stack::initialize(const StackInitializer& initializer)
+inline void Stack::initialize(const StackInitializer& initializer)
 {
     unw_context_t context = {};
     unw_getcontext(&context);
@@ -79,8 +79,7 @@ void Stack::initialize(const StackInitializer& initializer)
         unw_get_reg(&cursor, UNW_REG_IP, &ip);
         // printf("ip %lx sp %lx\n", ip, sp);
         if (ip > 0) {
-            // not sure why but ip is consistently one past where I need it to be
-            mPtrs[mCount++] = static_cast<uint64_t>(ip - 1);
+            mPtrs[mCount++] = reinterpret_cast<void *>(ip);
         } else {
             break;
         }
@@ -93,12 +92,7 @@ Stack::Stack(unsigned ptid)
     // dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
 
     if (ptid == 0) {
-        ucontext_t ctx;
-        getcontext(&ctx);
-
-        StackInitializer init;
-        memcpy(&init.gregs, &ctx.uc_mcontext.gregs, sizeof(gregset_t));
-        initialize(init);
+        mCount = backtrace(mPtrs.data(), MaxFrames);
     } else {
         if (!data.siginstalled) {
             struct sigaction sa;
