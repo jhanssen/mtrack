@@ -86,7 +86,7 @@ try {
 } catch (err) {
 }
 
-const completions = "help h ? quit q stacks s dump d pf mmaps m printPageFaults pfm printPageFaultsByMmap".split(" ");
+const completions = "help h ? quit q stacks s sm stacksMmap dump d pf mmaps m printPageFaults pfm printPageFaultsByMmap".split(" ");
 function completer(line) {
     const split = line.split(" ").filter(x => x);
     if (split.length === 1) {
