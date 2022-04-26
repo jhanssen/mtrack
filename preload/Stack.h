@@ -24,6 +24,7 @@ public:
     // not sure why but ip is consistently one past where I need it to be
     uint64_t ip() const { return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(mPtrs[mIndex])) - 1; }
     uint64_t index() const { return mIndex; }
+    size_t count() const { return mCount; }
 
 private:
     Stack(const Stack &) = delete;

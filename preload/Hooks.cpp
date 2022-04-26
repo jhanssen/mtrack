@@ -31,8 +31,15 @@ typedef int (*MunmapSig)(void*, size_t);
 typedef int (*MadviseSig)(void*, size_t, int);
 typedef int (*MprotectSig)(void*, size_t, int);
 typedef void* (*DlOpenSig)(const char*, int);
-typedef int  (*DlCloseSig)(void*);
+typedef int (*DlCloseSig)(void*);
 typedef int (*PthreadSetnameSig)(pthread_t thread, const char* name);
+typedef void* (*MallocSig)(size_t);
+typedef void (*FreeSig)(void*);
+typedef void* (*CallocSig)(size_t, size_t);
+typedef void* (*ReallocSig)(void*, size_t);
+typedef void* (*ReallocArraySig)(void*, size_t, size_t);
+typedef int (*Posix_MemalignSig)(void **, size_t, size_t);
+typedef void* (*Aligned_AllocSig)(size_t, size_t);
 
 class Hooks
 {
@@ -54,6 +61,13 @@ struct Callbacks
     DlOpenSig dlopen { nullptr };
     DlCloseSig dlclose { nullptr };
     PthreadSetnameSig pthread_setname_np { nullptr };
+    MallocSig malloc { nullptr };
+    FreeSig free { nullptr };
+    CallocSig calloc { nullptr };
+    ReallocSig realloc { nullptr };
+    ReallocArraySig reallocarray { nullptr };
+    Posix_MemalignSig posix_memalign { nullptr };
+    Aligned_AllocSig aligned_alloc { nullptr };
 } callbacks;
 
 struct Data {
@@ -67,30 +81,58 @@ struct Data {
 
     Spinlock mmapRangeLock;
     std::vector<std::tuple<void*, size_t, int>> mmapRanges;
-
-    static thread_local bool hooked;
 } *data = nullptr;
+
+namespace {
+void safePrint(const char *string)
+{
+    ::write(STDOUT_FILENO, string, strlen(string));
+}
+
+thread_local bool hooked = true;
+thread_local bool inMallocFree = false;
+}
 
 class NoHook
 {
 public:
     NoHook()
-        : wasHooked(data->hooked)
+        : wasHooked(::hooked)
     {
-        data->hooked = false;
+        ::hooked = false;
     }
     ~NoHook()
     {
-        data->hooked = wasHooked;
+        ::hooked = wasHooked;
     }
 
 private:
     bool wasHooked;
 };
 
-static std::once_flag hookOnce = {};
+class MallocFree
+{
+public:
+    MallocFree()
+        : mPrev(::inMallocFree)
+    {
+        ::inMallocFree = true;
+    }
 
-thread_local bool Data::hooked = true;
+    ~MallocFree()
+    {
+        ::inMallocFree = mPrev;
+    }
+
+    bool wasInMallocFree() const
+    {
+        return mPrev;
+    }
+private:
+    const bool mPrev;
+};
+
+static std::once_flag hookOnce = {};
 
 struct MmapWalker
 {
@@ -106,12 +148,17 @@ struct MmapWalker
     static void walk(void* addr, size_t len, Func&& func);
 };
 
-inline uint64_t alignOffset(uint64_t size)
+inline uint64_t alignToPage(uint64_t size)
 {
     return size + (((~size) + 1) & (PAGESIZE - 1));
 }
 
-inline uint64_t ptr_cast(void *ptr)
+inline uint64_t alignToSize(uint64_t size, uint64_t align)
+{
+    return size + (((~size) + 1) & (align - 1));
+}
+
+inline uint64_t mmap_ptr_cast(void *ptr)
 {
     const uint64_t ret = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr));
     return ret + (PAGESIZE - (ret % PAGESIZE)) - PAGESIZE;
@@ -203,7 +250,7 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, 
 
 static void hookThread()
 {
-    data->hooked = false;
+    hooked = false;
 
     pollfd evt[] = {
         { .fd = data->faultFd, .events = POLLIN },
@@ -311,56 +358,98 @@ static void hookCleanup()
 
 void Hooks::hook()
 {
-    data = new Data();
     callbacks.mmap = reinterpret_cast<MmapSig>(dlsym(RTLD_NEXT, "mmap"));
     if (callbacks.mmap == nullptr) {
-        printf("no mmap\n");
+        safePrint("no mmap\n");
         abort();
     }
     callbacks.mmap64 = reinterpret_cast<Mmap64Sig>(dlsym(RTLD_NEXT, "mmap64"));
     if (callbacks.mmap64 == nullptr) {
-        printf("no mmap64\n");
+        safePrint("no mmap64\n");
         abort();
     }
     callbacks.munmap = reinterpret_cast<MunmapSig>(dlsym(RTLD_NEXT, "munmap"));
     if (callbacks.munmap == nullptr) {
-        printf("no munmap\n");
+        safePrint("no munmap\n");
         abort();
     }
     callbacks.mremap = reinterpret_cast<MremapSig>(dlsym(RTLD_NEXT, "mremap"));
     if (callbacks.mremap == nullptr) {
-        printf("no mremap\n");
+        safePrint("no mremap\n");
         abort();
     }
     callbacks.madvise = reinterpret_cast<MadviseSig>(dlsym(RTLD_NEXT, "madvise"));
     if (callbacks.madvise == nullptr) {
-        printf("no madvise\n");
+        safePrint("no madvise\n");
         abort();
     }
     callbacks.mprotect = reinterpret_cast<MprotectSig>(dlsym(RTLD_NEXT, "mprotect"));
     if (callbacks.mprotect == nullptr) {
-        printf("no mprotect\n");
+        safePrint("no mprotect\n");
         abort();
     }
     callbacks.dlopen = reinterpret_cast<DlOpenSig>(dlsym(RTLD_NEXT, "dlopen"));
     if (callbacks.dlopen == nullptr) {
-        printf("no dlopen\n");
+        safePrint("no dlopen\n");
         abort();
     }
     callbacks.dlclose = reinterpret_cast<DlCloseSig>(dlsym(RTLD_NEXT, "dlclose"));
     if (callbacks.dlclose == nullptr) {
-        printf("no dlclose\n");
+        safePrint("no dlclose\n");
         abort();
     }
     callbacks.pthread_setname_np = reinterpret_cast<PthreadSetnameSig>(dlsym(RTLD_NEXT, "pthread_setname_np"));
     if (callbacks.pthread_setname_np == nullptr) {
-        printf("no pthread_setname_np\n");
+        safePrint("no pthread_setname_np\n");
         abort();
     }
 
+    callbacks.malloc = reinterpret_cast<MallocSig>(dlsym(RTLD_NEXT, "malloc"));
+    if (callbacks.malloc == nullptr) {
+        safePrint("no malloc\n");
+        abort();
+    }
+
+    callbacks.free = reinterpret_cast<FreeSig>(dlsym(RTLD_NEXT, "free"));
+    if (callbacks.free == nullptr) {
+        safePrint("no free\n");
+        abort();
+    }
+
+    callbacks.calloc = reinterpret_cast<CallocSig>(dlsym(RTLD_NEXT, "calloc"));
+    if (callbacks.calloc == nullptr) {
+        safePrint("no calloc\n");
+        abort();
+    }
+
+    callbacks.realloc = reinterpret_cast<ReallocSig>(dlsym(RTLD_NEXT, "realloc"));
+    if (callbacks.realloc == nullptr) {
+        safePrint("no realloc\n");
+        abort();
+    }
+
+    callbacks.reallocarray = reinterpret_cast<ReallocArraySig>(dlsym(RTLD_NEXT, "reallocarray"));
+    if (callbacks.reallocarray == nullptr) {
+        safePrint("no reallocarray\n");
+        abort();
+    }
+
+    callbacks.posix_memalign = reinterpret_cast<Posix_MemalignSig>(dlsym(RTLD_NEXT, "posix_memalign"));
+    if (callbacks.posix_memalign == nullptr) {
+        safePrint("no posix_memalign\n");
+        abort();
+    }
+
+    callbacks.realloc = reinterpret_cast<ReallocSig>(dlsym(RTLD_NEXT, "realloc"));
+    if (callbacks.realloc == nullptr) {
+        safePrint("no realloc\n");
+        abort();
+    }
+
+    data = new Data();
     data->faultFd = syscall(SYS_userfaultfd, O_NONBLOCK);
     if (data->faultFd == -1) {
-        printf("no faultFd\n");
+        safePrint("no faultFd\n");
         abort();
     }
 
@@ -369,16 +458,16 @@ void Hooks::hook()
         .features = UFFD_FEATURE_THREAD_ID //| UFFD_FEATURE_EVENT_REMAP | UFFD_FEATURE_EVENT_REMOVE | UFFD_FEATURE_EVENT_UNMAP
     };
     if (ioctl(data->faultFd, UFFDIO_API, &api)) {
-        printf("no ioctl api\n");
+        safePrint("no ioctl api\n");
         abort();
     }
     if (api.api != UFFD_API) {
-        printf("no api api\n");
+        safePrint("no api api\n");
         abort();
     }
 
     if (pipe2(data->pipe, O_NONBLOCK) == -1) {
-        printf("no pipe\n");
+        safePrint("no pipe\n");
         abort();
     }
 
@@ -408,7 +497,7 @@ void Hooks::hook()
         data->recorder.record(RecordType::WorkingDirectory, Recorder::String(buf2));
     }
 
-    printf("hook.\n");
+    safePrint("hook.\n");
 }
 
 uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
@@ -481,7 +570,7 @@ uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
         uffdio_register reg = {
             .range = {
                 .start = reinterpret_cast<__u64>(addr),
-                .len = alignOffset(length)
+                .len = alignToPage(length)
             },
             .mode = UFFDIO_REGISTER_MODE_MISSING,
             .ioctls = 0
@@ -503,23 +592,70 @@ uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
     return allocated;
 }
 
+void reportMalloc(size_t size, void* ptr)
+{
+    NoHook nohook;
+
+    Recorder::Scope recordScope(&data->recorder);
+
+    if (data->modulesDirty.load(std::memory_order_acquire)) {
+        dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
+        data->modulesDirty.store(false, std::memory_order_release);
+    }
+
+    data->recorder.record(RecordType::Malloc,
+                          static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
+                          static_cast<uint64_t>(size));
+    Stack stack(0);
+    while (!stack.atEnd()) {
+        data->recorder.record(RecordType::Stack, stack.ip());
+        stack.next();
+    }
+    data->recorder.record(RecordType::Stack, std::numeric_limits<uint64_t>::max());
+}
+
+void reportFree(void* ptr)
+{
+    NoHook nohook;
+
+    Recorder::Scope recordScope(&data->recorder);
+
+    if (data->modulesDirty.load(std::memory_order_acquire)) {
+        dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
+        data->modulesDirty.store(false, std::memory_order_release);
+    }
+
+    data->recorder.record(RecordType::Free, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)));
+    Stack stack(0);
+    while (!stack.atEnd()) {
+        data->recorder.record(RecordType::Stack, stack.ip());
+        stack.next();
+    }
+    data->recorder.record(RecordType::Stack, std::numeric_limits<uint64_t>::max());
+}
+
 extern "C" {
 void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
-    std::call_once(hookOnce, Hooks::hook);
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
 
     // printf("mmap?? %p\n", addr);
     auto ret = callbacks.mmap(addr, length, prot, flags, fd, offset);
     // printf("mmap %p??\n", ret);
 
-    if (!data->hooked || ret == MAP_FAILED)
+    if (!::hooked || ret == MAP_FAILED)
         return ret;
 
     NoHook nohook;
 
     bool tracked = false;
     uint64_t allocated = 0;
-    if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS) && fd == -1) {
+    if (!::inMallocFree
+        && (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)
+        && fd == -1) {
         allocated = trackMmap(ret, length, prot, flags);
         tracked = true;
     }
@@ -532,7 +668,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     }
 
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
-                          ptr_cast(ret), alignOffset(length), allocated,
+                          mmap_ptr_cast(ret), alignToPage(length), allocated,
                           prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()));
 
     Stack stack(0);
@@ -547,20 +683,25 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 
 void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t pgoffset)
 {
-    std::call_once(hookOnce, Hooks::hook);
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
 
     // printf("mmap64?? %p\n", addr);
     auto ret = callbacks.mmap64(addr, length, prot, flags, fd, pgoffset);
     // printf("mmap64 %p??\n", ret);
 
-    if (!data->hooked || ret == MAP_FAILED)
+    if (!::hooked || ret == MAP_FAILED)
         return ret;
 
     NoHook nohook;
 
     bool tracked = false;
     uint64_t allocated = 0;
-    if ((flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS) && fd == -1) {
+    if (!::inMallocFree
+        && (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)
+        && fd == -1) {
         allocated = trackMmap(ret, length, prot, flags);
         tracked = true;
     }
@@ -573,7 +714,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
     }
 
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
-                          ptr_cast(ret), alignOffset(length), allocated,
+                          mmap_ptr_cast(ret), alignToPage(length), allocated,
                           prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()));
 
     Stack stack(0);
@@ -588,9 +729,12 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
 
 int munmap(void* addr, size_t length)
 {
-    std::call_once(hookOnce, Hooks::hook);
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
 
-    if (!data->hooked)
+    if (!::hooked)
         return callbacks.munmap(addr, length);
 
     NoHook nohook;
@@ -647,7 +791,7 @@ int munmap(void* addr, size_t length)
     });
 
     data->recorder.record(tracked ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
-                          ptr_cast(addr), alignOffset(length), deallocated);
+                          mmap_ptr_cast(addr), alignToPage(length), deallocated);
     // if (updated) {
     //     printf("2--\n");
     //     for (const auto& item : data->mmapRanges) {
@@ -684,7 +828,10 @@ int munmap(void* addr, size_t length)
 
 int mprotect(void* addr, size_t len, int prot)
 {
-    std::call_once(hookOnce, Hooks::hook);
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
 
     int flags = 0;
     {
@@ -710,7 +857,7 @@ int mprotect(void* addr, size_t len, int prot)
         uffdio_register reg = {
             .range = {
                 .start = reinterpret_cast<__u64>(addr),
-                .len = alignOffset(len)
+                .len = alignToPage(len)
             },
             .mode = UFFDIO_REGISTER_MODE_MISSING,
             .ioctls = 0
@@ -747,9 +894,12 @@ void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
 
 int madvise(void* addr, size_t length, int advice)
 {
-    std::call_once(hookOnce, Hooks::hook);
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
 
-    if (!data->hooked)
+    if (!::hooked)
         return callbacks.madvise(addr, length, advice);
 
     NoHook nohook;
@@ -790,21 +940,27 @@ int madvise(void* addr, size_t length, int advice)
     }
 
     data->recorder.record(tracked ? RecordType::MadviseTracked : RecordType::MadviseUntracked,
-                          ptr_cast(addr), alignOffset(length), advice, deallocated);
+                          mmap_ptr_cast(addr), alignToPage(length), advice, deallocated);
 
     return callbacks.madvise(addr, length, advice);
 }
 
 void* dlopen(const char* filename, int flags)
 {
-    std::call_once(hookOnce, Hooks::hook);
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
     data->modulesDirty.store(true, std::memory_order_release);
     return callbacks.dlopen(filename, flags);
 }
 
 int dlclose(void* handle)
 {
-    std::call_once(hookOnce, Hooks::hook);
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
     if (data) {
         data->modulesDirty.store(true, std::memory_order_release);
     }
@@ -813,7 +969,10 @@ int dlclose(void* handle)
 
 int pthread_setname_np(pthread_t thread, const char* name)
 {
-    std::call_once(hookOnce, Hooks::hook);
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
     // ### should fix this, this will drop unless we're the same thread
     if (pthread_equal(thread, pthread_self())) {
         NoHook nohook;
@@ -822,4 +981,125 @@ int pthread_setname_np(pthread_t thread, const char* name)
     return callbacks.pthread_setname_np(thread, name);
 }
 
+void* malloc(size_t size)
+{
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
+
+    auto ret = callbacks.malloc(size);
+    if (!::hooked || !ret)
+        return ret;
+
+    if (!mallocFree.wasInMallocFree() && data)
+        reportMalloc(size, ret);
+    return ret;
+}
+
+void free(void* ptr)
+{
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
+
+    callbacks.free(ptr);
+
+    if (!::hooked)
+        return;
+
+    if (!mallocFree.wasInMallocFree() && data)
+        reportFree(ptr);
+}
+
+void* calloc(size_t nmemb, size_t size)
+{
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
+
+    auto ret = callbacks.calloc(nmemb, size);
+    if (!::hooked || !ret)
+        return ret;
+
+    if (!mallocFree.wasInMallocFree() && data)
+        reportMalloc(nmemb * size, ret);
+    return ret;
+}
+
+void* realloc(void* ptr, size_t size)
+{
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
+
+    auto ret = callbacks.realloc(ptr, size);
+    if (!::hooked || !ret)
+        return ret;
+
+    // printf("mmap?? %p\n", addr);
+    if (ptr) {
+        reportFree(ptr);
+    }
+
+    if (!mallocFree.wasInMallocFree() && data)
+        reportMalloc(size, ret);
+    return ret;
+}
+
+void* reallocarray(void* ptr, size_t nmemb, size_t size)
+{
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
+
+    auto ret = callbacks.reallocarray(ptr, nmemb, size);
+    if (!::hooked || !ret)
+        return ret;
+
+    // printf("mmap?? %p\n", addr);
+    if (ptr) {
+        reportFree(ptr);
+    }
+
+    if (!mallocFree.wasInMallocFree() && data)
+        reportMalloc(size * nmemb, ret);
+    return ret;
+}
+
+int posix_memalign(void** memptr, size_t alignment, size_t size)
+{
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
+
+    auto ret = callbacks.posix_memalign(memptr, alignment, size);
+    if (!::hooked || !*memptr || ret != 0)
+        return ret;
+
+    if (!mallocFree.wasInMallocFree() && data)
+        reportMalloc(alignToSize(size, alignment), *memptr);
+    return ret;
+}
+
+void* aligned_alloc(size_t alignment, size_t size)
+{
+    MallocFree mallocFree;
+    if (!mallocFree.wasInMallocFree()) {
+        std::call_once(hookOnce, Hooks::hook);
+    }
+
+    auto ret = callbacks.aligned_alloc(alignment, size);
+    if (!::hooked || !ret)
+        return ret;
+
+    if (!mallocFree.wasInMallocFree() && data)
+        reportMalloc(alignToSize(size, alignment), ret);
+    return ret;
+}
 } // extern "C"
