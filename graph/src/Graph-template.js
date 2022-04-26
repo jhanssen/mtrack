@@ -1,6 +1,7 @@
-/* global d3 */
+/* global d3, flamegraph */
 
 import { Model } from "../../model/Model.js";
+import { Stack } from "../../model/Stack.js";
 
 export class Graph {
     constructor() {
@@ -25,6 +26,17 @@ export class Graph {
         this._line = {
             margin, width, height, x, y, svg, valueLine
         };
+
+        this._flame = flamegraph()
+            .width(1920)
+            .cellHeight(18)
+            .transitionDuration(750)
+            .minFrameSize(5)
+            .transitionEase(d3.easeCubic)
+            .sort(true)
+            .title("")
+            //.onClick(onClick)
+            .selfValue(false);
 
         this._data = "$DATA_GOES_HERE$";
         this._model = new Model(this._data);
@@ -84,6 +96,44 @@ export class Graph {
     }
 
     _flameify(time) {
+        const children = [];
+        const data = { name: "nrdp", value: 0, children };
 
+        this._model.parse({ ms: time });
+
+        let cur = children;
+        for (const [ stackid, pfs ] of this._model.pageFaultsByStack) {
+            //console.log(stackid, pfs.length);
+            const stack = this._data.stacks[stackid];
+            //console.log(Stack.print(stack, this._data.strings));
+            let pfsize = 0;
+            for (const pf of pfs) {
+                pfsize += pf.range.length;
+            }
+
+            for (let stackIdx = stack.length - 1; stackIdx >= 0; --stackIdx) {
+                const stackEntry = stack[stackIdx];
+                const key = `${stackEntry[0]}:${stackEntry[1]}:${stackEntry[2]}`;
+                let curIdx = cur.findIndex(e => {
+                    return e.key === key;
+                });
+                if (curIdx === -1) {
+                    curIdx = cur.length;
+                    cur.push({ name: Stack.stringifyFrame(stackEntry, this._data.strings), value: pfsize, key, children: [] });
+                } else {
+                    cur[curIdx].value += pfsize;
+                }
+                cur = cur[curIdx].children;
+            }
+            // console.log(stack, pfsize);
+
+            cur = children;
+        }
+
+        console.log(data);
+
+        d3.select("#flamechart")
+            .datum(data)
+            .call(this._flame);
     }
 }

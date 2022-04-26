@@ -4,7 +4,29 @@
   stack: Frame[]
 */
 
-function stringifyFrame(frame, stringTable)
+export class Stack
+{
+    constructor(stack, stringTable)
+    {
+        this.frames = [];
+        stack.forEach(frame => {
+            // console.log("got dude", frame);
+            this.frames.push(Stack.stringifyFrame(frame, stringTable));
+            if (frame.inlines) {
+                frame.inlines.forEach(inline => {
+                    this.frames.push(Stack.stringifyFrame(inline));
+                });
+            }
+        });
+    }
+
+    toString()
+    {
+        return this.frames.join("\n");
+    }
+}
+
+Stack.stringifyFrame = function(frame, stringTable)
 {
     let str;
     if (frame[0] === -1) {
@@ -19,33 +41,10 @@ function stringifyFrame(frame, stringTable)
         }
     }
     return str;
-}
-
-class Stack
-{
-    constructor(stack, stringTable)
-    {
-        this.frames = [];
-        stack.forEach(frame => {
-            // console.log("got dude", frame);
-            this.frames.push(stringifyFrame(frame, stringTable));
-            if (frame.inlines) {
-                frame.inlines.forEach(inline => {
-                    this.frames.push(stringifyFrame(inline));
-                });
-            }
-        });
-    }
-
-    toString()
-    {
-        return this.frames.join("\n");
-    }
-}
+};
 
 Stack.print = function(stack, stringTable)
 {
     return new Stack(stack, stringTable).toString();
-}
+};
 
-export { Stack };
