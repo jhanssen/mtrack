@@ -46,7 +46,9 @@ export class Graph {
 
         this._line.svg.append("path")
             .data([data])
-            .attr("class", "linechart")
+            .attr("fill", "none")
+            .attr("stroke", "steelblue")
+            .attr("stroke-width", 4)
             .attr("d", this._line.valueLine);
 
         this._line.svg.selectAll("circles")
@@ -79,5 +81,9 @@ export class Graph {
             .call(d3.axisLeft(this._line.y));
 
         console.log("inited");
+    }
+
+    _flameify(time) {
+
     }
 }
