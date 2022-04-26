@@ -12,8 +12,8 @@ export class Graph {
         const y = d3.scaleLinear().range([height, 0]);
 
         const valueLine = d3.line()
-              .x(d => x(d.date))
-              .y(d => y(d.close));
+              .x(d => x(d.time))
+              .y(d => y(d.used));
 
         const svg = d3.select("#linechart")
               .append("svg")
@@ -37,17 +37,39 @@ export class Graph {
 
         const data = [];
         this._model.parse(undefined, snapshot => {
-            data.push({ date: snapshot.time, close: snapshot.used / (1024 * 1024) });
+            data.push({ time: snapshot.time, used: snapshot.used / (1024 * 1024) });
         });
-        data.columns = ["date", "close"];
+        data.columns = ["time", "used"];
 
-        this._line.x.domain(d3.extent(data, d => d.date));
-        this._line.y.domain([0, d3.max(data, d => d.close)]);
+        this._line.x.domain(d3.extent(data, d => d.time));
+        this._line.y.domain([0, d3.max(data, d => d.used)]);
 
         this._line.svg.append("path")
             .data([data])
             .attr("class", "linechart")
             .attr("d", this._line.valueLine);
+
+        this._line.svg.selectAll("circles")
+            .data(data)
+            .enter()
+            .append("circle")
+            .attr("fill", "red")
+            .attr("stroke", "none")
+            .attr("cx", d => this._line.x(d.time))
+            .attr("cy", d => this._line.y(d.used))
+            .attr("r", 3)
+            .on("mouseover", function(d, i) {
+                d3.select(this).transition()
+                    .duration(100)
+                    .attr("r", 8);
+            }).on("mouseout", function(d, i) {
+                d3.select(this).transition()
+                    .duration(50)
+                    .attr("r", 3);
+            }).on("click", (d, i) => {
+                this._flameify(d.time);
+                console.log("clk", d, i);
+            });
 
         this._line.svg.append("g")
             .attr("transform", `translate(0,${this._line.height})`)
