@@ -24,6 +24,7 @@ class Model
             count = Math.min(until.event, count);
         }
         let time = 0;
+        let lastSnapshotTime = 0;
         let currentMemoryUsage = 0;
         let pageFaultsCreated = 0;
 
@@ -81,12 +82,13 @@ class Model
             const event = this.data.events[idx];
             switch (event[0]) {
             case Model.Time:
+                if (idx > 0 && callback) {
+                    lastSnapshotTime = time;
+                    callback(new Snapshot(currentMemoryUsage, time, idx));
+                }
                 time = event[1];
                 if (until?.ms < time) {
                     idx = count;
-                }
-                if (callback) {
-                    callback(new Snapshot(currentMemoryUsage, time, idx));
                 }
                 break;
             case Model.MmapUntracked:
@@ -156,6 +158,9 @@ class Model
                 throw new Error("Unknown event " + JSON.stringify(event));
             }
             // console.log("Got event", this.data.events[idx]);
+        }
+        if (time !== lastSnapshotTime) {
+            callback(new Snapshot(currentMemoryUsage, time, count));
         }
         // console.log(this.pageFaults.length,
         //             Array.from(this.pageFaultsByStack.keys()),
