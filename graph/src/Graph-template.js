@@ -4,25 +4,30 @@ import { Model } from "../../model/Model.js";
 
 export class Graph {
     constructor() {
-        const colors = d3.ez.palette.categorical(3);
-        const chart = d3.ez.chart.lineChart()
-              .colors(colors)
-              .yAxisLabel("Rate");
+        const margin = {top: 20, right: 20, bottom: 50, left: 70};
+        const width = 750 - margin.left - margin.right;
+        const height = 400 - margin.top - margin.bottom;
 
-        const legend = d3.ez.component.legend().title("Currency");
-        const title = d3.ez.component.title().mainText("Historical Exchange Rates").subText("Comparison against GBP");
+        const x = d3.scaleLinear().range([0, width]);
+        const y = d3.scaleLinear().range([height, 0]);
 
-        this.linechart = d3.ez.base()
-            .width(750)
-            .height(400)
-            .chart(chart)
-            .legend(legend)
-            .title(title)
-            .on("customValueMouseOver", function(d, i) {
-                d3.select("#linemessage").text(d.value);
-            });
+        const valueLine = d3.line()
+              .x(d => x(d.date))
+              .y(d => y(d.close));
+
+        const svg = d3.select("#linechart")
+              .append("svg")
+              .attr("width", width + margin.left + margin.top)
+              .attr("height", height + margin.top + margin.bottom)
+              .append("g")
+              .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        this._line = {
+            margin, width, height, x, y, svg, valueLine
+        };
 
         this._data = "$DATA_GOES_HERE$";
+        this._model = new Model(this._data);
     }
 
     init() {
@@ -30,29 +35,26 @@ export class Graph {
             window.alert("No data");
         }
 
-        function nnow(offset) {
-            return new Date(new Date().getTime() + (offset * 24 * 60 * 60 * 1000));
-        }
+        const data = [];
+        this._model.parse(undefined, snapshot => {
+            data.push({ date: snapshot.time, close: snapshot.used / (1024 * 1024) });
+        });
+        data.columns = ["date", "close"];
 
-        const data = [ {key: "USD", values: []}, {key: "EUR", values: []}, {key: "AUD", values: []} ];
-        data[0].values.push({ key: nnow(-5), value: 5 });
-        data[0].values.push({ key: nnow(-4), value: 10 });
-        data[0].values.push({ key: nnow(-3), value: 7 });
-        data[0].values.push({ key: nnow(-2), value: 3 });
+        this._line.x.domain(d3.extent(data, d => d.date));
+        this._line.y.domain([0, d3.max(data, d => d.close)]);
 
-        data[1].values.push({ key: nnow(-5), value: 50 });
-        data[1].values.push({ key: nnow(-4), value: 20 });
-        data[1].values.push({ key: nnow(-3), value: 30 });
-        data[1].values.push({ key: nnow(-2), value: 30 });
+        this._line.svg.append("path")
+            .data([data])
+            .attr("class", "linechart")
+            .attr("d", this._line.valueLine);
 
-        data[2].values.push({ key: nnow(-5), value: 500 });
-        data[2].values.push({ key: nnow(-4), value: 100 });
-        data[2].values.push({ key: nnow(-3), value: 30 });
-        data[2].values.push({ key: nnow(-2), value: 70 });
+        this._line.svg.append("g")
+            .attr("transform", `translate(0,${this._line.height})`)
+            .call(d3.axisBottom(this._line.x));
 
-        d3.select('#linechart')
-            .datum(data)
-            .call(this.linechart);
+        this._line.svg.append("g")
+            .call(d3.axisLeft(this._line.y));
 
         console.log("inited");
     }
