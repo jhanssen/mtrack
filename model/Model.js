@@ -159,7 +159,7 @@ class Model
             }
             // console.log("Got event", this.data.events[idx]);
         }
-        if (time !== lastSnapshotTime) {
+        if (callback && time !== lastSnapshotTime) {
             callback(new Snapshot(currentMemoryUsage, time, count));
         }
         // console.log(this.pageFaults.length,
