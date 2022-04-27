@@ -1,10 +1,12 @@
 #include "Recorder.h"
 #include <unistd.h>
+#include "NoHook.h"
 
 thread_local bool Recorder::tScoped = false;
 
 void Recorder::process(Recorder* r)
 {
+    NoHook noHook;
     enum { SleepInterval = 250 };
 
     uint8_t timeData[5];

@@ -1,6 +1,7 @@
 #include "Stack.h"
 #include "Spinlock.h"
 #include "Recorder.h"
+#include "NoHook.h"
 #include <common/Version.h>
 
 #include <assert.h>
@@ -146,22 +147,15 @@ thread_local bool hooked = true;
 thread_local bool inMallocFree = false;
 }
 
-class NoHook
+NoHook::NoHook()
+    : wasHooked(::hooked)
 {
-public:
-    NoHook()
-        : wasHooked(::hooked)
-    {
-        ::hooked = false;
-    }
-    ~NoHook()
-    {
-        ::hooked = wasHooked;
-    }
-
-private:
-    bool wasHooked;
-};
+    ::hooked = false;
+}
+NoHook::~NoHook()
+{
+    ::hooked = wasHooked;
+}
 
 class MallocFree
 {
