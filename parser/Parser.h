@@ -102,21 +102,21 @@ public:
     std::string finalize() const;
 
 private:
-    void handleExe();
-    void handleLibrary();
-    void handleLibraryHeader();
-    void handleMadvise(bool tracked);
-    void handleMmap(bool tracked);
-    void handleMunmap(bool tracked);
-    void handlePageFault();
-    void handleStack();
-    void handleThreadName();
-    void handleTime();
-    void handleWorkingDirectory();
+    inline void handleExe();
+    inline void handleLibrary();
+    inline void handleLibraryHeader();
+    inline void handleMadvise(bool tracked);
+    inline void handleMmap(bool tracked);
+    inline void handleMunmap(bool tracked);
+    inline void handlePageFault();
+    inline void handleStack();
+    inline void handleThreadName();
+    inline void handleTime();
+    inline void handleWorkingDirectory();
 
-    int32_t hashStack();
+    inline int32_t hashStack();
 
-    void updateModuleCache();
+    inline void updateModuleCache();
 
     template<typename T>
     T readData();

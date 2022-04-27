@@ -5,7 +5,7 @@
 #include <cstdlib>
 #include <limits>
 
-void Parser::updateModuleCache()
+inline void Parser::updateModuleCache()
 {
     mModuleCache.clear();
 
@@ -17,19 +17,19 @@ void Parser::updateModuleCache()
     }
 }
 
-int32_t Parser::hashStack()
+inline int32_t Parser::hashStack()
 {
     const auto idx = mStackIndexer.index(mCurrentStack);
     mCurrentStack.clear();
     return idx;
 }
 
-void Parser::handleExe()
+inline void Parser::handleExe()
 {
     mExe = readData<std::string>();
 }
 
-void Parser::handleLibrary()
+inline void Parser::handleLibrary()
 {
     auto name = readData<std::string>();
     auto start = readData<uint64_t>();
@@ -53,7 +53,7 @@ void Parser::handleLibrary()
     mModules.insert(mod);
 }
 
-void Parser::handleLibraryHeader()
+inline void Parser::handleLibraryHeader()
 {
     // two hex numbers
     const auto addr = readData<uint64_t>();
@@ -65,7 +65,7 @@ void Parser::handleLibraryHeader()
     mModulesDirty = true;
 }
 
-void Parser::handleMadvise(bool tracked)
+inline void Parser::handleMadvise(bool tracked)
 {
     const auto addr = readData<uint64_t>();
     const auto size = readData<uint64_t>();
@@ -75,7 +75,7 @@ void Parser::handleMadvise(bool tracked)
     mEvents.push_back(std::make_shared<MadviseEvent>(tracked, addr, size, advice, allocated));
 }
 
-void Parser::handleMmap(bool tracked)
+inline void Parser::handleMmap(bool tracked)
 {
     const auto addr = readData<uint64_t>();
     const auto size = readData<uint64_t>();
@@ -95,7 +95,7 @@ void Parser::handleMmap(bool tracked)
     mEvents.push_back(std::make_shared<MmapEvent>(tracked, addr, size, allocated, prot, flags, fd, off, mStringIndexer.index(tname)));
 }
 
-void Parser::handleMunmap(bool tracked)
+inline void Parser::handleMunmap(bool tracked)
 {
     const auto addr = readData<uint64_t>();
     const auto size = readData<uint64_t>();
@@ -104,7 +104,7 @@ void Parser::handleMunmap(bool tracked)
     mEvents.push_back(std::make_shared<MunmapEvent>(tracked, addr, size, deallocated));
 }
 
-void Parser::handlePageFault()
+inline void Parser::handlePageFault()
 {
     const auto addr = readData<uint64_t>();
     const auto tid = readData<uint32_t>();
@@ -118,7 +118,7 @@ void Parser::handlePageFault()
     mEvents.push_back(std::make_shared<PageFaultEvent>(addr, 4096, mStringIndexer.index(tname)));
 }
 
-void Parser::handleStack()
+inline void Parser::handleStack()
 {
     assert(!mEvents.empty());
 
@@ -157,20 +157,20 @@ void Parser::handleStack()
     }
 }
 
-void Parser::handleThreadName()
+inline void Parser::handleThreadName()
 {
     const auto tid = readData<uint32_t>();
     mThreadNames[tid] = readData<std::string>();
 }
 
-void Parser::handleTime()
+inline void Parser::handleTime()
 {
     const auto time = readData<uint32_t>();
 
     mEvents.push_back(std::make_shared<TimeEvent>(time));
 }
 
-void Parser::handleWorkingDirectory()
+inline void Parser::handleWorkingDirectory()
 {
     mCwd = readData<std::string>() + "/";
 }
