@@ -646,8 +646,6 @@ void reportMalloc(void* ptr, size_t size)
                           static_cast<uint64_t>(size),
                           static_cast<uint32_t>(gettid()),
                           Stack());
-
-    data->recorder.recordStack(std::numeric_limits<uint64_t>::max());
 }
 
 void reportFree(void* ptr)
@@ -699,14 +697,8 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
                           mmap_ptr_cast(ret), alignToPage(length), allocated,
-                          prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()));
-
-    Stack stack;
-    // while (!stack.atEnd()) {
-    //     data->recorder.recordStack(stack.ip());
-    //     stack.next();
-    // }
-    // data->recorder.recordStack(std::numeric_limits<uint64_t>::max());
+                          prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()),
+                          Stack());
     return ret;
 }
 
