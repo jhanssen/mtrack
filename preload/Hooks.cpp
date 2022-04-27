@@ -226,8 +226,8 @@ void MmapWalker::walk(void* addr, size_t len, Func&& func)
             used += remtmp - rem;
             // printf("used1 %zu %zu (%zu %zu)\n", used, len, remtmp, rem);
             if (rem > 0 && it != data->mmapRanges.end() && addr >= reinterpret_cast<uint8_t*>(std::get<0>(*it)) && addr < reinterpret_cast<uint8_t*>(std::get<0>(*it)) + std::get<1>(*it)) {
-                assert(reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend) >= rem);
                 newstart = reinterpret_cast<uint8_t*>(std::get<0>(*it));
+                assert(reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend) >= rem);
                 rem -= reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend);
                 used += reinterpret_cast<uint8_t*>(newstart) - reinterpret_cast<uint8_t*>(oldend);
                 // printf("used2 %zu %zu (%zu %zu)\n", used, len, remtmp, rem);
