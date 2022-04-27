@@ -4,13 +4,6 @@
 #include <array>
 #include <sys/ucontext.h>
 
-struct StackInitializer
-{
-#if defined(__x86_64__) || defined(__i386__)
-    gregset_t gregs;
-#endif
-};
-
 class Stack
 {
 public:
@@ -27,6 +20,13 @@ public:
     size_t count() const { return mCount; }
 
 private:
+    struct StackInitializer
+    {
+#if defined(__x86_64__) || defined(__i386__)
+        gregset_t gregs;
+#endif
+    };
+
     Stack(const Stack &) = delete;
     Stack &operator=(const Stack &) = delete;
 
