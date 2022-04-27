@@ -125,7 +125,7 @@ Stack::Stack(unsigned ptid)
 
 #ifdef __i386__
         StackInitializer init;
-        memcpy(&init.gregs, &data.gregs, sizeof(gregset_t));
+        memcpy(&init.gregs, &sigData.gregs, sizeof(gregset_t));
         initialize(init);
 #endif
     }
