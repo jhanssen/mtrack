@@ -113,11 +113,12 @@ concept HasDataSize = requires(T& t)
 template<typename T>
 inline size_t recordSize_helper(T&&) requires (!HasDataSize<std::decay_t<T>>)
 {
+    static_assert(std::is_enum_v<std::decay_t<T>> || std::is_integral_v<std::decay_t<T>>, "Must be integral or enum");
     return sizeof(T);
 }
 
 template<typename T>
-inline size_t recordSize_helper(T&& str) requires (HasDataSize<std::decay_t<T>>)
+inline size_t recordSize_helper(T&& str) requires HasDataSize<std::decay_t<T>>
 {
     return str.size() + sizeof(uint32_t);
 }
@@ -137,6 +138,7 @@ inline size_t recordSize(T&& arg, Ts&&... args)
 template<typename T>
 inline void record_helper(uint8_t*& data, T&& arg) requires (!HasDataSize<std::decay_t<T>>)
 {
+    static_assert(std::is_enum_v<std::decay_t<T>> || std::is_integral_v<std::decay_t<T>>, "Must be integral or enum");
     memcpy(data, &arg, sizeof(T));
     data += sizeof(T);
 }
