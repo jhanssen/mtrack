@@ -182,7 +182,7 @@ inline void Recorder::record(RecordType type, Ts... args)
     uint8_t* data = mData.data() + mOffset;
     *data++ = static_cast<uint8_t>(type);
     detail::record(data, args...);
-    mOffset = size;
+    mOffset += size;
 
     if (!tScoped)
         mLock.unlock();
