@@ -27,7 +27,7 @@ inline int32_t Parser::readStack()
     std::vector<Address> stack;
 
     // printf("Trying to read stack at %zu\n", mReadOffset);
-    uint32_t count = readData<uint32_t>();
+    const uint32_t count = readData<uint32_t>() / sizeof(void*);
     for (uint32_t i=0; i<count; ++i) {
         const unsigned long long ip = readData<unsigned long long>() - 1;
         auto it = mModuleCache.upper_bound(ip);
