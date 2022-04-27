@@ -46,6 +46,11 @@ public:
 
     bool isScoped() const;
 
+    size_t fileOffset() const
+    {
+        return ftell(mFile) + mOffset;
+    }
+
 private:
     static void process(Recorder* recorder);
 
