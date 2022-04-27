@@ -630,7 +630,7 @@ uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
     return allocated;
 }
 
-void reportMalloc(size_t size, void* ptr)
+void reportMalloc(void* ptr, size_t size)
 {
     NoHook nohook;
 
@@ -1030,7 +1030,7 @@ void* malloc(size_t size)
         return ret;
 
     if (!mallocFree.wasInMallocFree() && data)
-        reportMalloc(size, ret);
+        reportMalloc(ret, size);
     return ret;
 }
 
@@ -1070,7 +1070,7 @@ void* calloc(size_t nmemb, size_t size)
         return ret;
 
     if (!mallocFree.wasInMallocFree() && data)
-        reportMalloc(nmemb * size, ret);
+        reportMalloc(ret, nmemb * size);
     return ret;
 }
 
@@ -1086,12 +1086,12 @@ void* realloc(void* ptr, size_t size)
         return ret;
 
     // printf("mmap?? %p\n", addr);
-    if (ptr) {
-        reportFree(ptr);
+    if (!mallocFree.wasInMallocFree() && data) {
+        if (ptr) {
+            reportFree(ptr);
+        }
+        reportMalloc(ret, size);
     }
-
-    if (!mallocFree.wasInMallocFree() && data)
-        reportMalloc(size, ret);
     return ret;
 }
 
@@ -1112,7 +1112,7 @@ void* reallocarray(void* ptr, size_t nmemb, size_t size)
     }
 
     if (!mallocFree.wasInMallocFree() && data)
-        reportMalloc(size * nmemb, ret);
+        reportMalloc(ret, size * nmemb);
     return ret;
 }
 
@@ -1128,7 +1128,7 @@ int posix_memalign(void** memptr, size_t alignment, size_t size)
         return ret;
 
     if (!mallocFree.wasInMallocFree() && data)
-        reportMalloc(alignToSize(size, alignment), *memptr);
+        reportMalloc(*memptr, alignToSize(size, alignment));
     return ret;
 }
 
@@ -1144,7 +1144,7 @@ void* aligned_alloc(size_t alignment, size_t size)
         return ret;
 
     if (!mallocFree.wasInMallocFree() && data)
-        reportMalloc(alignToSize(size, alignment), ret);
+        reportMalloc(ret, alignToSize(size, alignment));
     return ret;
 }
 } // extern "C"
