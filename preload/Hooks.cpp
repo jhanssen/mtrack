@@ -41,6 +41,22 @@ typedef void* (*ReallocArraySig)(void*, size_t, size_t);
 typedef int (*Posix_MemalignSig)(void **, size_t, size_t);
 typedef void* (*Aligned_AllocSig)(size_t, size_t);
 
+inline uint64_t alignToPage(uint64_t size)
+{
+    return size + (((~size) + 1) & (PAGESIZE - 1));
+}
+
+inline uint64_t alignToSize(uint64_t size, uint64_t align)
+{
+    return size + (((~size) + 1) & (align - 1));
+}
+
+inline uint64_t mmap_ptr_cast(void *ptr)
+{
+    const uint64_t ret = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr));
+    return ret + (PAGESIZE - (ret % PAGESIZE)) - PAGESIZE;
+}
+
 template<size_t Size>
 class Allocator
 {
@@ -51,7 +67,7 @@ public:
     {
         assert(mOffset + n <= Size);
         auto ret = reinterpret_cast<void*>(data() + mOffset);
-        mOffset += n;
+        mOffset = alignToSize(mOffset + n, sizeof(void*));
         return ret;
     }
 
@@ -181,22 +197,6 @@ struct MmapWalker
     template<typename Func>
     static void walk(void* addr, size_t len, Func&& func);
 };
-
-inline uint64_t alignToPage(uint64_t size)
-{
-    return size + (((~size) + 1) & (PAGESIZE - 1));
-}
-
-inline uint64_t alignToSize(uint64_t size, uint64_t align)
-{
-    return size + (((~size) + 1) & (align - 1));
-}
-
-inline uint64_t mmap_ptr_cast(void *ptr)
-{
-    const uint64_t ret = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr));
-    return ret + (PAGESIZE - (ret % PAGESIZE)) - PAGESIZE;
-}
 
 template<typename Func>
 void MmapWalker::walk(void* addr, size_t len, Func&& func)
