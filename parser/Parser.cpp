@@ -29,6 +29,12 @@ inline void Parser::handleExe()
     mExe = readData<std::string>();
 }
 
+inline void Parser::handleFree()
+{
+    const auto addr = readData<uint64_t>();
+    mEvents.push_back(std::make_shared<FreeEvent>(addr));
+}
+
 inline void Parser::handleLibrary()
 {
     auto name = readData<std::string>();
@@ -73,6 +79,14 @@ inline void Parser::handleMadvise(RecordType type)
     const auto allocated = readData<uint64_t>();
 
     mEvents.push_back(std::make_shared<MadviseEvent>(type, addr, size, advice, allocated));
+}
+
+inline void Parser::handleMalloc()
+{
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
+    const auto thread = readData<uint32_t>();
+    mEvents.push_back(std::make_shared<MallocEvent>(addr, size, thread));
 }
 
 inline void Parser::handleMmap(RecordType type)
@@ -136,6 +150,7 @@ inline void Parser::handleStack()
         case RecordType::PageFault:
         case RecordType::MmapTracked:
         case RecordType::MmapUntracked:
+        case RecordType::Malloc:
             static_cast<StackEvent*>(mEvents.back().get())->stack = hashStack();
             break;
         default:
@@ -203,6 +218,7 @@ bool Parser::parse(const uint8_t* data, size_t size)
             handleExe();
             break;
         case RecordType::Free:
+            handleFree();
             break;
         case RecordType::Library:
             handleLibrary();
@@ -217,6 +233,7 @@ bool Parser::parse(const uint8_t* data, size_t size)
             handleMadvise(type);
             break;
         case RecordType::Malloc:
+            handleMalloc();
             break;
         case RecordType::MmapTracked:
             // printf("mmap2\n");
@@ -265,15 +282,16 @@ std::string Parser::finalize() const
 
     root["strings"] = json(mStringIndexer.values());
 
+    auto makeFrame = [](const Frame& frame) {
+        json jframe;
+        jframe.push_back(frame.function);
+        jframe.push_back(frame.file);
+        jframe.push_back(frame.line);
+        return jframe;
+    };
+
     json jstacks;
     for (const auto& stack : mStackIndexer.values()) {
-        auto makeFrame = [](const Frame& frame) {
-            json jframe;
-            jframe.push_back(frame.function);
-            jframe.push_back(frame.file);
-            jframe.push_back(frame.line);
-            return jframe;
-        };
 
         json jstack;
         for (const auto& saddr : stack) {
@@ -317,15 +335,6 @@ json PageFaultEvent::to_json() const
     return jpf;
 }
 
-json TimeEvent::to_json() const
-{
-    json jt;
-    jt.push_back(type);
-    jt.push_back(time);
-
-    return jt;
-}
-
 json MmapEvent::to_json() const
 {
     json jmmap;
@@ -341,6 +350,18 @@ json MmapEvent::to_json() const
     jmmap.push_back(stack);
 
     return jmmap;
+}
+
+json MallocEvent::to_json() const
+{
+    json jmalloc;
+    jmalloc.push_back(type);
+    jmalloc.push_back(addr);
+    jmalloc.push_back(size);
+    jmalloc.push_back(thread);
+    jmalloc.push_back(stack);
+
+    return jmalloc;
 }
 
 json MunmapEvent::to_json() const
@@ -365,3 +386,22 @@ json MadviseEvent::to_json() const
 
     return jmadvise;
 }
+
+json FreeEvent::to_json() const
+{
+    json jfree;
+    jfree.push_back(type);
+    jfree.push_back(addr);
+
+    return jfree;
+}
+
+json TimeEvent::to_json() const
+{
+    json jt;
+    jt.push_back(type);
+    jt.push_back(time);
+
+    return jt;
+}
+

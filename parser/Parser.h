@@ -57,6 +57,17 @@ public:
     virtual json to_json() const override;
 };
 
+class MallocEvent : public StackEvent
+{
+public:
+    MallocEvent(uint64_t a, uint64_t s, uint32_t t);
+
+    const uint64_t addr;
+    const uint64_t size;
+    const uint32_t thread;
+    virtual json to_json() const override;
+};
+
 class MunmapEvent : public Event
 {
 public:
@@ -82,6 +93,15 @@ public:
     virtual json to_json() const override;
 };
 
+class FreeEvent : public Event
+{
+public:
+    FreeEvent(uint64_t a);
+
+    const uint64_t addr;
+    virtual json to_json() const override;
+};
+
 class TimeEvent : public Event
 {
 public:
@@ -103,9 +123,11 @@ public:
 
 private:
     inline void handleExe();
+    inline void handleFree();
     inline void handleLibrary();
     inline void handleLibraryHeader();
     inline void handleMadvise(RecordType type);
+    inline void handleMalloc();
     inline void handleMmap(RecordType type);
     inline void handleMunmap(RecordType type);
     inline void handlePageFault();
@@ -163,18 +185,28 @@ inline PageFaultEvent::PageFaultEvent(uint64_t a, uint64_t s, uint32_t t)
 {
 }
 
-inline MadviseEvent::MadviseEvent(RecordType type, uint64_t a, uint64_t s, int32_t ad, uint64_t d)
-    : Event(type), addr(a), size(s), advice(ad), deallocated(d)
-{
-}
-
 inline MmapEvent::MmapEvent(RecordType type, uint64_t a, uint64_t s, uint64_t al, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t)
     : StackEvent(type), addr(a), size(s), allocated(al), prot(p), flags(f), fd(file), offset(o), thread(t)
 {
 }
 
+inline MallocEvent::MallocEvent(uint64_t a, uint64_t s, uint32_t t)
+    : StackEvent(RecordType::Malloc), addr(a), size(s), thread(t)
+{
+}
+
 inline MunmapEvent::MunmapEvent(RecordType type, uint64_t a, uint64_t s, uint64_t d)
     : Event(type), addr(a), size(s), deallocated(d)
+{
+}
+
+inline MadviseEvent::MadviseEvent(RecordType type, uint64_t a, uint64_t s, int32_t ad, uint64_t d)
+    : Event(type), addr(a), size(s), advice(ad), deallocated(d)
+{
+}
+
+inline FreeEvent::FreeEvent(uint64_t a)
+    : Event(RecordType::Free), addr(a)
 {
 }
 

@@ -640,7 +640,8 @@ void reportMalloc(size_t size, void* ptr)
 
     data->recorder.record(RecordType::Malloc,
                           static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
-                          static_cast<uint64_t>(size));
+                          static_cast<uint64_t>(size),
+                          static_cast<uint32_t>(gettid()));
     Stack stack(0);
     while (!stack.atEnd()) {
         data->recorder.record(RecordType::Stack, stack.ip());
@@ -661,12 +662,6 @@ void reportFree(void* ptr)
     }
 
     data->recorder.record(RecordType::Free, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)));
-    Stack stack(0);
-    while (!stack.atEnd()) {
-        data->recorder.record(RecordType::Stack, stack.ip());
-        stack.next();
-    }
-    data->recorder.record(RecordType::Stack, std::numeric_limits<uint64_t>::max());
 }
 
 extern "C" {
