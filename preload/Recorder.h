@@ -18,7 +18,7 @@ public:
     Recorder();
 
     template<typename... Ts>
-    void record(RecordType type, const Ts&&... args);
+    void record(RecordType type, Ts&&... args);
 
     void initialize(const char* filename);
     void cleanup();
@@ -111,38 +111,38 @@ concept HasDataSize = requires(T& t)
 };
 
 template<typename T>
-inline size_t recordSize_helper(const T &) requires (!HasDataSize<std::decay_t<T>>)
+inline size_t recordSize_helper(T&&) requires (!HasDataSize<std::decay_t<T>>)
 {
     return sizeof(T);
 }
 
 template<typename T>
-inline size_t recordSize_helper(const T &str) requires (HasDataSize<std::decay_t<T>>)
+inline size_t recordSize_helper(T&& str) requires (HasDataSize<std::decay_t<T>>)
 {
     return str.size() + sizeof(uint32_t);
 }
 
 template<typename T>
-inline size_t recordSize(const T &arg)
+inline size_t recordSize(T&& arg)
 {
-    return recordSize_helper<T>(arg);
+    return recordSize_helper<T>(std::forward<T>(arg));
 }
 
 template<typename T, typename... Ts>
-inline size_t recordSize(const T &arg, const Ts&&... args)
+inline size_t recordSize(T&& arg, Ts&&... args)
 {
-    return recordSize_helper<T>(arg) + recordSize(args...);
+    return recordSize_helper<T>(std::forward<T>(arg)) + recordSize(std::forward<Ts>(args)...);
 }
 
 template<typename T>
-inline void record_helper(uint8_t*& data, T &arg) requires (!HasDataSize<std::decay_t<T>>)
+inline void record_helper(uint8_t*& data, T&& arg) requires (!HasDataSize<std::decay_t<T>>)
 {
     memcpy(data, &arg, sizeof(T));
     data += sizeof(T);
 }
 
 template<typename T>
-inline void record_helper(uint8_t*& data, const T &str) requires HasDataSize<std::decay_t<T>>
+inline void record_helper(uint8_t*& data, T&& str) requires HasDataSize<std::decay_t<T>>
 {
     record_helper(data, str.size());
     memcpy(data, str.data(), str.size());
@@ -150,23 +150,23 @@ inline void record_helper(uint8_t*& data, const T &str) requires HasDataSize<std
 }
 
 template<typename T>
-inline void record(uint8_t*& data, const T &arg)
+inline void record(uint8_t*& data, T&& arg)
 {
-    record_helper<T>(data, arg);
+    record_helper<T>(data, std::forward<T>(arg));
 }
 
 template<typename T, typename... Ts>
-inline void record(uint8_t*& data, const T &arg, const Ts&&... args)
+inline void record(uint8_t*& data, T&& arg, Ts&&... args)
 {
-    record_helper<T>(data, arg);
-    record(data, args...);
+    record_helper<T>(data, std::forward<T>(arg));
+    record(data, std::forward<Ts>(args)...);
 }
 } // namespace detail
 
 template<typename... Ts>
-inline void Recorder::record(RecordType type, const Ts&&... args)
+inline void Recorder::record(RecordType type, Ts&&... args)
 {
-    const auto size = detail::recordSize(args...) + 1;
+    const auto size = detail::recordSize(std::forward<Ts>(args)...) + 1;
 
     if (!tScoped)
         mLock.lock();
@@ -177,7 +177,7 @@ inline void Recorder::record(RecordType type, const Ts&&... args)
 
     uint8_t* data = mData.data() + mOffset;
     *data++ = static_cast<uint8_t>(type);
-    detail::record(data, args...);
+    detail::record(data, std::forward<Ts>(args)...);
     mOffset += size;
 
     if (!tScoped)
