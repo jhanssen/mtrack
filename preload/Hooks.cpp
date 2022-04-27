@@ -385,6 +385,7 @@ static void hookCleanup()
         } while (w == -1 && errno == EINTR);
         data->thread.join();
     }
+    NoHook noHook;
     data->recorder.cleanup();
     delete data;
     data = nullptr;
