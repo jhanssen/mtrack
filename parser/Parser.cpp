@@ -243,8 +243,8 @@ bool Parser::writeEvents()
     while (!mError && mData < mEnd) {
         ++mRecordings;
         const auto type = readData<RecordType>();
-        printf("hello %u (%s)\n", static_cast<std::underlying_type_t<RecordType>>(type),
-               recordTypeToString(type));
+        // printf("hello %u (%s)\n", static_cast<std::underlying_type_t<RecordType>>(type),
+        //        recordTypeToString(type));
         switch (type) {
         case RecordType::Executable:
             handleExe();
