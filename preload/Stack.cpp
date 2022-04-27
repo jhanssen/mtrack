@@ -34,7 +34,7 @@ static void handler(int sig)
 
     memcpy(&data.gregs, &ctx.uc_mcontext.gregs, sizeof(gregset_t));
 #else
-    *data.count = ::backtrace(data.ptrs->data(), Stack::MaxFrames);
+    *data.count = unw_backtrace(data.ptrs->data(), Stack::MaxFrames);
 #endif
 
     Waiter wl(data.handled);
@@ -102,7 +102,7 @@ Stack::Stack(unsigned ptid)
     // dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
 
     if (ptid == 0) {
-        mCount = backtrace(mPtrs.data(), MaxFrames);
+        mCount = unw_backtrace(mPtrs.data(), MaxFrames);
     } else {
         if (!data.siginstalled) {
             struct sigaction sa;

@@ -22,6 +22,9 @@
 #include <thread>
 #include <tuple>
 
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
+
 static constexpr uint64_t PAGESIZE = 4096;
 
 typedef void* (*MmapSig)(void*, size_t, int, int, int, off_t);
@@ -531,6 +534,11 @@ void Hooks::hook()
     } else {
         data->recorder.record(RecordType::WorkingDirectory, Recorder::String(buf2));
     }
+
+    NoHook nohook;
+
+    unw_set_caching_policy(unw_local_addr_space, UNW_CACHE_PER_THREAD);
+    unw_set_cache_size(unw_local_addr_space, 1024, 0);
 
     safePrint("hook.\n");
 }
