@@ -19,6 +19,7 @@ public:
 
     template<typename... Ts>
     void record(RecordType type, Ts... args);
+    void recordStack(uint64_t ip);
 
     void initialize(const char* filename);
     void cleanup();
@@ -56,7 +57,7 @@ private:
 
 private:
     Spinlock mLock;
-    uint32_t mOffset { 0 };
+    size_t mOffset { 0 };
     std::vector<uint8_t> mData;
     std::thread mThread;
     std::atomic<bool> mRunning;
@@ -174,17 +175,28 @@ inline void Recorder::record(RecordType type, Ts... args)
     if (!tScoped)
         mLock.lock();
 
-    if (mOffset + size >= mData.size()) {
+    if (mOffset + size > mData.size()) {
         mData.resize(mOffset + size);
     }
 
     uint8_t* data = mData.data() + mOffset;
     *data++ = static_cast<uint8_t>(type);
     detail::record(data, args...);
-    mOffset += size;
+    mOffset = size;
 
     if (!tScoped)
         mLock.unlock();
+}
+
+inline void Recorder::recordStack(const uint64_t ip)
+{
+    assert(tScoped);
+    if (mOffset + sizeof(ip) > mData.size()) {
+        mData.resize(mOffset + sizeof(ip));
+    }
+
+    memcpy(mData.data() + mOffset, &ip, sizeof(ip));
+    mOffset += sizeof(ip);
 }
 
 inline void Recorder::cleanup()

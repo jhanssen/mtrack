@@ -2,6 +2,3 @@
         path = 3rdparty/libbacktrace
         url = https://github.com/ianlancetaylor/libbacktrace
         ignore = dirty
-[submodule "3rdparty/json"]
-        path = 3rdparty/json
-        url = https://github.com/nlohmann/json.git

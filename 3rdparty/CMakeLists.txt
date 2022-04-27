@@ -92,5 +92,3 @@ add_dependencies(backtrace_static backtrace_external)
 target_include_directories(backtrace_static INTERFACE ${BACKTRACE_DIR})
 set_target_properties(backtrace_static PROPERTIES IMPORTED_LOCATION ${BACKTRACE_EXTERNAL_LIB})
 add_library(backtrace::static ALIAS backtrace_static)
-
-add_subdirectory(json)

@@ -28,35 +28,37 @@ static void parse(const std::string& inf, const std::string& outf)
         return;
 
     Parser parser;
-    const bool ok = parser.parse(static_cast<uint8_t*>(data), stat.st_size);
+    FILE* fi = fopen(outf.c_str(), "w");
+    if (!fi) {
+        munmap(data, stat.st_size);
+        fprintf(stderr, "can't open file for write '%s'\n", outf.c_str());
+        return;
+    }
+    fprintf(fi, "{\"events\":[");
 
-    munmap(data, stat.st_size);
+    const bool ok = parser.parse(static_cast<uint8_t*>(data), stat.st_size, fi);
+
+    fclose(fi);
 
     if (!ok)
         return;
 
-    FILE* fi = fopen(outf.c_str(), "w");
-    if (!fi) {
-        fprintf(stderr, "can't open file for write '%s'\n", outf.c_str());
-        return;
-    }
+    // const std::string json = parser.finalize();
 
-    const std::string json = parser.finalize();
+    // size_t off = 0;
+    // size_t rem = json.size();
+    // while (rem > 0) {
+    //     const auto w = fwrite(json.data() + off, 1, std::min<size_t>(rem, 4096), fi);
+    //     if (w == 0) {
+    //         fprintf(stderr, "unable to write to '%s'\n", outf.c_str());
+    //         fclose(fi);
+    //         return;
+    //     }
+    //     off += w;
+    //     rem -= w;
+    // }
 
-    size_t off = 0;
-    size_t rem = json.size();
-    while (rem > 0) {
-        const auto w = fwrite(json.data() + off, 1, std::min<size_t>(rem, 4096), fi);
-        if (w == 0) {
-            fprintf(stderr, "unable to write to '%s'\n", outf.c_str());
-            fclose(fi);
-            return;
-        }
-        off += w;
-        rem -= w;
-    }
-
-    fclose(fi);
+    // fclose(fi);
     fprintf(stdout, "wrote '%s'.\n", outf.c_str());
 }
 

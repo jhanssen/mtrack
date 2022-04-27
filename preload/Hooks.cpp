@@ -340,10 +340,10 @@ static void hookThread()
                     data->recorder.record(RecordType::PageFault, place, ptid);
                     Stack stack(ptid);
                     while (!stack.atEnd()) {
-                        data->recorder.record(RecordType::Stack, stack.ip());
+                        data->recorder.recordStack(stack.ip());
                         stack.next();
                     }
-                    data->recorder.record(RecordType::Stack, std::numeric_limits<uint64_t>::max());
+                    data->recorder.recordStack(std::numeric_limits<uint64_t>::max());
                 }
                 uffdio_zeropage zero = {
                     .range = {
@@ -519,6 +519,9 @@ void Hooks::hook()
         fprintf(stderr, "no exe\n");
     } else {
         data->recorder.record(RecordType::Executable, Recorder::String(buf2, l));
+        char buf[1024];
+        snprintf(buf, sizeof(buf), "WRITING EXEC %s %zu\n", std::string(buf2, l).c_str(), l);
+        safePrint(buf);
     }
 
     // record the working directory
@@ -528,6 +531,9 @@ void Hooks::hook()
         fprintf(stderr, "no cwd\n");
     } else {
         data->recorder.record(RecordType::WorkingDirectory, Recorder::String(buf2));
+        char buf[1024];
+        snprintf(buf, sizeof(buf), "WRITING WD %s %zu\n", std::string(buf2).c_str(), strlen(buf2));
+        safePrint(buf);
     }
 
     NoHook nohook;
@@ -647,10 +653,12 @@ void reportMalloc(void* ptr, size_t size)
                           static_cast<uint32_t>(gettid()));
     Stack stack(0);
     while (!stack.atEnd()) {
-        data->recorder.record(RecordType::Stack, stack.ip());
+        const unsigned long long ip = stack.ip();
+        data->recorder.recordStack(ip);
         stack.next();
     }
-    data->recorder.record(RecordType::Stack, std::numeric_limits<uint64_t>::max());
+
+    data->recorder.recordStack(std::numeric_limits<uint64_t>::max());
 }
 
 void reportFree(void* ptr)
@@ -706,11 +714,10 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 
     Stack stack(0);
     while (!stack.atEnd()) {
-        data->recorder.record(RecordType::Stack, stack.ip());
+        data->recorder.recordStack(stack.ip());
         stack.next();
     }
-    data->recorder.record(RecordType::Stack, std::numeric_limits<uint64_t>::max());
-
+    data->recorder.recordStack(std::numeric_limits<uint64_t>::max());
     return ret;
 }
 
@@ -752,11 +759,10 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
 
     Stack stack(0);
     while (!stack.atEnd()) {
-        data->recorder.record(RecordType::Stack, stack.ip());
+        data->recorder.recordStack(stack.ip());
         stack.next();
     }
-    data->recorder.record(RecordType::Stack, std::numeric_limits<uint64_t>::max());
-
+    data->recorder.recordStack(std::numeric_limits<uint64_t>::max());
     return ret;
 }
 

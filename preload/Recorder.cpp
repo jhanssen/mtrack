@@ -33,8 +33,11 @@ void Recorder::process(Recorder* r)
                 if (fwrite(timeData, std::size(timeData), 1, r->mFile) != 1) {
                     error = "recorder ts error\n";
                 } else if (fwrite(&r->mData[0], r->mOffset, 1, r->mFile) != 1) {
-                    printf("recorder data error\n");
+                    error = "recorder ts error";
                 } else {
+                    // char buf[1024];
+                    // const int w = snprintf(buf, sizeof(buf), "WROTE %zu bytes\n", std::size(timeData) + r->mOffset);
+                    // fwrite(buf, 1, w, stdout);
                     fflush(r->mFile);
                     r->mOffset = 0;
                 }
@@ -42,6 +45,10 @@ void Recorder::process(Recorder* r)
         }
 
         if (error || !r->mRunning.load(std::memory_order_acquire)) {
+            if (error) {
+                fwrite("Got error:\n", 11, 1, stderr);
+                fwrite(error, strlen(error), 1, stderr);
+            }
             fclose(r->mFile);
             r->mFile = nullptr;
             return;
@@ -57,6 +64,7 @@ void Recorder::process(Recorder* r)
 
 void Recorder::initialize(const char* file)
 {
+    NoHook noHook;
     mFile = fopen(file, "w");
     if (!mFile) {
         fprintf(stderr, "Unable to open recorder file %s %d %m\n", file, errno);

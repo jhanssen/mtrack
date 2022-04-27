@@ -2,5 +2,5 @@
 
 enum class FileVersion : uint32_t
 {
-    Current = 6
+    Current = 7
 };

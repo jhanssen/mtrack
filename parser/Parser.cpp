@@ -17,11 +17,32 @@ inline void Parser::updateModuleCache()
     }
 }
 
-inline int32_t Parser::hashStack()
+inline int32_t Parser::readStack()
 {
-    const auto idx = mStackIndexer.index(mCurrentStack);
-    mCurrentStack.clear();
-    return idx;
+    if (mModulesDirty) {
+        updateModuleCache();
+        mModulesDirty = false;
+    }
+
+    std::vector<Address> stack;
+
+    // printf("Trying to read stack at %zu\n", mReadOffset);
+    while (true) {
+        const unsigned long long ip = readData<unsigned long long>();
+        if (ip == std::numeric_limits<unsigned long long>::max() || mError)
+            break;
+        auto it = mModuleCache.upper_bound(ip);
+        if (it != mModuleCache.begin())
+            --it;
+        if (mModuleCache.size() == 1)
+            it = mModuleCache.begin();
+        Address address;
+        if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end)
+            address = it->second.module->resolveAddress(ip);
+
+        stack.push_back(address);
+    }
+    return mStackIndexer.index(stack);
 }
 
 inline void Parser::handleExe()
@@ -31,14 +52,16 @@ inline void Parser::handleExe()
 
 inline void Parser::handleFree()
 {
-    const auto addr = readData<uint64_t>();
-    mEvents.push_back(std::make_shared<FreeEvent>(addr));
+    const auto addr = readData<unsigned long long>();
+    char buf[1024];
+    const int w = snprintf(buf, sizeof(buf), "[%d,%llu],", static_cast<int>(RecordType::Free), addr);
+    mError = !fwrite(buf, w, 1, mOutFile);
 }
 
 inline void Parser::handleLibrary()
 {
     auto name = readData<std::string>();
-    auto start = readData<uint64_t>();
+    auto start = readData<unsigned long long>();
     if (name.substr(0, 13) == "linux-vdso.so" || name.substr(0, 13) == "linux-gate.so") {
         // skip this
         return;
@@ -62,8 +85,8 @@ inline void Parser::handleLibrary()
 inline void Parser::handleLibraryHeader()
 {
     // two hex numbers
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
+    const auto addr = readData<unsigned long long>();
+    const auto size = readData<unsigned long long>();
 
     assert(mCurrentModule);
     // printf("phhh %lx %lx (%lx %lx)\n", addr, size, mCurrentModule->address() + addr, mCurrentModule->address() + addr + size);
@@ -73,32 +96,40 @@ inline void Parser::handleLibraryHeader()
 
 inline void Parser::handleMadvise(RecordType type)
 {
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
+    const auto addr = readData<unsigned long long>();
+    const auto size = readData<unsigned long long>();
     const auto advice = readData<int32_t>();
-    const auto allocated = readData<uint64_t>();
-
-    mEvents.push_back(std::make_shared<MadviseEvent>(type, addr, size, advice, allocated));
+    const auto deallocated = readData<unsigned long long>();
+    char buf[1024];
+    const int w = snprintf(buf, sizeof(buf), "[%d,%llu,%llu,%d,%llu],",
+                           static_cast<int>(RecordType::Free), addr, size, advice, deallocated);
+    mError = !fwrite(buf, w, 1, mOutFile);
 }
 
 inline void Parser::handleMalloc()
 {
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
+    const auto addr = readData<unsigned long long>();
+    const auto size = readData<unsigned long long>();
     const auto thread = readData<uint32_t>();
-    mEvents.push_back(std::make_shared<MallocEvent>(addr, size, thread));
+
+    const auto stack = readStack();
+    char buf[1024];
+    const int w = snprintf(buf, sizeof(buf), "[%d,%llu,%llu,%u,%d],",
+                           static_cast<int>(RecordType::Malloc), addr, size, thread, stack);
+    mError = !fwrite(buf, w, 1, mOutFile);
 }
 
 inline void Parser::handleMmap(RecordType type)
 {
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
-    const auto allocated = readData<uint64_t>();
+    const auto addr = readData<unsigned long long>();
+    const auto size = readData<unsigned long long>();
+    const auto allocated = readData<unsigned long long>();
     const auto prot = readData<int32_t>();
     const auto flags = readData<int32_t>();
     const auto fd = readData<int32_t>();
-    const auto off = readData<uint64_t>();
+    const auto off = readData<unsigned long long>();
     const auto tid = readData<uint32_t>();
+    const auto stack = readStack();
 
     std::string tname;
     auto tn = mThreadNames.find(tid);
@@ -106,22 +137,29 @@ inline void Parser::handleMmap(RecordType type)
         tname = tn->second;
     }
 
-    mEvents.push_back(std::make_shared<MmapEvent>(type, addr, size, allocated, prot, flags, fd, off, mStringIndexer.index(tname)));
+    char buf[1024];
+    const int w = snprintf(buf, sizeof(buf), "[%d,%llu,%llu,%llu,%d,%d,%d,%llu,%u,%d],",
+                           static_cast<int>(type), addr, size, allocated, prot, flags, fd, off, tid, stack);
+    mError = !fwrite(buf, w, 1, mOutFile);
 }
 
 inline void Parser::handleMunmap(RecordType type)
 {
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
-    const auto deallocated = readData<uint64_t>();
+    const auto addr = readData<unsigned long long>();
+    const auto size = readData<unsigned long long>();
+    const auto deallocated = readData<unsigned long long>();
 
-    mEvents.push_back(std::make_shared<MunmapEvent>(type, addr, size, deallocated));
+    char buf[1024];
+    const int w = snprintf(buf, sizeof(buf), "[%d,%llu,%llu,%llu],",
+                           static_cast<int>(type), addr, size, deallocated);
+    mError = !fwrite(buf, w, 1, mOutFile);
 }
 
 inline void Parser::handlePageFault()
 {
-    const auto addr = readData<uint64_t>();
+    const auto addr = readData<unsigned long long>();
     const auto tid = readData<uint32_t>();
+    const auto stack = readStack();
 
     std::string tname;
     auto tn = mThreadNames.find(tid);
@@ -129,47 +167,10 @@ inline void Parser::handlePageFault()
         tname = tn->second;
     }
 
-    mEvents.push_back(std::make_shared<PageFaultEvent>(addr, 4096, mStringIndexer.index(tname)));
-}
-
-inline void Parser::handleStack()
-{
-    assert(!mEvents.empty());
-
-    // two hex numbers
-    const auto ip = readData<uint64_t>();
-    // printf("sttt %lx %lx\n", ip, sp);
-
-    if (mModulesDirty) {
-        updateModuleCache();
-        mModulesDirty = false;
-    }
-
-    if (ip == std::numeric_limits<uint64_t>::max()) {
-        switch (mEvents.back()->type) {
-        case RecordType::PageFault:
-        case RecordType::MmapTracked:
-        case RecordType::MmapUntracked:
-        case RecordType::Malloc:
-            static_cast<StackEvent*>(mEvents.back().get())->stack = hashStack();
-            break;
-        default:
-            fprintf(stderr, "invalid event for stack %u\n", static_cast<uint32_t>(mEvents.back()->type));
-            assert(false && "invalid event for stack");
-        }
-    } else {
-        // find ip in module cache
-        auto it = mModuleCache.upper_bound(ip);
-        if (it != mModuleCache.begin())
-            --it;
-        if (mModuleCache.size() == 1)
-            it = mModuleCache.begin();
-        Address address;
-        if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end)
-            address = it->second.module->resolveAddress(ip);
-
-        mCurrentStack.push_back(address);
-    }
+    char buf[1024];
+    const int w = snprintf(buf, sizeof(buf), "[%d,%llu,4096,%u,%d],",
+                           static_cast<int>(RecordType::PageFault), addr, tid, stack);
+    mError = !fwrite(buf, w, 1, mOutFile);
 }
 
 inline void Parser::handleThreadName()
@@ -181,8 +182,10 @@ inline void Parser::handleThreadName()
 inline void Parser::handleTime()
 {
     const auto time = readData<uint32_t>();
-
-    mEvents.push_back(std::make_shared<TimeEvent>(time));
+    char buf[1024];
+    const int w = snprintf(buf, sizeof(buf), "[%d,%u],",
+                           static_cast<int>(RecordType::Time), time);
+    mError = !fwrite(buf, w, 1, mOutFile);
 }
 
 inline void Parser::handleWorkingDirectory()
@@ -190,12 +193,15 @@ inline void Parser::handleWorkingDirectory()
     mCwd = readData<std::string>() + "/";
 }
 
-bool Parser::parse(const uint8_t* data, size_t size)
+bool Parser::parse(const uint8_t* data, size_t size, FILE* f)
 {
     if (size < sizeof(FileVersion)) {
         fprintf(stderr, "no version\n");
         return false;
     }
+
+    assert(f);
+    mOutFile = f;
 
     mData = data;
     mEnd = data + size;
@@ -208,11 +214,38 @@ bool Parser::parse(const uint8_t* data, size_t size)
         return false;
     }
 
+    if (!fprintf(mOutFile, "{")) {
+        return false;
+    }
+
+    if (!writeEvents()) {
+        return false;
+    }
+
+    if (!writeStacks()) {
+        return false;
+    }
+
+    if (!writeStrings()) {
+        return false;
+    }
+    if (fprintf(mOutFile, "}\n") != 2) {
+        return false;
+    }
+    return false;
+}
+
+bool Parser::writeEvents()
+{
+    if (fprintf(mOutFile, "\"events\":[") != 10) {
+        return false;
+    }
 
     while (!mError && mData < mEnd) {
         ++mRecordings;
         const auto type = readData<RecordType>();
-        // printf("hello %u\n", static_cast<std::underlying_type_t<RecordType>>(type));
+        printf("hello %u (%s)\n", static_cast<std::underlying_type_t<RecordType>>(type),
+               recordTypeToString(type));
         switch (type) {
         case RecordType::Executable:
             handleExe();
@@ -256,10 +289,6 @@ bool Parser::parse(const uint8_t* data, size_t size)
         case RecordType::Time:
             handleTime();
             break;
-        case RecordType::Stack:
-            // printf("st\n");
-            handleStack();
-            break;
         case RecordType::ThreadName:
             handleThreadName();
             break;
@@ -273,135 +302,58 @@ bool Parser::parse(const uint8_t* data, size_t size)
         }
     }
 
-    return !mError;
+    return !mError && fprintf(mOutFile, "null],\n") == 7;
 }
 
-std::string Parser::finalize() const
+bool Parser::writeStacks() const
 {
-    json root;
+    if (fprintf(mOutFile, "\"stacks\":[") != 10) {
+        return false;
+    }
 
-    root["strings"] = json(mStringIndexer.values());
-
-    auto makeFrame = [](const Frame& frame) {
-        json jframe;
-        jframe.push_back(frame.function);
-        jframe.push_back(frame.file);
-        jframe.push_back(frame.line);
-        return jframe;
-    };
-
-    json jstacks;
     for (const auto& stack : mStackIndexer.values()) {
-
-        json jstack;
+        if (!fprintf(mOutFile, "["))
+            return false;
         for (const auto& saddr : stack) {
-            auto jframe = makeFrame(saddr.frame);
+            char buf[1024];
+            int w = snprintf(buf, sizeof(buf), "[%d,%d,%d",
+                             saddr.frame.function, saddr.frame.file, saddr.frame.line);
             if (!saddr.inlined.empty()) {
-                json inlined;
-                for (const auto& inl : saddr.inlined) {
-                    inlined.push_back(makeFrame(inl));
+                w += snprintf(buf + w, sizeof(buf) - w, ",[");
+                for (size_t i=0; i<saddr.inlined.size(); ++i) {
+                    const auto &inl = saddr.inlined[i];
+                    w += snprintf(buf + w, sizeof(buf) - w, "[%d,%d,%d]%c",
+                                  inl.function, inl.file, inl.line,
+                                  i + 1 == saddr.inlined.size() ? ']' : ',');
                 }
-                jframe.push_back(std::move(inlined));
             }
-            jstack.push_back(std::move(jframe));
+            buf[w++] = ']';
+            if (!fwrite(buf, w, 1, mOutFile)) {
+                return false;
+            }
         }
-        jstacks.push_back(std::move(jstack));
+        if (fprintf(mOutFile, "],") != 2)
+            return false;
     }
-    root["stacks"] = std::move(jstacks);
-
-    json events;
-    for (const auto& event : mEvents) {
-        events.push_back(event->to_json());
+    if (fprintf(mOutFile, "null],\n") != 7) {
+        return false;
     }
-    root["events"] = std::move(events);
-
-    printf("%zu events. %zu recordings.\n%zu strings %zu hits %zu misses. %zu stacks %zu hits %zu misses.\n",
-           mEvents.size(), mRecordings,
-           mStringIndexer.size(), mStringIndexer.hits(), mStringIndexer.misses(),
-           mStackIndexer.size(), mStackIndexer.hits(), mStackIndexer.misses());
-
-    return root.dump();
+    return true;
 }
 
-json PageFaultEvent::to_json() const
+bool Parser::writeStrings() const
 {
-    json jpf;
-    jpf.push_back(type);
-    jpf.push_back(addr);
-    jpf.push_back(size);
-    jpf.push_back(thread);
-    jpf.push_back(stack);
+    if (fprintf(mOutFile, "\"strings\":[") != 11) {
+        return false;
+    }
 
-    return jpf;
+    for (const auto& string : mStringIndexer.values()) {
+        if (fprintf(mOutFile, "\"%s\",", string.c_str()) != string.size() + 3) {
+            return false;
+        }
+    }
+    if (fprintf(mOutFile, "null]\n") != 6) {
+        return false;
+    }
+    return true;
 }
-
-json MmapEvent::to_json() const
-{
-    json jmmap;
-    jmmap.push_back(type);
-    jmmap.push_back(addr);
-    jmmap.push_back(size);
-    jmmap.push_back(allocated);
-    jmmap.push_back(prot);
-    jmmap.push_back(flags);
-    jmmap.push_back(fd);
-    jmmap.push_back(offset);
-    jmmap.push_back(thread);
-    jmmap.push_back(stack);
-
-    return jmmap;
-}
-
-json MallocEvent::to_json() const
-{
-    json jmalloc;
-    jmalloc.push_back(type);
-    jmalloc.push_back(addr);
-    jmalloc.push_back(size);
-    jmalloc.push_back(thread);
-    jmalloc.push_back(stack);
-
-    return jmalloc;
-}
-
-json MunmapEvent::to_json() const
-{
-    json jmunmap;
-    jmunmap.push_back(type);
-    jmunmap.push_back(addr);
-    jmunmap.push_back(size);
-    jmunmap.push_back(deallocated);
-
-    return jmunmap;
-}
-
-json MadviseEvent::to_json() const
-{
-    json jmadvise;
-    jmadvise.push_back(type);
-    jmadvise.push_back(addr);
-    jmadvise.push_back(size);
-    jmadvise.push_back(advice);
-    jmadvise.push_back(deallocated);
-
-    return jmadvise;
-}
-
-json FreeEvent::to_json() const
-{
-    json jfree;
-    jfree.push_back(type);
-    jfree.push_back(addr);
-
-    return jfree;
-}
-
-json TimeEvent::to_json() const
-{
-    json jt;
-    jt.push_back(type);
-    jt.push_back(time);
-
-    return jt;
-}
-

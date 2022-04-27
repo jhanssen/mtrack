@@ -187,10 +187,9 @@ Model.MmapUntracked = 9;
 Model.MunmapTracked = 10;
 Model.MunmapUntracked = 11;
 Model.PageFault = 12;
-Model.Stack = 13;
-Model.ThreadName = 14;
-Model.Time = 15;
-Model.WorkingDirectory = 16;
+Model.ThreadName = 13;
+Model.Time = 14;
+Model.WorkingDirectory = 15;
 
 
 export { Model };
