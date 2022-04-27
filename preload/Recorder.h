@@ -19,7 +19,6 @@ public:
 
     template<typename... Ts>
     void record(RecordType type, const Ts&&... args);
-    void recordStack(uint64_t ip);
 
     void initialize(const char* filename);
     void cleanup();
@@ -105,13 +104,20 @@ inline Recorder::String::String(const char* s, uint32_t sz)
 
 namespace detail {
 template<typename T>
-inline size_t recordSize_helper(const T &) requires std::is_trivial_v<std::decay_t<T>>
+concept HasDataSize = requires(T& t)
+{
+    { t.data() } -> std::same_as<const void*>;
+    { t.size() } -> std::same_as<uint32_t>;
+};
+
+template<typename T>
+inline size_t recordSize_helper(const T &) requires (!HasDataSize<std::decay_t<T>>)
 {
     return sizeof(T);
 }
 
 template<typename T>
-inline size_t recordSize_helper(const T &str) requires (!std::is_trivial_v<std::decay_t<T>>)
+inline size_t recordSize_helper(const T &str) requires (HasDataSize<std::decay_t<T>>)
 {
     return str.size() + sizeof(uint32_t);
 }
@@ -129,14 +135,14 @@ inline size_t recordSize(const T &arg, const Ts&&... args)
 }
 
 template<typename T>
-inline void record_helper(uint8_t*& data, T arg) requires std::is_trivial_v<std::decay_t<T>>
+inline void record_helper(uint8_t*& data, T &arg) requires (!HasDataSize<std::decay_t<T>>)
 {
     memcpy(data, &arg, sizeof(T));
     data += sizeof(T);
 }
 
 template<typename T>
-inline void record_helper(uint8_t*& data, const T str) requires (!std::is_trivial_v<std::decay_t<T>>)
+inline void record_helper(uint8_t*& data, const T &str) requires HasDataSize<std::decay_t<T>>
 {
     record_helper(data, str.size());
     memcpy(data, str.data(), str.size());
@@ -176,17 +182,6 @@ inline void Recorder::record(RecordType type, const Ts&&... args)
 
     if (!tScoped)
         mLock.unlock();
-}
-
-inline void Recorder::recordStack(const uint64_t ip)
-{
-    assert(tScoped);
-    if (mOffset + sizeof(ip) > mData.size()) {
-        mData.resize(mOffset + sizeof(ip));
-    }
-
-    memcpy(mData.data() + mOffset, &ip, sizeof(ip));
-    mOffset += sizeof(ip);
 }
 
 inline void Recorder::cleanup()
