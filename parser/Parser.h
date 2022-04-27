@@ -102,17 +102,17 @@ public:
     std::string finalize() const;
 
 private:
+    void handleExe();
     void handleLibrary();
     void handleLibraryHeader();
-    void handleStack();
-    void handleExe();
-    void handleWorkingDirectory();
-    void handleThreadName();
-    void handlePageFault();
-    void handleTime();
+    void handleMadvise(bool tracked);
     void handleMmap(bool tracked);
     void handleMunmap(bool tracked);
-    void handleMadvise(bool tracked);
+    void handlePageFault();
+    void handleStack();
+    void handleThreadName();
+    void handleTime();
+    void handleWorkingDirectory();
 
     int32_t hashStack();
 

@@ -24,6 +24,11 @@ int32_t Parser::hashStack()
     return idx;
 }
 
+void Parser::handleExe()
+{
+    mExe = readData<std::string>();
+}
+
 void Parser::handleLibrary()
 {
     auto name = readData<std::string>();
@@ -46,6 +51,71 @@ void Parser::handleLibrary()
     auto mod = Module::create(mStringIndexer, name, start);
     mCurrentModule = mod;
     mModules.insert(mod);
+}
+
+void Parser::handleLibraryHeader()
+{
+    // two hex numbers
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
+
+    assert(mCurrentModule);
+    // printf("phhh %lx %lx (%lx %lx)\n", addr, size, mCurrentModule->address() + addr, mCurrentModule->address() + addr + size);
+    mCurrentModule->addHeader(addr, size);
+    mModulesDirty = true;
+}
+
+void Parser::handleMadvise(bool tracked)
+{
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
+    const auto advice = readData<int32_t>();
+    const auto allocated = readData<uint64_t>();
+
+    mEvents.push_back(std::make_shared<MadviseEvent>(tracked, addr, size, advice, allocated));
+}
+
+void Parser::handleMmap(bool tracked)
+{
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
+    const auto allocated = readData<uint64_t>();
+    const auto prot = readData<int32_t>();
+    const auto flags = readData<int32_t>();
+    const auto fd = readData<int32_t>();
+    const auto off = readData<uint64_t>();
+    const auto tid = readData<uint32_t>();
+
+    std::string tname;
+    auto tn = mThreadNames.find(tid);
+    if (tn != mThreadNames.end()) {
+        tname = tn->second;
+    }
+
+    mEvents.push_back(std::make_shared<MmapEvent>(tracked, addr, size, allocated, prot, flags, fd, off, mStringIndexer.index(tname)));
+}
+
+void Parser::handleMunmap(bool tracked)
+{
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
+    const auto deallocated = readData<uint64_t>();
+
+    mEvents.push_back(std::make_shared<MunmapEvent>(tracked, addr, size, deallocated));
+}
+
+void Parser::handlePageFault()
+{
+    const auto addr = readData<uint64_t>();
+    const auto tid = readData<uint32_t>();
+
+    std::string tname;
+    auto tn = mThreadNames.find(tid);
+    if (tn != mThreadNames.end()) {
+        tname = tn->second;
+    }
+
+    mEvents.push_back(std::make_shared<PageFaultEvent>(addr, 4096, mStringIndexer.index(tname)));
 }
 
 void Parser::handleStack()
@@ -87,46 +157,10 @@ void Parser::handleStack()
     }
 }
 
-void Parser::handleLibraryHeader()
-{
-    // two hex numbers
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
-
-    assert(mCurrentModule);
-    // printf("phhh %lx %lx (%lx %lx)\n", addr, size, mCurrentModule->address() + addr, mCurrentModule->address() + addr + size);
-    mCurrentModule->addHeader(addr, size);
-    mModulesDirty = true;
-}
-
-void Parser::handleExe()
-{
-    mExe = readData<std::string>();
-}
-
-void Parser::handleWorkingDirectory()
-{
-    mCwd = readData<std::string>() + "/";
-}
-
 void Parser::handleThreadName()
 {
     const auto tid = readData<uint32_t>();
     mThreadNames[tid] = readData<std::string>();
-}
-
-void Parser::handlePageFault()
-{
-    const auto addr = readData<uint64_t>();
-    const auto tid = readData<uint32_t>();
-
-    std::string tname;
-    auto tn = mThreadNames.find(tid);
-    if (tn != mThreadNames.end()) {
-        tname = tn->second;
-    }
-
-    mEvents.push_back(std::make_shared<PageFaultEvent>(addr, 4096, mStringIndexer.index(tname)));
 }
 
 void Parser::handleTime()
@@ -136,43 +170,9 @@ void Parser::handleTime()
     mEvents.push_back(std::make_shared<TimeEvent>(time));
 }
 
-void Parser::handleMadvise(bool tracked)
+void Parser::handleWorkingDirectory()
 {
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
-    const auto advice = readData<int32_t>();
-    const auto allocated = readData<uint64_t>();
-
-    mEvents.push_back(std::make_shared<MadviseEvent>(tracked, addr, size, advice, allocated));
-}
-
-void Parser::handleMmap(bool tracked)
-{
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
-    const auto allocated = readData<uint64_t>();
-    const auto prot = readData<int32_t>();
-    const auto flags = readData<int32_t>();
-    const auto fd = readData<int32_t>();
-    const auto off = readData<uint64_t>();
-    const auto tid = readData<uint32_t>();
-
-    std::string tname;
-    auto tn = mThreadNames.find(tid);
-    if (tn != mThreadNames.end()) {
-        tname = tn->second;
-    }
-
-    mEvents.push_back(std::make_shared<MmapEvent>(tracked, addr, size, allocated, prot, flags, fd, off, mStringIndexer.index(tname)));
-}
-
-void Parser::handleMunmap(bool tracked)
-{
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
-    const auto deallocated = readData<uint64_t>();
-
-    mEvents.push_back(std::make_shared<MunmapEvent>(tracked, addr, size, deallocated));
+    mCwd = readData<std::string>() + "/";
 }
 
 bool Parser::parse(const uint8_t* data, size_t size)
