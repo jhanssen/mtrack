@@ -28,7 +28,7 @@ public:
         String(const char* s);
         String(const char* s, uint32_t sz);
 
-        const char *data() const { return str; }
+        const void *data() const { return str; }
         size_t size() const { return len; }
 
         const char* const str { nullptr };
