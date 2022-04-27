@@ -513,9 +513,6 @@ void Hooks::hook()
         fprintf(stderr, "no exe\n");
     } else {
         data->recorder.record(RecordType::Executable, Recorder::String(buf2, l));
-        char buf[1024];
-        snprintf(buf, sizeof(buf), "WRITING EXEC %s %zu\n", std::string(buf2, l).c_str(), l);
-        safePrint(buf);
     }
 
     // record the working directory
@@ -525,9 +522,6 @@ void Hooks::hook()
         fprintf(stderr, "no cwd\n");
     } else {
         data->recorder.record(RecordType::WorkingDirectory, Recorder::String(buf2));
-        char buf[1024];
-        snprintf(buf, sizeof(buf), "WRITING WD %s %zu\n", std::string(buf2).c_str(), strlen(buf2));
-        safePrint(buf);
     }
 
     NoHook nohook;
