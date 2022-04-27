@@ -307,16 +307,20 @@ bool Parser::writeEvents()
 bool Parser::writeStacks() const
 {
     if (fprintf(mOutFile, "\"stacks\":[") != 10) {
+        // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
         return false;
     }
 
     for (const auto& stack : mStackIndexer.values()) {
-        if (!fprintf(mOutFile, "["))
+        if (!fprintf(mOutFile, "[")) {
+            // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
             return false;
+        }
         for (const auto& saddr : stack) {
             char buf[1024];
             int w = snprintf(buf, sizeof(buf), "[%d,%d,%d",
                              saddr.frame.function, saddr.frame.file, saddr.frame.line);
+
             if (!saddr.inlined.empty()) {
                 w += snprintf(buf + w, sizeof(buf) - w, ",[");
                 for (size_t i=0; i<saddr.inlined.size(); ++i) {
@@ -327,14 +331,22 @@ bool Parser::writeStacks() const
                 }
             }
             buf[w++] = ']';
+            buf[w++] = ',';
             if (!fwrite(buf, w, 1, mOutFile)) {
+                // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
                 return false;
             }
+            break;
         }
-        if (fprintf(mOutFile, "],") != 2)
+        if (fprintf(mOutFile, "null],") != 6) {
+            // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
             return false;
+        }
+        break;
     }
+
     if (fprintf(mOutFile, "null],\n") != 7) {
+        // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
         return false;
     }
     return true;

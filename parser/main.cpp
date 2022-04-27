@@ -34,7 +34,6 @@ static void parse(const std::string& inf, const std::string& outf)
         fprintf(stderr, "can't open file for write '%s'\n", outf.c_str());
         return;
     }
-    fprintf(fi, "{\"events\":[");
 
     const bool ok = parser.parse(static_cast<uint8_t*>(data), stat.st_size, fi);
 
