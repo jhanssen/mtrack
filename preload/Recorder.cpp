@@ -19,6 +19,7 @@ void Recorder::process(Recorder* r)
     timeData[0] = static_cast<uint8_t>(RecordType::Time);
 
     for (;;) {
+        const char *error = nullptr;
         {
             ScopedSpinlock lock(r->mLock);
 
@@ -28,27 +29,20 @@ void Recorder::process(Recorder* r)
                 const auto now = timestamp() - start;
                 memcpy(&timeData[1], &now, sizeof(now));
                 if (fwrite(timeData, std::size(timeData), 1, r->mFile) != 1) {
-                    printf("recorder ts error\n");
-                    fclose(r->mFile);
-                    r->mFile = nullptr;
-                    return;
-                }
-
-                if (fwrite(&r->mData[0], r->mOffset, 1, r->mFile) != 1) {
+                    error = "recorder ts error\n";
+                } else if (fwrite(&r->mData[0], r->mOffset, 1, r->mFile) != 1) {
                     printf("recorder data error\n");
-                    fclose(r->mFile);
-                    r->mFile = nullptr;
-                    return;
+                } else {
+                    fflush(r->mFile);
+                    r->mOffset = 0;
                 }
-                fflush(r->mFile);
-                r->mOffset = 0;
             }
+        }
 
-            if (!r->mRunning.load(std::memory_order_acquire)) {
-                fclose(r->mFile);
-                r->mFile = nullptr;
-                return;
-            }
+        if (error || !r->mRunning.load(std::memory_order_acquire)) {
+            fclose(r->mFile);
+            r->mFile = nullptr;
+            return;
         }
 
         usleep(SleepInterval * 1000);
