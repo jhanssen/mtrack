@@ -65,17 +65,17 @@ inline void Parser::handleLibraryHeader()
     mModulesDirty = true;
 }
 
-inline void Parser::handleMadvise(bool tracked)
+inline void Parser::handleMadvise(RecordType type)
 {
     const auto addr = readData<uint64_t>();
     const auto size = readData<uint64_t>();
     const auto advice = readData<int32_t>();
     const auto allocated = readData<uint64_t>();
 
-    mEvents.push_back(std::make_shared<MadviseEvent>(tracked, addr, size, advice, allocated));
+    mEvents.push_back(std::make_shared<MadviseEvent>(type, addr, size, advice, allocated));
 }
 
-inline void Parser::handleMmap(bool tracked)
+inline void Parser::handleMmap(RecordType type)
 {
     const auto addr = readData<uint64_t>();
     const auto size = readData<uint64_t>();
@@ -92,16 +92,16 @@ inline void Parser::handleMmap(bool tracked)
         tname = tn->second;
     }
 
-    mEvents.push_back(std::make_shared<MmapEvent>(tracked, addr, size, allocated, prot, flags, fd, off, mStringIndexer.index(tname)));
+    mEvents.push_back(std::make_shared<MmapEvent>(type, addr, size, allocated, prot, flags, fd, off, mStringIndexer.index(tname)));
 }
 
-inline void Parser::handleMunmap(bool tracked)
+inline void Parser::handleMunmap(RecordType type)
 {
     const auto addr = readData<uint64_t>();
     const auto size = readData<uint64_t>();
     const auto deallocated = readData<uint64_t>();
 
-    mEvents.push_back(std::make_shared<MunmapEvent>(tracked, addr, size, deallocated));
+    mEvents.push_back(std::make_shared<MunmapEvent>(type, addr, size, deallocated));
 }
 
 inline void Parser::handlePageFault()
@@ -211,26 +211,26 @@ bool Parser::parse(const uint8_t* data, size_t size)
             handleLibraryHeader();
             break;
         case RecordType::MadviseTracked:
-            handleMadvise(true);
+            handleMadvise(type);
             break;
         case RecordType::MadviseUntracked:
-            handleMadvise(false);
+            handleMadvise(type);
             break;
         case RecordType::Malloc:
             break;
         case RecordType::MmapTracked:
             // printf("mmap2\n");
-            handleMmap(true);
+            handleMmap(type);
             break;
         case RecordType::MmapUntracked:
             // printf("mmap1\n");
-            handleMmap(false);
+            handleMmap(type);
             break;
         case RecordType::MunmapTracked:
-            handleMunmap(true);
+            handleMunmap(type);
             break;
         case RecordType::MunmapUntracked:
-            handleMunmap(true);
+            handleMunmap(type);
             break;
         case RecordType::PageFault:
             //printf("pf\n");

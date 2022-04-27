@@ -43,7 +43,7 @@ public:
 class MmapEvent : public StackEvent
 {
 public:
-    MmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t al, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t);
+    MmapEvent(RecordType type, uint64_t a, uint64_t s, uint64_t al, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t);
 
     const uint64_t addr;
     const uint64_t size;
@@ -60,7 +60,7 @@ public:
 class MunmapEvent : public Event
 {
 public:
-    MunmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t d);
+    MunmapEvent(RecordType type, uint64_t a, uint64_t s, uint64_t d);
 
     const uint64_t addr;
     const uint64_t size;
@@ -72,7 +72,7 @@ public:
 class MadviseEvent : public Event
 {
 public:
-    MadviseEvent(bool tr, uint64_t a, uint64_t s, int32_t ad, uint64_t d);
+    MadviseEvent(RecordType type, uint64_t a, uint64_t s, int32_t ad, uint64_t d);
 
     const uint64_t addr;
     const uint64_t size;
@@ -105,9 +105,9 @@ private:
     inline void handleExe();
     inline void handleLibrary();
     inline void handleLibraryHeader();
-    inline void handleMadvise(bool tracked);
-    inline void handleMmap(bool tracked);
-    inline void handleMunmap(bool tracked);
+    inline void handleMadvise(RecordType type);
+    inline void handleMmap(RecordType type);
+    inline void handleMunmap(RecordType type);
     inline void handlePageFault();
     inline void handleStack();
     inline void handleThreadName();
@@ -163,18 +163,18 @@ inline PageFaultEvent::PageFaultEvent(uint64_t a, uint64_t s, uint32_t t)
 {
 }
 
-inline MadviseEvent::MadviseEvent(bool tr, uint64_t a, uint64_t s, int32_t ad, uint64_t d)
-    : Event(tr ? RecordType::MadviseTracked : RecordType::MadviseUntracked), addr(a), size(s), advice(ad), deallocated(d)
+inline MadviseEvent::MadviseEvent(RecordType type, uint64_t a, uint64_t s, int32_t ad, uint64_t d)
+    : Event(type), addr(a), size(s), advice(ad), deallocated(d)
 {
 }
 
-inline MmapEvent::MmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t al, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t)
-    : StackEvent(tr ? RecordType::MmapTracked : RecordType::MmapUntracked), addr(a), size(s), allocated(al), prot(p), flags(f), fd(file), offset(o), thread(t)
+inline MmapEvent::MmapEvent(RecordType type, uint64_t a, uint64_t s, uint64_t al, int32_t p, int32_t f, int32_t file, uint64_t o, uint32_t t)
+    : StackEvent(type), addr(a), size(s), allocated(al), prot(p), flags(f), fd(file), offset(o), thread(t)
 {
 }
 
-inline MunmapEvent::MunmapEvent(bool tr, uint64_t a, uint64_t s, uint64_t d)
-    : Event(tr ? RecordType::MunmapTracked : RecordType::MunmapUntracked), addr(a), size(s), deallocated(d)
+inline MunmapEvent::MunmapEvent(RecordType type, uint64_t a, uint64_t s, uint64_t d)
+    : Event(type), addr(a), size(s), deallocated(d)
 {
 }
 
