@@ -1,4 +1,4 @@
-class Mmap
+export class Mmap
 {
     constructor(range, stack, thread, time)
     {
@@ -17,6 +17,4 @@ class Mmap
     {
         return `Mmap(range: {this.range}, stack: ${this.stack}, thread: ${this.thread}, time: ${this.time})`;
     }
-};
-
-export { Mmap };
+}

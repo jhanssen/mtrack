@@ -1,4 +1,4 @@
-class Snapshot
+export class Snapshot
 {
     constructor(used, time, eventIndex)
     {
@@ -6,6 +6,4 @@ class Snapshot
         this.time = time;
         this.eventIndex = eventIndex;
     }
-};
-
-export { Snapshot };
+}

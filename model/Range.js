@@ -1,4 +1,4 @@
-class Range
+export class Range
 {
     constructor(start, length)
     {
@@ -29,15 +29,6 @@ class Range
     {
         return new Range(this.start, this.length);
     }
-
-    // returns type of intersection
-    //
-    // Range.Before = -2;
-    // Range.After = -1;
-    // Range.Entire = 0;
-    // Range.Beginning = 1;
-    // Range.End = 1;
-    // Range.Middle = 3;
 
     intersects(range)
     {
@@ -129,5 +120,3 @@ Range.Entire = 0;
 Range.Beginning = 1;
 Range.End = 1;
 Range.Middle = 3;
-
-export { Range };

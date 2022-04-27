@@ -1,9 +1,10 @@
+import { Malloc } from "./Malloc.js";
 import { Mmap } from "./Mmap.js";
 import { PageFault } from "./PageFault.js";
-import { Snapshot } from "./Snapshot.js";
 import { Range } from "./Range.js";
+import { Snapshot } from "./Snapshot.js";
 
-class Model
+export class Model
 {
     constructor(data)
     {
@@ -19,6 +20,9 @@ class Model
         this.mmaps = [];
         this.pageFaultsByStack = new Map();
         this.pageFaultsByMmapStack = new Map();
+        this.mallocsByStack = new Map();
+        this.mallocsByAddr = new Map();
+
         let count = this.data.events.length;
         if (until?.event) {
             count = Math.min(until.event, count);
@@ -79,6 +83,8 @@ class Model
             let range;
             let mmapStack;
             let removed;
+            let current;
+            let malloc;
             const event = this.data.events[idx];
             switch (event[0]) {
             case Model.Time:
@@ -94,6 +100,26 @@ class Model
             case Model.MmapUntracked:
             case Model.MunmapUntracked:
             case Model.MadviseUntracked:
+                break;
+            case Model.Malloc:
+                const malloc = new Malloc(new Range(event[1], event[2]), event[3], event[4]);
+                this.mallocsByAddr.set(malloc.range.start, malloc);
+                current = this.mallocsByStack.get(malloc.stack);
+                if (!current) {
+                    this.mallocsByStack.set([malloc]);
+                } else {
+                    current.push(malloc);
+                }
+                break;
+            case Model.Free:
+                malloc = this.mallocsByAddr.get(event[1]);
+                this.mallocsByAddr.delete(event[1]);
+                const current = this.mallocsByStack.get(malloc.range.start);
+                if (current.length === 1) {
+                    this.mallocsByStack.delete(malloc.range.start);
+                } else {
+                    current.splice(current.indexOf(malloc), 1);
+                }
                 break;
             case Model.MmapTracked:
                 range = new Range(event[1], event[2], false);
@@ -190,6 +216,3 @@ Model.PageFault = 12;
 Model.ThreadName = 13;
 Model.Time = 14;
 Model.WorkingDirectory = 15;
-
-
-export { Model };

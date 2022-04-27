@@ -2,7 +2,7 @@ import prettyBytes from "pretty-bytes";
 import prettyMS from "pretty-ms";
 import { Stack } from "./Stack.js";
 
-class Printer
+export class Printer
 {
     constructor(model, parsed)
     {
@@ -79,7 +79,5 @@ class Printer
             this.printPageFaultsAtStack(x.stack);
         });
     }
-};
-
-export { Printer };
+}
 

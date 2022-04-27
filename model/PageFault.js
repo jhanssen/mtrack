@@ -1,4 +1,4 @@
-class PageFault
+export class PageFault
 {
     constructor(range, pageFaultStack, mmapStack, thread, time)
     {
@@ -14,5 +14,3 @@ class PageFault
         return `PageFault(range: ${this.range}, pageFaultStack: ${this.pageFaultStack}, mmapStack: ${this.mmapStack}, thread: ${this.thread}, time: ${this.time})`;
     }
 };
-
-export { PageFault };
