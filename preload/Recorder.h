@@ -29,7 +29,7 @@ public:
         String(const char* s, uint32_t sz);
 
         const void *data() const { return str; }
-        size_t size() const { return len; }
+        uint32_t size() const { return len; }
 
         const char* const str { nullptr };
         const uint32_t len { 0 };
