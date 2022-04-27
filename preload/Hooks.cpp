@@ -138,9 +138,10 @@ struct Data {
 } *data = nullptr;
 
 namespace {
-void safePrint(const char *string)
+bool safePrint(const char *string)
 {
-    ::write(STDOUT_FILENO, string, strlen(string));
+    const size_t len = strlen(string);
+    return ::write(STDOUT_FILENO, string, len) == len;
 }
 
 thread_local bool hooked = true;
