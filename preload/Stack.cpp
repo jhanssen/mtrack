@@ -19,12 +19,12 @@ struct {
     gregset_t gregs;
 #else
     std::array<void*, Stack::MaxFrames> *ptrs { nullptr };
-    size_t* count { nullptr };
+    uint32_t* count { nullptr };
 #endif
 
     std::atomic<bool> handled = false;
     bool siginstalled = false;
-} data;
+} static sigData;
 
 static void handler(int sig)
 {
@@ -32,12 +32,12 @@ static void handler(int sig)
     ucontext_t ctx;
     getcontext(&ctx);
 
-    memcpy(&data.gregs, &ctx.uc_mcontext.gregs, sizeof(gregset_t));
+    memcpy(&sigData.gregs, &ctx.uc_mcontext.gregs, sizeof(gregset_t));
 #else
-    *data.count = unw_backtrace(data.ptrs->data(), Stack::MaxFrames);
+    *sigData.count = unw_backtrace(sigData.ptrs->data(), Stack::MaxFrames);
 #endif
 
-    Waiter wl(data.handled);
+    Waiter wl(sigData.handled);
     wl.notify();
 }
 
@@ -104,23 +104,23 @@ Stack::Stack(unsigned ptid)
     if (ptid == 0) {
         mCount = unw_backtrace(mPtrs.data(), MaxFrames);
     } else {
-        if (!data.siginstalled) {
+        if (!sigData.siginstalled) {
             struct sigaction sa;
             sa.sa_flags = SA_SIGINFO;
             sigemptyset(&sa.sa_mask);
             sa.sa_handler = handler;
             sigaction(SIGUSR1, &sa, nullptr);
-            data.siginstalled = true;
+            sigData.siginstalled = true;
         }
 
 #ifndef __i386__
-        data.ptrs = &mPtrs;
-        data.count = &mCount;
+        sigData.ptrs = &mPtrs;
+        sigData.count = &mCount;
 #endif
 
         syscall(SYS_tkill, ptid, SIGUSR1);
 
-        Waiter wl(data.handled);
+        Waiter wl(sigData.handled);
         wl.wait();
 
 #ifdef __i386__

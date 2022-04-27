@@ -337,13 +337,7 @@ static void hookThread()
                 // printf("  - pagefault %u\n", ptid);
                 {
                     Recorder::Scope recorderScope(&data->recorder);
-                    data->recorder.record(RecordType::PageFault, place, ptid);
-                    Stack stack(ptid);
-                    while (!stack.atEnd()) {
-                        data->recorder.recordStack(stack.ip());
-                        stack.next();
-                    }
-                    data->recorder.recordStack(std::numeric_limits<uint64_t>::max());
+                    data->recorder.record(RecordType::PageFault, place, ptid, Stack(ptid));
                 }
                 uffdio_zeropage zero = {
                     .range = {
@@ -650,13 +644,8 @@ void reportMalloc(void* ptr, size_t size)
     data->recorder.record(RecordType::Malloc,
                           static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
                           static_cast<uint64_t>(size),
-                          static_cast<uint32_t>(gettid()));
-    Stack stack(0);
-    while (!stack.atEnd()) {
-        const unsigned long long ip = stack.ip();
-        data->recorder.recordStack(ip);
-        stack.next();
-    }
+                          static_cast<uint32_t>(gettid()),
+                          Stack());
 
     data->recorder.recordStack(std::numeric_limits<uint64_t>::max());
 }
@@ -712,12 +701,12 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
                           mmap_ptr_cast(ret), alignToPage(length), allocated,
                           prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()));
 
-    Stack stack(0);
-    while (!stack.atEnd()) {
-        data->recorder.recordStack(stack.ip());
-        stack.next();
-    }
-    data->recorder.recordStack(std::numeric_limits<uint64_t>::max());
+    Stack stack;
+    // while (!stack.atEnd()) {
+    //     data->recorder.recordStack(stack.ip());
+    //     stack.next();
+    // }
+    // data->recorder.recordStack(std::numeric_limits<uint64_t>::max());
     return ret;
 }
 
@@ -755,14 +744,9 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
 
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
                           mmap_ptr_cast(ret), alignToPage(length), allocated,
-                          prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()));
+                          prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()),
+                          Stack());
 
-    Stack stack(0);
-    while (!stack.atEnd()) {
-        data->recorder.recordStack(stack.ip());
-        stack.next();
-    }
-    data->recorder.recordStack(std::numeric_limits<uint64_t>::max());
     return ret;
 }
 

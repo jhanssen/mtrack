@@ -18,7 +18,7 @@ public:
     Recorder();
 
     template<typename... Ts>
-    void record(RecordType type, Ts... args);
+    void record(RecordType type, const Ts&&... args);
     void recordStack(uint64_t ip);
 
     void initialize(const char* filename);
@@ -27,10 +27,13 @@ public:
     struct String
     {
         String(const char* s);
-        String(const char* s, size_t sz);
+        String(const char* s, uint32_t sz);
+
+        const char *data() const { return str; }
+        size_t size() const { return len; }
 
         const char* const str { nullptr };
-        const uint32_t size { 0 };
+        const uint32_t len { 0 };
     };
 
     class Scope
@@ -91,76 +94,63 @@ inline Recorder::Recorder()
 }
 
 inline Recorder::String::String(const char* s)
-    : str(s), size(static_cast<uint32_t>(strlen(s)))
+    : str(s), len(static_cast<uint32_t>(strlen(s)))
 {
 }
 
-inline Recorder::String::String(const char* s, size_t sz)
-    : str(s), size(sz)
+inline Recorder::String::String(const char* s, uint32_t sz)
+    : str(s), len(sz)
 {
 }
 
 namespace detail {
 template<typename T>
-inline size_t recordSize_helper(T) requires std::integral<T>
+inline size_t recordSize_helper(const T &) requires std::is_trivial_v<std::decay_t<T>>
 {
     return sizeof(T);
 }
 
 template<typename T>
-inline size_t recordSize_helper(T) requires std::is_enum_v<T>
+inline size_t recordSize_helper(const T &str) requires (!std::is_trivial_v<std::decay_t<T>>)
 {
-    return sizeof(T);
+    return str.size() + sizeof(uint32_t);
 }
 
 template<typename T>
-inline size_t recordSize_helper(const T str) requires std::same_as<T, Recorder::String>
-{
-    return str.size + sizeof(uint32_t);
-}
-
-template<typename T>
-inline size_t recordSize(T arg)
+inline size_t recordSize(const T &arg)
 {
     return recordSize_helper<T>(arg);
 }
 
 template<typename T, typename... Ts>
-inline size_t recordSize(T arg, Ts... args)
+inline size_t recordSize(const T &arg, const Ts&&... args)
 {
     return recordSize_helper<T>(arg) + recordSize(args...);
 }
 
 template<typename T>
-inline void record_helper(uint8_t*& data, T arg) requires std::integral<T>
+inline void record_helper(uint8_t*& data, T arg) requires std::is_trivial_v<std::decay_t<T>>
 {
     memcpy(data, &arg, sizeof(T));
     data += sizeof(T);
 }
 
 template<typename T>
-inline void record_helper(uint8_t*& data, T arg) requires std::is_enum_v<T>
+inline void record_helper(uint8_t*& data, const T str) requires (!std::is_trivial_v<std::decay_t<T>>)
 {
-    memcpy(data, &arg, sizeof(T));
-    data += sizeof(T);
+    record_helper(data, str.size());
+    memcpy(data, str.data(), str.size());
+    data += str.size();
 }
 
 template<typename T>
-inline void record_helper(uint8_t*& data, const T str) requires std::same_as<T, Recorder::String>
-{
-    record_helper(data, str.size);
-    memcpy(data, str.str, str.size);
-    data += str.size;
-}
-
-template<typename T>
-inline void record(uint8_t*& data, T arg)
+inline void record(uint8_t*& data, const T &arg)
 {
     record_helper<T>(data, arg);
 }
 
 template<typename T, typename... Ts>
-inline void record(uint8_t*& data, T arg, Ts... args)
+inline void record(uint8_t*& data, const T &arg, const Ts&&... args)
 {
     record_helper<T>(data, arg);
     record(data, args...);
@@ -168,7 +158,7 @@ inline void record(uint8_t*& data, T arg, Ts... args)
 } // namespace detail
 
 template<typename... Ts>
-inline void Recorder::record(RecordType type, Ts... args)
+inline void Recorder::record(RecordType type, const Ts&&... args)
 {
     const auto size = detail::recordSize(args...) + 1;
 
