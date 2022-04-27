@@ -24,12 +24,6 @@ void Recorder::process(Recorder* r)
 
             // printf("loop %u\n", r->mOffset);
 
-            if (r->mOffset == 0 && !r->mRunning.load(std::memory_order_acquire)) {
-                fclose(r->mFile);
-                r->mFile = nullptr;
-                return;
-            }
-
             if (r->mOffset > 0) {
                 const auto now = timestamp() - start;
                 memcpy(&timeData[1], &now, sizeof(now));
@@ -48,6 +42,12 @@ void Recorder::process(Recorder* r)
                 }
                 fflush(r->mFile);
                 r->mOffset = 0;
+            }
+
+            if (!r->mRunning.load(std::memory_order_acquire)) {
+                fclose(r->mFile);
+                r->mFile = nullptr;
+                return;
             }
         }
 

@@ -41,6 +41,38 @@ typedef void* (*ReallocArraySig)(void*, size_t, size_t);
 typedef int (*Posix_MemalignSig)(void **, size_t, size_t);
 typedef void* (*Aligned_AllocSig)(size_t, size_t);
 
+template<size_t Size>
+class Allocator
+{
+public:
+    Allocator() = default;
+
+    void* allocate(size_t n)
+    {
+        assert(mOffset + n <= Size);
+        auto ret = reinterpret_cast<void*>(data() + mOffset);
+        mOffset += n;
+        return ret;
+    }
+
+    bool hasData(void* d) const
+    {
+        return d >= data() && d < data() + Size;
+    }
+
+    char* data() {
+        return reinterpret_cast<char*>(&mStorage);
+    }
+
+    const char* data() const {
+        return reinterpret_cast<const char*>(&mStorage);
+    }
+
+private:
+    typename std::aligned_storage_t<Size, alignof(void*)> mStorage = {};
+    size_t mOffset = 0;
+};
+
 class Hooks
 {
 public:
@@ -69,6 +101,8 @@ struct Callbacks
     Posix_MemalignSig posix_memalign { nullptr };
     Aligned_AllocSig aligned_alloc { nullptr };
 } callbacks;
+
+Allocator<4096> allocator;
 
 struct Data {
     int faultFd;
@@ -988,6 +1022,10 @@ void* malloc(size_t size)
         std::call_once(hookOnce, Hooks::hook);
     }
 
+    if (!callbacks.malloc) {
+        return allocator.allocate(size);
+    }
+
     auto ret = callbacks.malloc(size);
     if (!::hooked || !ret)
         return ret;
@@ -1004,6 +1042,10 @@ void free(void* ptr)
         std::call_once(hookOnce, Hooks::hook);
     }
 
+    if (allocator.hasData(ptr)) {
+        return;
+    }
+
     callbacks.free(ptr);
 
     if (!::hooked)
@@ -1018,6 +1060,10 @@ void* calloc(size_t nmemb, size_t size)
     MallocFree mallocFree;
     if (!mallocFree.wasInMallocFree()) {
         std::call_once(hookOnce, Hooks::hook);
+    }
+
+    if (!callbacks.calloc) {
+        return allocator.allocate(nmemb * size);
     }
 
     auto ret = callbacks.calloc(nmemb, size);
