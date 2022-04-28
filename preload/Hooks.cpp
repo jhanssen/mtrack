@@ -321,7 +321,8 @@ static void hookThread()
         // printf("- fault thread 2\n");
         if (evt[0].revents & POLLIN) {
             uffd_msg fault_msg = {0};
-            if (read(data->faultFd, &fault_msg, sizeof(fault_msg)) != sizeof(fault_msg)) {
+            const auto r = read(data->faultFd, &fault_msg, sizeof(fault_msg));
+            if (r != sizeof(fault_msg) && (r != -1 || (errno != EWOULDBLOCK && errno != EAGAIN))) {
                 // read error
                 close(data->faultFd);
                 data->faultFd = -1;
