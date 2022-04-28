@@ -322,38 +322,38 @@ static void hookThread()
         if (evt[0].revents & POLLIN) {
             uffd_msg fault_msg = {0};
             const auto r = read(data->faultFd, &fault_msg, sizeof(fault_msg));
-            if (r != sizeof(fault_msg) && (r != -1 || (errno != EWOULDBLOCK && errno != EAGAIN))) {
+            if (r == sizeof(fault_msg)) {
+                // printf("- fault thread 3 0x%x\n", fault_msg.event);
+                switch (fault_msg.event) {
+                case UFFD_EVENT_PAGEFAULT: {
+                    const auto place = static_cast<uint64_t>(fault_msg.arg.pagefault.address);
+                    const auto ptid = static_cast<uint32_t>(fault_msg.arg.pagefault.feat.ptid);
+                    // printf("  - pagefault %u\n", ptid);
+                    {
+                        Recorder::Scope recorderScope(&data->recorder);
+                        data->recorder.record(RecordType::PageFault, place, ptid, Stack(ptid));
+                    }
+                    uffdio_zeropage zero = {
+                        .range = {
+                            .start = place,
+                            .len = PAGESIZE
+                        }
+                    };
+                    if (ioctl(data->faultFd, UFFDIO_ZEROPAGE, &zero)) {
+                        // boo
+                        close(data->faultFd);
+                        data->faultFd = -1;
+                        return;
+                    }
+                    // printf("  - handled pagefault\n");
+                    break; }
+                }
+            } else if (r != -1 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
                 // read error
                 close(data->faultFd);
                 data->faultFd = -1;
                 printf("- pagefault error 2\n");
                 return;
-            }
-
-            // printf("- fault thread 3 0x%x\n", fault_msg.event);
-            switch (fault_msg.event) {
-            case UFFD_EVENT_PAGEFAULT: {
-                const auto place = static_cast<uint64_t>(fault_msg.arg.pagefault.address);
-                const auto ptid = static_cast<uint32_t>(fault_msg.arg.pagefault.feat.ptid);
-                // printf("  - pagefault %u\n", ptid);
-                {
-                    Recorder::Scope recorderScope(&data->recorder);
-                    data->recorder.record(RecordType::PageFault, place, ptid, Stack(ptid));
-                }
-                uffdio_zeropage zero = {
-                    .range = {
-                        .start = place,
-                        .len = PAGESIZE
-                    }
-                };
-                if (ioctl(data->faultFd, UFFDIO_ZEROPAGE, &zero)) {
-                    // boo
-                    close(data->faultFd);
-                    data->faultFd = -1;
-                    return;
-                }
-                // printf("  - handled pagefault\n");
-                break; }
             }
         }
         if (evt[1].revents & POLLIN) {
