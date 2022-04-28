@@ -1,5 +1,6 @@
 #include "Parser.h"
 #include <common/Version.h>
+#include <fmt/core.h>
 #include <cassert>
 #include <climits>
 #include <cstdlib>
@@ -40,16 +41,15 @@ inline void Parser::handleExe()
 
 inline void Parser::handleFree()
 {
-    const auto addr = readData<unsigned long long>();
-    char buf[1024];
-    const int w = snprintf(buf, sizeof(buf), "[%d,%llu],", static_cast<int>(RecordType::Free), addr);
-    mError = !fwrite(buf, w, 1, mOutFile);
+    const auto addr = readData<uint64_t>();
+    const auto str = fmt::format("[{},{}],", static_cast<int>(RecordType::Free), addr);
+    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
 }
 
 inline void Parser::handleLibrary()
 {
     auto name = readData<std::string>();
-    auto start = readData<unsigned long long>();
+    auto start = readData<uint64_t>();
     if (name.substr(0, 13) == "linux-vdso.so" || name.substr(0, 13) == "linux-gate.so") {
         // skip this
         return;
@@ -73,8 +73,8 @@ inline void Parser::handleLibrary()
 inline void Parser::handleLibraryHeader()
 {
     // two hex numbers
-    const auto addr = readData<unsigned long long>();
-    const auto size = readData<unsigned long long>();
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
 
     assert(mCurrentModule);
     // printf("phhh %lx %lx (%lx %lx)\n", addr, size, mCurrentModule->address() + addr, mCurrentModule->address() + addr + size);
@@ -84,38 +84,36 @@ inline void Parser::handleLibraryHeader()
 
 inline void Parser::handleMadvise(RecordType type)
 {
-    const auto addr = readData<unsigned long long>();
-    const auto size = readData<unsigned long long>();
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
     const auto advice = readData<int32_t>();
-    const auto deallocated = readData<unsigned long long>();
-    char buf[1024];
-    const int w = snprintf(buf, sizeof(buf), "[%d,%llu,%llu,%d,%llu],",
-                           static_cast<int>(RecordType::Free), addr, size, advice, deallocated);
-    mError = !fwrite(buf, w, 1, mOutFile);
+    const auto deallocated = readData<uint64_t>();
+    const auto str = fmt::format("[{},{},{},{},{}],",
+                                 static_cast<int>(RecordType::Free), addr, size, advice, deallocated);
+    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
 }
 
 inline void Parser::handleMalloc()
 {
-    const auto addr = readData<unsigned long long>();
-    const auto size = readData<unsigned long long>();
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
     const auto thread = readData<uint32_t>();
 
     const auto stack = readStack();
-    char buf[1024];
-    const int w = snprintf(buf, sizeof(buf), "[%d,%llu,%llu,%u,%d],",
-                           static_cast<int>(RecordType::Malloc), addr, size, thread, stack);
-    mError = !fwrite(buf, w, 1, mOutFile);
+    const auto str = fmt::format("[{},{},{},{},{}],",
+                                 static_cast<int>(RecordType::Malloc), addr, size, thread, stack);
+    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
 }
 
 inline void Parser::handleMmap(RecordType type)
 {
-    const auto addr = readData<unsigned long long>();
-    const auto size = readData<unsigned long long>();
-    const auto allocated = readData<unsigned long long>();
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
+    const auto allocated = readData<uint64_t>();
     const auto prot = readData<int32_t>();
     const auto flags = readData<int32_t>();
     const auto fd = readData<int32_t>();
-    const auto off = readData<unsigned long long>();
+    const auto off = readData<uint64_t>();
     const auto tid = readData<uint32_t>();
     const auto stack = readStack();
 
@@ -125,27 +123,25 @@ inline void Parser::handleMmap(RecordType type)
         tname = tn->second;
     }
 
-    char buf[1024];
-    const int w = snprintf(buf, sizeof(buf), "[%d,%llu,%llu,%llu,%d,%d,%d,%llu,%u,%d],",
-                           static_cast<int>(type), addr, size, allocated, prot, flags, fd, off, tid, stack);
-    mError = !fwrite(buf, w, 1, mOutFile);
+    const auto str = fmt::format("[{},{},{},{},{},{},{},{},{},{}],",
+                                 static_cast<int>(type), addr, size, allocated, prot, flags, fd, off, tid, stack);
+    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
 }
 
 inline void Parser::handleMunmap(RecordType type)
 {
-    const auto addr = readData<unsigned long long>();
-    const auto size = readData<unsigned long long>();
-    const auto deallocated = readData<unsigned long long>();
+    const auto addr = readData<uint64_t>();
+    const auto size = readData<uint64_t>();
+    const auto deallocated = readData<uint64_t>();
 
-    char buf[1024];
-    const int w = snprintf(buf, sizeof(buf), "[%d,%llu,%llu,%llu],",
-                           static_cast<int>(type), addr, size, deallocated);
-    mError = !fwrite(buf, w, 1, mOutFile);
+    const auto str = fmt::format("[{},{},{},{}],",
+                                 static_cast<int>(type), addr, size, deallocated);
+    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
 }
 
 inline void Parser::handlePageFault()
 {
-    const auto addr = readData<unsigned long long>();
+    const auto addr = readData<uint64_t>();
     const auto tid = readData<uint32_t>();
     const auto stack = readStack();
 
@@ -155,10 +151,9 @@ inline void Parser::handlePageFault()
         tname = tn->second;
     }
 
-    char buf[1024];
-    const int w = snprintf(buf, sizeof(buf), "[%d,%llu,4096,%u,%d],",
-                           static_cast<int>(RecordType::PageFault), addr, tid, stack);
-    mError = !fwrite(buf, w, 1, mOutFile);
+    const auto str = fmt::format("[{},{},4096,{},{}],",
+                                 static_cast<int>(RecordType::PageFault), addr, tid, stack);
+    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
 }
 
 inline void Parser::handleThreadName()
@@ -170,10 +165,9 @@ inline void Parser::handleThreadName()
 inline void Parser::handleTime()
 {
     const auto time = readData<uint32_t>();
-    char buf[1024];
-    const int w = snprintf(buf, sizeof(buf), "[%d,%u],",
-                           static_cast<int>(RecordType::Time), time);
-    mError = !fwrite(buf, w, 1, mOutFile);
+    const auto str = fmt::format("[{},{}],",
+                                 static_cast<int>(RecordType::Time), time);
+    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
 }
 
 inline void Parser::handleWorkingDirectory()
@@ -334,22 +328,20 @@ bool Parser::writeStacks() const
             return false;
         }
         for (const auto& saddr : resolveStack(stack)) {
-            char buf[1024];
-            int w = snprintf(buf, sizeof(buf), "[%d,%d,%d",
-                             saddr.frame.function, saddr.frame.file, saddr.frame.line);
+            auto str = fmt::format("[{},{},{}",
+                                   saddr.frame.function, saddr.frame.file, saddr.frame.line);
 
             if (!saddr.inlined.empty()) {
-                w += snprintf(buf + w, sizeof(buf) - w, ",[");
+                str += ",[";
                 for (size_t i=0; i<saddr.inlined.size(); ++i) {
                     const auto &inl = saddr.inlined[i];
-                    w += snprintf(buf + w, sizeof(buf) - w, "[%d,%d,%d]%c",
-                                  inl.function, inl.file, inl.line,
-                                  i + 1 == saddr.inlined.size() ? ']' : ',');
+                    str += fmt::format("[{},{},{}]{}",
+                                       inl.function, inl.file, inl.line,
+                                       i + 1 == saddr.inlined.size() ? ']' : ',');
                 }
             }
-            buf[w++] = ']';
-            buf[w++] = ',';
-            if (!fwrite(buf, w, 1, mOutFile)) {
+            str += "],";
+            if (!fwrite(str.c_str(), str.size(), 1, mOutFile)) {
                 // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
                 return false;
             }
