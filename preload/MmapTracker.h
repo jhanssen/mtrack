@@ -21,8 +21,8 @@ private:
     bool intersects(Mmaps::const_iterator it, uintptr_t start, uintptr_t end);
 
 private:
-    Mmaps::iterator find(uintptr_t addr);
-    Mmaps::const_iterator find(uintptr_t addr) const;
+    std::pair<Mmaps::iterator, Mmaps::iterator> find(uintptr_t addr);
+    std::pair<Mmaps::const_iterator, Mmaps::const_iterator> find(uintptr_t addr) const;
 
 private:
     Mmaps mMmaps;
@@ -33,35 +33,37 @@ inline bool MmapTracker::intersects(Mmaps::const_iterator it, uintptr_t start, u
     return it != mMmaps.end() && start < std::get<1>(*it) && std::get<0>(*it) < end;
 }
 
-inline MmapTracker::Mmaps::iterator MmapTracker::find(uintptr_t addr)
+inline std::pair<MmapTracker::Mmaps::iterator, MmapTracker::Mmaps::iterator> MmapTracker::find(uintptr_t addr)
 {
-    auto it = std::upper_bound(mMmaps.begin(), mMmaps.end(), addr, [](auto addr, const auto& item) {
+    auto foundit = std::upper_bound(mMmaps.begin(), mMmaps.end(), addr, [](auto addr, const auto& item) {
         return addr < std::get<0>(item);
     });
+    auto it = foundit;
     if (it != mMmaps.begin())
         --it;
     while (it != mMmaps.end() && std::get<1>(*it) <= addr)
         ++it;
-    return it;
+    return std::make_pair(it, foundit);
 }
 
-inline MmapTracker::Mmaps::const_iterator MmapTracker::find(uintptr_t addr) const
+inline std::pair<MmapTracker::Mmaps::const_iterator, MmapTracker::Mmaps::const_iterator> MmapTracker::find(uintptr_t addr) const
 {
-    auto it = std::upper_bound(mMmaps.begin(), mMmaps.end(), addr, [](auto addr, const auto& item) {
+    auto foundit = std::upper_bound(mMmaps.begin(), mMmaps.end(), addr, [](auto addr, const auto& item) {
         return addr < std::get<0>(item);
     });
+    auto it = foundit;
     if (it != mMmaps.begin())
         --it;
     while (it != mMmaps.end() && std::get<1>(*it) <= addr)
         ++it;
-    return it;
+    return std::make_pair(it, foundit);
 }
 
 inline void MmapTracker::mmap(void* addr, size_t size, int prot, int flags)
 {
     const auto iaddr = reinterpret_cast<uintptr_t>(addr);
     const auto iaddrend = iaddr + size;
-    auto it = find(iaddr);
+    auto [ it, insertit ] = find(iaddr);
     if (intersects(it, iaddr, iaddrend)) {
         // got a hit
         do {
@@ -100,7 +102,7 @@ inline void MmapTracker::mmap(void* addr, size_t size, int prot, int flags)
             }
         } while (intersects(it, iaddr, iaddrend));
     } else {
-        mMmaps.insert(it != mMmaps.end() ? it + 1 : it, std::make_tuple(iaddr, iaddrend, prot, flags));
+        mMmaps.insert(insertit, std::make_tuple(iaddr, iaddrend, prot, flags));
     }
 }
 
@@ -109,7 +111,7 @@ inline uint64_t MmapTracker::munmap(void* addr, size_t size)
     uint64_t num = 0;
     const auto iaddr = reinterpret_cast<uintptr_t>(addr);
     const auto iaddrend = iaddr + size;
-    auto it = find(iaddr);
+    auto [ it, insertit ] = find(iaddr);
     while (intersects(it, iaddr, iaddrend)) {
         const auto curstart = std::get<0>(*it);
         const auto curend = std::get<1>(*it);
@@ -145,10 +147,11 @@ inline int MmapTracker::mprotect(void* addr, size_t size, int prot)
     int flags = 0;
     const auto iaddr = reinterpret_cast<uintptr_t>(addr);
     const auto iaddrend = iaddr + size;
-    auto it = find(iaddr);
+    auto [ it, insertit ] = find(iaddr);
     while (intersects(it, iaddr, iaddrend)) {
-        if (flags == 0)
+        if (flags == 0) {
             flags = std::get<3>(*it);
+        }
         if (std::get<2>(*it) != prot) {
             const auto curstart = std::get<0>(*it);
             const auto curend = std::get<1>(*it);
@@ -191,7 +194,7 @@ inline uint64_t MmapTracker::madvise(void* addr, size_t size)
     uint64_t num = 0;
     const auto iaddr = reinterpret_cast<uintptr_t>(addr);
     const auto iaddrend = iaddr + size;
-    auto it = find(iaddr);
+    auto [ it, insertit ] = find(iaddr);
     while (intersects(it, iaddr, iaddrend)) {
         const auto curstart = std::get<0>(*it);
         const auto curend = std::get<1>(*it);
