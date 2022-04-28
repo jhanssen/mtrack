@@ -39,6 +39,11 @@ static void parse(const std::string& inf, const std::string& outf)
 
     fclose(fi);
 
+    fprintf(stdout, "%zu events. %zu recordings.\n%zu strings %zu hits %zu misses. %zu stacks %zu hits %zu misses.\n",
+            parser.eventCount(), parser.recordCount(),
+            parser.stringCount(), parser.stringHits(), parser.stringMisses(),
+            parser.stackCount(), parser.stackHits(), parser.stackMisses());
+
     if (!ok)
         return;
 
@@ -79,5 +84,6 @@ int main(int argc, char** argv)
     }
 
     parse(args.value<std::string>("input"), output);
+
     return 0;
 }

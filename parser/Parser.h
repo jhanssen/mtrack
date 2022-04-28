@@ -15,6 +15,16 @@ public:
     Parser() = default;
 
     bool parse(const uint8_t* data, size_t size, FILE* f);
+
+    size_t eventCount() const;
+    size_t recordCount() const;
+    size_t stringCount() const;
+    size_t stringHits() const;
+    size_t stringMisses() const;
+    size_t stackCount() const;
+    size_t stackHits() const;
+    size_t stackMisses() const;
+
 private:
     inline void handleExe();
     inline void handleFree();
@@ -64,7 +74,11 @@ private:
     };
     std::map<uint64_t, ModuleEntry> mModuleCache;
     std::unordered_map<uint64_t, std::string> mThreadNames;
-    size_t mRecordings {};
+
+    struct {
+        size_t eventCount = 0;
+        size_t recordCount = 0;
+    } mStats = {};
 };
 
 template<typename T>
@@ -110,4 +124,44 @@ inline T Parser::readData()
         mData += sizeof(T);
         return t;
     }
+}
+
+inline size_t Parser::eventCount() const
+{
+    return mStats.eventCount;
+}
+
+inline size_t Parser::recordCount() const
+{
+    return mStats.recordCount;
+}
+
+inline size_t Parser::stringCount() const
+{
+    return mStringIndexer.size();
+}
+
+inline size_t Parser::stringHits() const
+{
+    return mStringIndexer.hits();
+}
+
+inline size_t Parser::stringMisses() const
+{
+    return mStringIndexer.misses();
+}
+
+inline size_t Parser::stackCount() const
+{
+    return mStackIndexer.size();
+}
+
+inline size_t Parser::stackHits() const
+{
+    return mStackIndexer.hits();
+}
+
+inline size_t Parser::stackMisses() const
+{
+    return mStackIndexer.misses();
 }

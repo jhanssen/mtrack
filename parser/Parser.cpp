@@ -41,6 +41,7 @@ inline void Parser::handleExe()
 
 inline void Parser::handleFree()
 {
+    ++mStats.eventCount;
     const auto addr = readData<uint64_t>();
     const auto str = fmt::format("[{},{}],", static_cast<int>(RecordType::Free), addr);
     mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
@@ -84,6 +85,7 @@ inline void Parser::handleLibraryHeader()
 
 inline void Parser::handleMadvise(RecordType type)
 {
+    ++mStats.eventCount;
     const auto addr = readData<uint64_t>();
     const auto size = readData<uint64_t>();
     const auto advice = readData<int32_t>();
@@ -95,6 +97,7 @@ inline void Parser::handleMadvise(RecordType type)
 
 inline void Parser::handleMalloc()
 {
+    ++mStats.eventCount;
     const auto addr = readData<uint64_t>();
     const auto size = readData<uint64_t>();
     const auto thread = readData<uint32_t>();
@@ -107,6 +110,7 @@ inline void Parser::handleMalloc()
 
 inline void Parser::handleMmap(RecordType type)
 {
+    ++mStats.eventCount;
     const auto addr = readData<uint64_t>();
     const auto size = readData<uint64_t>();
     const auto allocated = readData<uint64_t>();
@@ -130,6 +134,7 @@ inline void Parser::handleMmap(RecordType type)
 
 inline void Parser::handleMunmap(RecordType type)
 {
+    ++mStats.eventCount;
     const auto addr = readData<uint64_t>();
     const auto size = readData<uint64_t>();
     const auto deallocated = readData<uint64_t>();
@@ -141,6 +146,7 @@ inline void Parser::handleMunmap(RecordType type)
 
 inline void Parser::handlePageFault()
 {
+    ++mStats.eventCount;
     const auto addr = readData<uint64_t>();
     const auto tid = readData<uint32_t>();
     const auto stack = readStack();
@@ -164,6 +170,7 @@ inline void Parser::handleThreadName()
 
 inline void Parser::handleTime()
 {
+    ++mStats.eventCount;
     const auto time = readData<uint32_t>();
     const auto str = fmt::format("[{},{}],",
                                  static_cast<int>(RecordType::Time), time);
@@ -226,10 +233,11 @@ bool Parser::writeEvents()
     const auto start = reinterpret_cast<unsigned long long>(mData);
     const size_t total = mEnd - mData;
     while (!mError && mData < mEnd) {
-        ++mRecordings;
-        if (mRecordings % 1000 == 0) {
+        ++mStats.recordCount;
+
+        if (mStats.recordCount % 1000 == 0) {
             const auto cur = reinterpret_cast<unsigned long long>(mData) - start;
-            printf("%zu %llu/%zu bytes left (%g%%)\n", mRecordings, cur, total,
+            printf("%zu %llu/%zu bytes left (%g%%)\n", mStats.recordCount, cur, total,
                    (static_cast<double>(cur) / static_cast<double>(total)) * 100);
         }
 
