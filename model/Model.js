@@ -102,7 +102,7 @@ export class Model
             case Model.MadviseUntracked:
                 break;
             case Model.Malloc:
-                const malloc = new Malloc(new Range(event[1], event[2]), event[3], event[4]);
+                malloc = new Malloc(new Range(event[1], event[2]), event[3], event[4]);
                 this.mallocsByAddr.set(malloc.range.start, malloc);
                 current = this.mallocsByStack.get(malloc.stack);
                 if (!current) {
@@ -114,7 +114,7 @@ export class Model
             case Model.Free:
                 malloc = this.mallocsByAddr.get(event[1]);
                 this.mallocsByAddr.delete(event[1]);
-                const current = this.mallocsByStack.get(malloc.range.start);
+                current = this.mallocsByStack.get(malloc.range.start);
                 if (current.length === 1) {
                     this.mallocsByStack.delete(malloc.range.start);
                 } else {
