@@ -336,13 +336,11 @@ bool Parser::writeStacks() const
                 // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
                 return false;
             }
-            break;
         }
         if (fprintf(mOutFile, "null],") != 6) {
             // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
             return false;
         }
-        break;
     }
 
     if (fprintf(mOutFile, "null],\n") != 7) {
