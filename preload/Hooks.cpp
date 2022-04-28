@@ -675,7 +675,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 
     bool tracked = false;
     uint64_t allocated = 0;
-    if (!::inMallocFree
+    if (!mallocFree.wasInMallocFree()
         && (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)
         && fd == -1) {
         allocated = trackMmap(ret, length, prot, flags);
@@ -714,7 +714,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
 
     bool tracked = false;
     uint64_t allocated = 0;
-    if (!::inMallocFree
+    if (!mallocFree.wasInMallocFree()
         && (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)
         && fd == -1) {
         allocated = trackMmap(ret, length, prot, flags);
