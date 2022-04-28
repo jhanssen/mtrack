@@ -13,7 +13,11 @@ void Recorder::process(Recorder* r)
 
     auto timestamp = []() {
         timespec ts;
+#ifdef __APPLE__
+        clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+#else
         clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+#endif
         return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
     };
 

@@ -11,9 +11,9 @@
 #include <unistd.h>
 #include <atomic>
 
+#ifndef __APPLE__
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
-
 struct {
 #ifdef __i386__
     gregset_t gregs;
@@ -96,7 +96,15 @@ inline void Stack::initialize(const StackInitializer& initializer)
     }
     // printf("donezo\n");
 }
+#endif
 
+#ifdef __APPLE__
+Stack::Stack()
+{
+
+
+}
+#else
 Stack::Stack(unsigned ptid)
 {
     // dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
@@ -130,3 +138,4 @@ Stack::Stack(unsigned ptid)
 #endif
     }
 }
+#endif

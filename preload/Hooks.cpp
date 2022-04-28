@@ -7,9 +7,13 @@
 #include <assert.h>
 #include <dlfcn.h>
 #include <fcntl.h>
+#ifndef __APPLE__
 #include <link.h>
 #include <linux/userfaultfd.h>
 #include <poll.h>
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
+#endif
 #include <stdlib.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -23,17 +27,16 @@
 #include <thread>
 #include <tuple>
 
-#define UNW_LOCAL_ONLY
-#include <libunwind.h>
-
 static constexpr uint64_t PAGESIZE = 4096;
 
+#ifndef __APPLE__
 typedef void* (*MmapSig)(void*, size_t, int, int, int, off_t);
 typedef void* (*Mmap64Sig)(void*, size_t, int, int, int, __off64_t);
 typedef void* (*MremapSig)(void*, size_t, size_t, int, ...);
 typedef int (*MunmapSig)(void*, size_t);
 typedef int (*MadviseSig)(void*, size_t, int);
 typedef int (*MprotectSig)(void*, size_t, int);
+#endif
 typedef void* (*DlOpenSig)(const char*, int);
 typedef int (*DlCloseSig)(void*);
 typedef int (*PthreadSetnameSig)(pthread_t thread, const char* name);
@@ -104,12 +107,14 @@ private:
 
 struct Callbacks
 {
+#ifndef __APPLE__
     MmapSig mmap { nullptr };
     Mmap64Sig mmap64 { nullptr };
     MunmapSig munmap { nullptr };
     MremapSig mremap { nullptr };
     MadviseSig madvise { nullptr };
     MprotectSig mprotect { nullptr };
+#endif
     DlOpenSig dlopen { nullptr };
     DlCloseSig dlclose { nullptr };
     PthreadSetnameSig pthread_setname_np { nullptr };
@@ -260,6 +265,7 @@ void MmapWalker::walk(void* addr, size_t len, Func&& func)
     }
 }
 
+#ifndef __APPLE__
 static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, void* /*data*/)
 {
     const char* fileName = info->dlpi_name;
@@ -362,10 +368,12 @@ static void hookThread()
     }
     printf("- end of fault thread\n");
 }
+#endif
 
 static void hookCleanup()
 {
     // might be a race here if the process exits really quickly
+#ifndef __APPLE__
     if (!data->isShutdown.test_and_set()) {
         if (data->faultFd == -1) {
             close(data->faultFd);
@@ -377,6 +385,7 @@ static void hookCleanup()
         } while (w == -1 && errno == EINTR);
         data->thread.join();
     }
+#endif
     NoHook noHook;
     data->recorder.cleanup();
     delete data;
@@ -385,6 +394,7 @@ static void hookCleanup()
 
 void Hooks::hook()
 {
+#ifndef __APPLE__
     callbacks.mmap = reinterpret_cast<MmapSig>(dlsym(RTLD_NEXT, "mmap"));
     if (callbacks.mmap == nullptr) {
         safePrint("no mmap\n");
@@ -415,6 +425,7 @@ void Hooks::hook()
         safePrint("no mprotect\n");
         abort();
     }
+#endif
     callbacks.dlopen = reinterpret_cast<DlOpenSig>(dlsym(RTLD_NEXT, "dlopen"));
     if (callbacks.dlopen == nullptr) {
         safePrint("no dlopen\n");
@@ -474,6 +485,7 @@ void Hooks::hook()
     }
 
     data = new Data();
+#ifndef __APPLE__
     data->faultFd = syscall(SYS_userfaultfd, O_NONBLOCK);
     if (data->faultFd == -1) {
         safePrint("no faultFd\n");
@@ -499,6 +511,7 @@ void Hooks::hook()
     }
 
     data->thread = std::thread(hookThread);
+#endif
     atexit(hookCleanup);
 
     data->recorder.initialize("./mtrack.data");
@@ -526,12 +539,15 @@ void Hooks::hook()
 
     NoHook nohook;
 
+#ifndef __APPLE__
     unw_set_caching_policy(unw_local_addr_space, UNW_CACHE_PER_THREAD);
     unw_set_cache_size(unw_local_addr_space, 1024, 0);
+#endif
 
     safePrint("hook.\n");
 }
 
+#ifndef __APPLE__
 uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
 {
     uint64_t allocated = 0;
@@ -623,6 +639,7 @@ uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
 
     return allocated;
 }
+#endif
 
 void reportMalloc(void* ptr, size_t size)
 {

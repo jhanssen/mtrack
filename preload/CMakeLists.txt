@@ -11,4 +11,7 @@ set_source_files_properties(${SOURCES} PROPERTIES COMPILE_FLAGS "-fno-omit-frame
 add_library(mtrack_preload SHARED ${SOURCES})
 target_compile_features(mtrack_preload PRIVATE cxx_std_20)
 target_include_directories(mtrack_preload PRIVATE ${MTRACK_BASE_DIR})
-target_link_libraries(mtrack_preload PRIVATE pthread dl unwind::static)
+target_link_libraries(mtrack_preload PRIVATE pthread dl)
+if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+    target_link_libraries(mtrack_preload PRIVATE unwind::static)
+endif ()
