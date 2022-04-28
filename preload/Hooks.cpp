@@ -618,8 +618,6 @@ uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
         if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
             printf("no range (1) 0x%llx\n", reg.ioctls);
             return allocated;
-        } else {
-            printf("got ok (1)\n");
         }
     }
 
@@ -880,8 +878,6 @@ int mprotect(void* addr, size_t len, int prot)
         if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
             printf("no range (2) 0x%llx\n", reg.ioctls);
             return callbacks.mprotect(addr, len, prot);
-        } else {
-            printf("got ok (2)\n");
         }
     }
 
