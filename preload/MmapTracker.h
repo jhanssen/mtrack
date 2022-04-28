@@ -15,6 +15,9 @@ public:
     int mprotect(void* addr, size_t size, int prot);
     uint64_t madvise(void* addr, size_t size);
 
+    template<typename Func>
+    void forEach(Func&& func) const;
+
 private:
     typedef std::vector<std::tuple<uintptr_t, uintptr_t, int, int>> Mmaps;
 
@@ -213,4 +216,12 @@ inline uint64_t MmapTracker::madvise(void* addr, size_t size)
         ++it;
     }
     return num;
+}
+
+template<typename Func>
+inline void MmapTracker::forEach(Func&& func) const
+{
+    for (const auto& t : mMmaps) {
+        func(std::get<0>(t), std::get<1>(t), std::get<2>(t), std::get<3>(t));
+    }
 }
