@@ -113,6 +113,8 @@ export class Graph {
 
             for (let stackIdx = stack.length - 1; stackIdx >= 0; --stackIdx) {
                 const stackEntry = stack[stackIdx];
+                if (stackEntry === null)
+                    continue;
                 const key = `${stackEntry[0]}:${stackEntry[1]}:${stackEntry[2]}`;
                 let curIdx = cur.findIndex(e => {
                     return e.key === key;
