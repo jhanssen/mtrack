@@ -1026,7 +1026,7 @@ void free(void* ptr)
     if (!::hooked)
         return;
 
-    if (!mallocFree.wasInMallocFree() && ptr)
+    if (!mallocFree.wasInMallocFree() && ptr && data)
         reportFree(ptr);
 }
 
