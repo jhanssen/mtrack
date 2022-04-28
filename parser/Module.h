@@ -86,25 +86,22 @@ inline bool Address::valid() const
 namespace std {
 
 template<>
-struct hash<std::vector<Address>>
+struct hash<std::vector<uint64_t>>
 {
 public:
-    size_t operator()(const std::vector<Address>& addrs) const
+    size_t operator()(const std::vector<uint64_t>& stack) const
     {
         size_t hash = 0;
 
-        auto hashFrame = [&hash](const Frame& frame) {
-            const uint8_t* data = reinterpret_cast<const uint8_t*>(&frame);
-            for (size_t i = 0; i < sizeof(Frame); ++i) {
+        auto hashEntry = [&hash](const uint64_t ip) {
+            const uint8_t* data = reinterpret_cast<const uint8_t*>(&ip);
+            for (size_t i = 0; i < sizeof(i); ++i) {
                 hash = *(data + i) + (hash << 6) + (hash << 16) - hash;
             }
         };
 
-        for (const auto& addr : addrs) {
-            hashFrame(addr.frame);
-            for (const auto& inl : addr.inlined) {
-                hashFrame(inl);
-            }
+        for (const auto ip : stack) {
+            hashEntry(ip);
         }
 
         return hash;

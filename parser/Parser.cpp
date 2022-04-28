@@ -24,23 +24,12 @@ inline int32_t Parser::readStack()
         mModulesDirty = false;
     }
 
-    std::vector<Address> stack;
-
-    // printf("Trying to read stack at %zu\n", mReadOffset);
+    std::vector<uint64_t> stack;
     const uint32_t count = readData<uint32_t>() / sizeof(void*);
     for (uint32_t i=0; i<count; ++i) {
-        const unsigned long long ip = readData<unsigned long long>() - 1;
-        auto it = mModuleCache.upper_bound(ip);
-        if (it != mModuleCache.begin())
-            --it;
-        if (mModuleCache.size() == 1)
-            it = mModuleCache.begin();
-        Address address;
-        if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end)
-            address = it->second.module->resolveAddress(ip);
-
-        stack.push_back(address);
+        stack.push_back(readData<uint64_t>() - 1);
     }
+
     return mStackIndexer.index(stack);
 }
 
@@ -319,12 +308,32 @@ bool Parser::writeStacks() const
         return false;
     }
 
+    auto resolveStack = [this](const std::vector<uint64_t>& stack) {
+        std::vector<Address> astack;
+
+        // printf("Trying to read stack at %zu\n", mReadOffset);
+        for (const auto ip : stack) {
+            auto it = mModuleCache.upper_bound(ip);
+            if (it != mModuleCache.begin())
+                --it;
+            if (mModuleCache.size() == 1)
+                it = mModuleCache.begin();
+            Address address;
+            if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end)
+                address = it->second.module->resolveAddress(ip);
+
+            astack.push_back(address);
+        }
+
+        return astack;
+    };
+
     for (const auto& stack : mStackIndexer.values()) {
         if (!fprintf(mOutFile, "[")) {
             // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
             return false;
         }
-        for (const auto& saddr : stack) {
+        for (const auto& saddr : resolveStack(stack)) {
             char buf[1024];
             int w = snprintf(buf, sizeof(buf), "[%d,%d,%d",
                              saddr.frame.function, saddr.frame.file, saddr.frame.line);

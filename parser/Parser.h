@@ -55,7 +55,7 @@ private:
     FILE *mOutFile { nullptr };
 
     Indexer<std::string> mStringIndexer;
-    Indexer<std::vector<Address>> mStackIndexer;
+    Indexer<std::vector<uint64_t>> mStackIndexer;
 
     struct ModuleEntry
     {
