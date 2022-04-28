@@ -343,6 +343,7 @@ static void hookThread()
                         // boo
                         close(data->faultFd);
                         data->faultFd = -1;
+                        printf("- pagefault error 3\n");
                         return;
                     }
                     // printf("  - handled pagefault\n");
