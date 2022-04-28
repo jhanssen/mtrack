@@ -9,19 +9,26 @@ import { Printer } from "./Printer.js";
 
 function usage(out)
 {
-    out(`${process.argv[0]} ${process.argv[1]} (--help|-h) (--until-ms <ms>) (--until-event <event>) <mtrack.json>`);
+    out(`${process.argv[0]} ${process.argv[1]} (--help|-h) (--until-ms <ms>) (--until-event <event>) (--verbose|-v) (--silent) <mtrack.json>`);
 }
 
 let dashDash = false;
 let file;
 let data;
 let until = {};
+let options = {};
 
 for (let idx=2; idx<process.argv.length; ++idx) {
     const arg = process.argv[idx];
     if (arg === "--help" || arg === "-h") {
         usage(console.log.bind(console));
         process.exit(0);
+    } else if (arg === "--verbose" || arg === "-v") {
+        options.verbose = true;
+        options.silent = false;
+    } else if (arg === "--silent") {
+        options.verbose = false;
+        options.silent = true;
     } else if (arg === "--") {
         dashDash = true;
     } else if (arg === "--until-ms" || arg.startsWith("--until-ms=")) {
@@ -79,7 +86,7 @@ try {
     process.exit(1);
 }
 
-const model = new Model(data);
+const model = new Model(data, options);
 const parsed = model.parse(until);
 const printer = new Printer(model, parsed);
 

@@ -6,12 +6,24 @@ import { Snapshot } from "./Snapshot.js";
 
 export class Model
 {
-    constructor(data)
+    constructor(data, options)
     {
         if (!data || typeof data !== "object") {
             throw new Error(`Invalid data ${data}`);
         }
+        this.options = options || { silent: true };
         this.data = data;
+        if (this.options.silent) {
+            this.log = this.error = this.verbose = () => {};
+        } else {
+            this.error = console.error.bind(console);
+            this.log = console.log.bind(console);
+            if (this.options.verbose) {
+                this.verbose = this.log;
+            } else {
+                this.verbose = () => {};
+            }
+        }
     }
 
     parse(until, callback)
@@ -79,7 +91,12 @@ export class Model
             return removed;
         };
 
-        for (let idx=0; idx<count; ++idx) {
+        if (this.data.events[count - 1] !== null) {
+            throw new Error("Expected null, got " + JSON.stringify(this.data.events[count - 1]));
+        }
+        --count;
+        const tenPercent = Math.floor(count / 10);
+        for (let idx=0; idx<count - 1; ++idx) {
             let range;
             let mmapStack;
             let removed;
@@ -106,15 +123,19 @@ export class Model
                 this.mallocsByAddr.set(malloc.range.start, malloc);
                 current = this.mallocsByStack.get(malloc.stack);
                 if (!current) {
-                    this.mallocsByStack.set([malloc]);
+                    this.mallocsByStack.set(malloc.stack, [malloc]);
                 } else {
                     current.push(malloc);
                 }
                 break;
             case Model.Free:
                 malloc = this.mallocsByAddr.get(event[1]);
+                if (!malloc) {
+                    this.error("Can't find malloc for event", event);
+                    break;
+                }
                 this.mallocsByAddr.delete(event[1]);
-                current = this.mallocsByStack.get(malloc.range.start);
+                current = this.mallocsByStack.get(malloc.stack);
                 if (current.length === 1) {
                     this.mallocsByStack.delete(malloc.range.start);
                 } else {
@@ -184,6 +205,10 @@ export class Model
                 throw new Error("Unknown event " + JSON.stringify(event));
             }
             // console.log("Got event", this.data.events[idx]);
+            if (idx % tenPercent  === 0 && !this.options.silent) {
+                this.log(`Parsed ${idx}/${count} ${((idx / count) * 100).toFixed(2)}%`);
+            }
+
         }
         if (callback && time !== lastSnapshotTime) {
             callback(new Snapshot(currentMemoryUsage, time, count));
