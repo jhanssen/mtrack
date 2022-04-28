@@ -329,10 +329,7 @@ static void hookThread()
                     const auto place = static_cast<uint64_t>(fault_msg.arg.pagefault.address);
                     const auto ptid = static_cast<uint32_t>(fault_msg.arg.pagefault.feat.ptid);
                     // printf("  - pagefault %u\n", ptid);
-                    {
-                        Recorder::Scope recorderScope(&data->recorder);
-                        data->recorder.record(RecordType::PageFault, place, ptid, Stack(ptid));
-                    }
+                    data->recorder.record(RecordType::PageFault, place, ptid, Stack(ptid));
                     uffdio_zeropage zero = {
                         .range = {
                             .start = place,
