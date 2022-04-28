@@ -2,3 +2,4 @@ cmake_minimum_required(VERSION 3.13)
 
 add_subdirectory(malloc)
 add_subdirectory(mmap)
+add_subdirectory(tracker)
