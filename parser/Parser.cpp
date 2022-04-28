@@ -240,8 +240,16 @@ bool Parser::writeEvents()
         return false;
     }
 
+    const auto start = reinterpret_cast<unsigned long long>(mData);
+    const size_t total = mEnd - mData;
     while (!mError && mData < mEnd) {
         ++mRecordings;
+        if (mRecordings % 1000 == 0) {
+            const auto cur = reinterpret_cast<unsigned long long>(mData) - start;
+            printf("%zu %llu/%zu bytes left (%g%%)\n", mRecordings, cur, total,
+                   (static_cast<double>(cur) / static_cast<double>(total)) * 100);
+        }
+
         const auto type = readData<RecordType>();
         // printf("hello %u (%s)\n", static_cast<std::underlying_type_t<RecordType>>(type),
         //        recordTypeToString(type));
