@@ -3,6 +3,7 @@
 #include "Recorder.h"
 #include "Spinlock.h"
 #include "Stack.h"
+#include "Types.h"
 #include <common/Version.h>
 
 #include <assert.h>
@@ -27,8 +28,6 @@
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
 
-static constexpr uint64_t PAGESIZE = 4096;
-
 typedef void* (*MmapSig)(void*, size_t, int, int, int, off_t);
 typedef void* (*Mmap64Sig)(void*, size_t, int, int, int, __off64_t);
 typedef void* (*MremapSig)(void*, size_t, size_t, int, ...);
@@ -48,7 +47,7 @@ typedef void* (*Aligned_AllocSig)(size_t, size_t);
 
 inline uint64_t alignToPage(uint64_t size)
 {
-    return size + (((~size) + 1) & (PAGESIZE - 1));
+    return size + (((~size) + 1) & (Limits::PageSize - 1));
 }
 
 inline uint64_t alignToSize(uint64_t size, uint64_t align)
@@ -59,7 +58,7 @@ inline uint64_t alignToSize(uint64_t size, uint64_t align)
 inline uint64_t mmap_ptr_cast(void *ptr)
 {
     const uint64_t ret = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr));
-    return ret + (PAGESIZE - (ret % PAGESIZE)) - PAGESIZE;
+    return ret + (Limits::PageSize - (ret % Limits::PageSize)) - Limits::PageSize;
 }
 
 template<size_t Size>
@@ -228,6 +227,7 @@ static void hookThread()
             // need to lock the recorder scope here instead of inside the callback
             // since frames above other calls to dl_iterate_phdr may have already locked our scope
             Recorder::Scope recorderScope(&data->recorder);
+            data->recorder.record(RecordType::Libraries);
             dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
             data->modulesDirty.store(false, std::memory_order_release);
         }
@@ -256,7 +256,7 @@ static void hookThread()
                     uffdio_zeropage zero = {
                         .range = {
                             .start = place,
-                            .len = PAGESIZE
+                            .len = Limits::PageSize
                         }
                     };
                     if (ioctl(data->faultFd, UFFDIO_ZEROPAGE, &zero)) {
@@ -460,7 +460,7 @@ uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
     // printf("-maping %p %zu flags 0x%x priv/anon %d\n", addr, length, flags, (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS));
     {
         ScopedSpinlock lock(data->mmapTrackerLock);
-        data->mmapTracker.mmap(addr, length, prot, flags);
+        data->mmapTracker.mmap(addr, length, prot, flags, 0);
     }
     // printf("1--\n");
     // for (const auto& item : data->mmapRanges) {
@@ -499,6 +499,7 @@ void reportMalloc(void* ptr, size_t size)
     Recorder::Scope recordScope(&data->recorder);
 
     if (data->modulesDirty.load(std::memory_order_acquire)) {
+        data->recorder.record(RecordType::Libraries);
         dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
         data->modulesDirty.store(false, std::memory_order_release);
     }
@@ -517,6 +518,7 @@ void reportFree(void* ptr)
     Recorder::Scope recordScope(&data->recorder);
 
     if (data->modulesDirty.load(std::memory_order_acquire)) {
+        data->recorder.record(RecordType::Libraries);
         dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
         data->modulesDirty.store(false, std::memory_order_release);
     }
@@ -542,25 +544,24 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     NoHook nohook;
 
     bool tracked = false;
-    uint64_t allocated = 0;
     if (!mallocFree.wasInMallocFree()
         && (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)
         && fd == -1) {
-        allocated = trackMmap(ret, length, prot, flags);
+        trackMmap(ret, length, prot, flags);
         tracked = true;
     }
 
     Recorder::Scope recordScope(&data->recorder);
 
     if (data->modulesDirty.load(std::memory_order_acquire)) {
+        data->recorder.record(RecordType::Libraries);
         dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
         data->modulesDirty.store(false, std::memory_order_release);
     }
 
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
-                          mmap_ptr_cast(ret), alignToPage(length), allocated,
-                          prot, flags, fd, static_cast<uint64_t>(offset), static_cast<uint32_t>(gettid()),
-                          Stack());
+                          mmap_ptr_cast(ret), alignToPage(length), prot, flags,
+                          static_cast<uint32_t>(gettid()), Stack());
     return ret;
 }
 
@@ -592,14 +593,14 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
     Recorder::Scope recordScope(&data->recorder);
 
     if (data->modulesDirty.load(std::memory_order_acquire)) {
+        data->recorder.record(RecordType::Libraries);
         dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
         data->modulesDirty.store(false, std::memory_order_release);
     }
 
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
-                          mmap_ptr_cast(ret), alignToPage(length), allocated,
-                          prot, flags, fd, static_cast<uint64_t>(pgoffset) * 4096, static_cast<uint32_t>(gettid()),
-                          Stack());
+                          mmap_ptr_cast(ret), alignToPage(length), prot, flags,
+                          static_cast<uint32_t>(gettid()), Stack());
 
     return ret;
 }
@@ -629,7 +630,7 @@ int munmap(void* addr, size_t length)
     }
 
     data->recorder.record(deallocated > 0 ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
-                          mmap_ptr_cast(addr), alignToPage(length), deallocated);
+                          mmap_ptr_cast(addr), alignToPage(length));
     // if (updated) {
     //     printf("2--\n");
     //     for (const auto& item : data->mmapRanges) {
@@ -675,6 +676,13 @@ int mprotect(void* addr, size_t len, int prot)
     {
         ScopedSpinlock lock(data->mmapTrackerLock);
         flags = data->mmapTracker.mprotect(addr, len, prot);
+        // if (flags == 0) {
+        //     printf("for prot %p\n", addr);
+        //     data->mmapTracker.forEach([](uintptr_t start, uintptr_t end, int prot, int flags) {
+        //         printf("mmap 0x%lx 0x%lx 0x%x 0x%x\n",
+        //                start, end, prot, flags);
+        //     });
+        // }
     }
 
     // printf("mprotect %p %zu %d %d\n", addr, len, prot, flags);
@@ -734,7 +742,7 @@ int madvise(void* addr, size_t length, int advice)
     }
 
     data->recorder.record(deallocated > 0 ? RecordType::MadviseTracked : RecordType::MadviseUntracked,
-                          mmap_ptr_cast(addr), alignToPage(length), advice, deallocated);
+                          mmap_ptr_cast(addr), alignToPage(length), advice);
 
     return callbacks.madvise(addr, length, advice);
 }

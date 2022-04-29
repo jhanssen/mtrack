@@ -10,16 +10,20 @@ class MmapTracker
 public:
     MmapTracker() = default;
 
-    void mmap(void* addr, size_t size, int prot, int flags);
+    void mmap(void* addr, size_t size, int32_t prot, int32_t flags, int32_t stack);
+    void mmap(uintptr_t addr, size_t size, int32_t prot, int32_t flags, int32_t stack);
     uint64_t munmap(void* addr, size_t size);
-    int mprotect(void* addr, size_t size, int prot);
+    uint64_t munmap(uintptr_t addr, size_t size);
+    int32_t mprotect(void* addr, size_t size, int32_t prot);
+    int32_t mprotect(uintptr_t addr, size_t size, int32_t prot);
     uint64_t madvise(void* addr, size_t size);
+    uint64_t madvise(uintptr_t addr, size_t size);
 
     template<typename Func>
     void forEach(Func&& func) const;
 
 private:
-    typedef std::vector<std::tuple<uintptr_t, uintptr_t, int, int>> Mmaps;
+    typedef std::vector<std::tuple<uintptr_t, uintptr_t, int32_t, int32_t, int32_t>> Mmaps;
 
     bool intersects(Mmaps::const_iterator it, uintptr_t start, uintptr_t end);
 
@@ -62,42 +66,44 @@ inline std::pair<MmapTracker::Mmaps::const_iterator, MmapTracker::Mmaps::const_i
     return std::make_pair(it, foundit);
 }
 
-inline void MmapTracker::mmap(void* addr, size_t size, int prot, int flags)
+inline void MmapTracker::mmap(uintptr_t iaddr, size_t size, int32_t prot, int32_t flags, int32_t stack)
 {
-    const auto iaddr = reinterpret_cast<uintptr_t>(addr);
     const auto iaddrend = iaddr + size;
     auto [ it, insertit ] = find(iaddr);
     if (intersects(it, iaddr, iaddrend)) {
         // got a hit
         do {
-            if (std::get<2>(*it) != prot || std::get<3>(*it) != flags) {
+            if (std::get<2>(*it) != prot || std::get<3>(*it) != flags || std::get<4>(*it) != stack) {
                 const auto curstart = std::get<0>(*it);
                 const auto curend = std::get<1>(*it);
                 const auto curprot = std::get<2>(*it);
                 const auto curflags = std::get<3>(*it);
+                const auto curstack = std::get<4>(*it);
 
                 if (curstart < iaddr) {
                     // item addr is prior to input addr, update end and add new item
                     std::get<1>(*it) = iaddr;
-                    it = mMmaps.insert(it + 1, std::make_tuple(iaddr, std::min(curend, iaddrend), prot, flags));
+                    it = mMmaps.insert(it + 1, std::make_tuple(iaddr, std::min(curend, iaddrend), prot, flags, stack));
 
                     // if we're fully contained in the item, we need to add one more at the end
                     if (iaddrend < curend) {
-                        it = mMmaps.insert(it + 1, std::make_tuple(iaddrend, curend, curprot, curflags));
+                        it = mMmaps.insert(it + 1, std::make_tuple(iaddrend, curend, curprot, curflags, curstack));
                     }
                     ++it;
                 } else if (iaddr <= curstart && iaddrend >= curend) {
                     // item is fully contained in input addr, just update prot and flags
                     std::get<2>(*it) = prot;
                     std::get<3>(*it) = flags;
+                    std::get<4>(*it) = stack;
                     ++it;
                 } else if (iaddrend < curend) {
                     // item end is past input end, update and add new item
                     std::get<1>(*it) = iaddrend;
                     std::get<2>(*it) = prot;
                     std::get<3>(*it) = flags;
+                    std::get<4>(*it) = stack;
 
-                    it = mMmaps.insert(it + 1, std::make_tuple(iaddrend, curend, curprot, curflags));
+                    it = mMmaps.insert(it + 1, std::make_tuple(iaddrend, curend, curprot, curflags, curstack));
                     return;
                 }
             } else {
@@ -105,14 +111,18 @@ inline void MmapTracker::mmap(void* addr, size_t size, int prot, int flags)
             }
         } while (intersects(it, iaddr, iaddrend));
     } else {
-        mMmaps.insert(insertit, std::make_tuple(iaddr, iaddrend, prot, flags));
+        mMmaps.insert(insertit, std::make_tuple(iaddr, iaddrend, prot, flags, stack));
     }
 }
 
-inline uint64_t MmapTracker::munmap(void* addr, size_t size)
+inline void MmapTracker::mmap(void* addr, size_t size, int32_t prot, int32_t flags, int32_t stack)
+{
+    return mmap(reinterpret_cast<uintptr_t>(addr), size, prot, flags, stack);
+}
+
+inline uint64_t MmapTracker::munmap(uintptr_t iaddr, size_t size)
 {
     uint64_t num = 0;
-    const auto iaddr = reinterpret_cast<uintptr_t>(addr);
     const auto iaddrend = iaddr + size;
     auto [ it, insertit ] = find(iaddr);
     while (intersects(it, iaddr, iaddrend)) {
@@ -120,6 +130,7 @@ inline uint64_t MmapTracker::munmap(void* addr, size_t size)
         const auto curend = std::get<1>(*it);
         const auto curprot = std::get<2>(*it);
         const auto curflags = std::get<3>(*it);
+        const auto curstack = std::get<4>(*it);
 
         if (curstart < iaddr) {
             // item addr is prior to input addr, update end
@@ -128,7 +139,7 @@ inline uint64_t MmapTracker::munmap(void* addr, size_t size)
 
             // if we're fully contained in the item, we need to add one more at the end
             if (iaddrend < curend) {
-                it = mMmaps.insert(it + 1, std::make_tuple(iaddrend, curend, curprot, curflags));
+                it = mMmaps.insert(it + 1, std::make_tuple(iaddrend, curend, curprot, curflags, curstack));
             }
             ++it;
         } else if (iaddr <= curstart && iaddrend >= curend) {
@@ -145,10 +156,14 @@ inline uint64_t MmapTracker::munmap(void* addr, size_t size)
     return num;
 }
 
-inline int MmapTracker::mprotect(void* addr, size_t size, int prot)
+inline uint64_t MmapTracker::munmap(void* addr, size_t size)
 {
-    int flags = 0;
-    const auto iaddr = reinterpret_cast<uintptr_t>(addr);
+    return munmap(reinterpret_cast<uintptr_t>(addr), size);
+}
+
+inline int32_t MmapTracker::mprotect(uintptr_t iaddr, size_t size, int32_t prot)
+{
+    int32_t flags = 0;
     const auto iaddrend = iaddr + size;
     auto [ it, insertit ] = find(iaddr);
     while (intersects(it, iaddr, iaddrend)) {
@@ -160,29 +175,28 @@ inline int MmapTracker::mprotect(void* addr, size_t size, int prot)
             const auto curend = std::get<1>(*it);
             const auto curprot = std::get<2>(*it);
             const auto curflags = std::get<3>(*it);
+            const auto curstack = std::get<4>(*it);
 
             if (curstart < iaddr) {
                 // item addr is prior to input addr, update end and add new item
                 std::get<1>(*it) = iaddr;
-                it = mMmaps.insert(it + 1, std::make_tuple(iaddr, std::min(curend, iaddrend), prot, curflags));
+                it = mMmaps.insert(it + 1, std::make_tuple(iaddr, std::min(curend, iaddrend), prot, curflags, curstack));
 
                 // if we're fully contained in the item, we need to add one more at the end
                 if (iaddrend < curend) {
-                    it = mMmaps.insert(it + 1, std::make_tuple(iaddrend, curend, curprot, curflags));
+                    it = mMmaps.insert(it + 1, std::make_tuple(iaddrend, curend, curprot, curflags, curstack));
                 }
                 ++it;
             } else if (iaddr <= curstart && iaddrend >= curend) {
                 // item is fully contained in input addr, just update prot and flags
                 std::get<2>(*it) = prot;
-                std::get<3>(*it) = curflags;
                 ++it;
             } else if (iaddrend < curend) {
                 // item end is past input end, update and add new item
                 std::get<1>(*it) = iaddrend;
                 std::get<2>(*it) = prot;
-                std::get<3>(*it) = curflags;
 
-                it = mMmaps.insert(it + 1, std::make_tuple(iaddrend, curend, curprot, curflags));
+                it = mMmaps.insert(it + 1, std::make_tuple(iaddrend, curend, curprot, curflags, curstack));
                 return flags;
             }
         } else {
@@ -192,10 +206,14 @@ inline int MmapTracker::mprotect(void* addr, size_t size, int prot)
     return flags;
 }
 
-inline uint64_t MmapTracker::madvise(void* addr, size_t size)
+inline int32_t MmapTracker::mprotect(void* addr, size_t size, int32_t prot)
+{
+    return mprotect(reinterpret_cast<uintptr_t>(addr), size, prot);
+}
+
+inline uint64_t MmapTracker::madvise(uintptr_t iaddr, size_t size)
 {
     uint64_t num = 0;
-    const auto iaddr = reinterpret_cast<uintptr_t>(addr);
     const auto iaddrend = iaddr + size;
     auto [ it, insertit ] = find(iaddr);
     while (intersects(it, iaddr, iaddrend)) {
@@ -203,13 +221,10 @@ inline uint64_t MmapTracker::madvise(void* addr, size_t size)
         const auto curend = std::get<1>(*it);
 
         if (curstart < iaddr) {
-            // item addr is prior to input addr, update end
             num += std::min(curend, iaddrend) - iaddr;
         } else if (iaddr <= curstart && iaddrend >= curend) {
-            // item is fully contained in input addr, remove item
             num += curend - curstart;
         } else if (iaddrend < curend) {
-            // item end is past input end, update
             num += iaddrend - curstart;
             return num;
         }
@@ -218,10 +233,15 @@ inline uint64_t MmapTracker::madvise(void* addr, size_t size)
     return num;
 }
 
+inline uint64_t MmapTracker::madvise(void* addr, size_t size)
+{
+    return madvise(reinterpret_cast<uintptr_t>(addr), size);
+}
+
 template<typename Func>
 inline void MmapTracker::forEach(Func&& func) const
 {
     for (const auto& t : mMmaps) {
-        func(std::get<0>(t), std::get<1>(t), std::get<2>(t), std::get<3>(t));
+        func(std::get<0>(t), std::get<1>(t), std::get<2>(t), std::get<3>(t), std::get<4>(t));
     }
 }
