@@ -44,6 +44,8 @@ typedef void* (*ReallocSig)(void*, size_t);
 typedef void* (*ReallocArraySig)(void*, size_t, size_t);
 typedef int (*Posix_MemalignSig)(void **, size_t, size_t);
 typedef void* (*Aligned_AllocSig)(size_t, size_t);
+typedef int (*DlIteratePhdCallbackSig)(dl_phdr_info* info, size_t size, void* data);
+typedef int (*DlIteratePhdrSig)(DlIteratePhdCallbackSig callback, void* data);
 
 inline uint64_t alignToPage(uint64_t size)
 {
@@ -120,6 +122,7 @@ struct Callbacks
     ReallocArraySig reallocarray { nullptr };
     Posix_MemalignSig posix_memalign { nullptr };
     Aligned_AllocSig aligned_alloc { nullptr };
+    DlIteratePhdrSig dl_iterate_phdr { nullptr };
 } callbacks;
 
 Allocator<4096> allocator;
@@ -128,7 +131,10 @@ struct Data {
     int faultFd;
     std::thread thread;
     std::atomic_flag isShutdown = ATOMIC_FLAG_INIT;
-    std::atomic<bool> modulesDirty = true;
+
+    Spinlock moduleLock;
+    std::atomic<uint64_t> moduleId = 1;
+
     int pipe[2];
 
     Recorder recorder;
@@ -146,6 +152,53 @@ bool safePrint(const char *string)
 
 thread_local bool hooked = true;
 thread_local bool inMallocFree = false;
+thread_local uint64_t moduleId = 0;
+struct DlPhdr
+{
+    dl_phdr_info info;
+    size_t size;
+
+    std::string name;
+    std::vector<ElfW(Phdr)> phdrs;
+};
+thread_local std::vector<DlPhdr> moduleCache;
+
+inline bool updateModuleCache(DlIteratePhdCallbackSig callback = nullptr, void* cdata = nullptr)
+{
+    const auto dataId = data->moduleId.load();
+    if (moduleId == dataId)
+        return false;
+
+    NoHook nohook;
+    ScopedSpinlock locker(data->moduleLock);
+
+    moduleCache.clear();
+    callbacks.dl_iterate_phdr([](dl_phdr_info* info, size_t size, void* data) -> int {
+        auto hdata = reinterpret_cast<decltype(moduleCache)*>(data);
+        hdata->push_back({});
+        auto back = &hdata->back();
+
+        memcpy(&back->info, info, size);
+        back->size = size;
+        back->name = std::string(info->dlpi_name);
+        for (ElfW(Half) i = 0; i < info->dlpi_phnum; ++i) {
+            back->phdrs.push_back({});
+            memcpy(&back->phdrs.back(), info->dlpi_phdr + i, sizeof(ElfW(Phdr)));
+        }
+        return 0;
+    }, &moduleCache);
+
+    for (auto& item : moduleCache) {
+        item.info.dlpi_name = item.name.c_str();
+        item.info.dlpi_phdr = item.phdrs.data();
+        if (callback) {
+            callback(&item.info, item.size, cdata);
+        }
+    }
+    moduleId = dataId;
+
+    return true;
+}
 }
 
 NoHook::NoHook()
@@ -222,14 +275,9 @@ static void hookThread()
         }
 
         // printf("- fault thread 0\n");
-
-        if (data->modulesDirty.load(std::memory_order_acquire)) {
-            // need to lock the recorder scope here instead of inside the callback
-            // since frames above other calls to dl_iterate_phdr may have already locked our scope
-            Recorder::Scope recorderScope(&data->recorder);
-            data->recorder.record(RecordType::Libraries);
-            dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
-            data->modulesDirty.store(false, std::memory_order_release);
+        {
+            Recorder::Scope recordScope(&data->recorder);
+            updateModuleCache(dl_iterate_phdr_callback);
         }
 
         // printf("- fault thread 1 %d %d\n", evt[0].revents, evt[1].revents);
@@ -257,13 +305,15 @@ static void hookThread()
                         .range = {
                             .start = place,
                             .len = Limits::PageSize
-                        }
+                        },
+                        .mode = 0
                     };
-                    if (ioctl(data->faultFd, UFFDIO_ZEROPAGE, &zero)) {
+                    const auto ir = ioctl(data->faultFd, UFFDIO_ZEROPAGE, &zero);
+                    if (ir == -1 && errno != EEXIST) {
                         // boo
                         close(data->faultFd);
                         data->faultFd = -1;
-                        printf("- pagefault error 3\n");
+                        printf("- pagefault error 3 %d %d %m\n", ir, errno);
                         return;
                     }
                     // printf("  - handled pagefault\n");
@@ -395,6 +445,12 @@ void Hooks::hook()
         abort();
     }
 
+    callbacks.dl_iterate_phdr = reinterpret_cast<DlIteratePhdrSig>(dlsym(RTLD_NEXT, "dl_iterate_phdr"));
+    if (callbacks.dl_iterate_phdr == nullptr) {
+        safePrint("no dl_iterate_phdr\n");
+        abort();
+    }
+
     data = new Data();
     data->faultFd = syscall(SYS_userfaultfd, O_NONBLOCK);
     if (data->faultFd == -1) {
@@ -498,12 +554,7 @@ void reportMalloc(void* ptr, size_t size)
 
     Recorder::Scope recordScope(&data->recorder);
 
-    if (data->modulesDirty.load(std::memory_order_acquire)) {
-        data->recorder.record(RecordType::Libraries);
-        dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
-        data->modulesDirty.store(false, std::memory_order_release);
-    }
-
+    updateModuleCache(dl_iterate_phdr_callback);
     data->recorder.record(RecordType::Malloc,
                           static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
                           static_cast<uint64_t>(size),
@@ -517,12 +568,7 @@ void reportFree(void* ptr)
 
     Recorder::Scope recordScope(&data->recorder);
 
-    if (data->modulesDirty.load(std::memory_order_acquire)) {
-        data->recorder.record(RecordType::Libraries);
-        dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
-        data->modulesDirty.store(false, std::memory_order_release);
-    }
-
+    updateModuleCache(dl_iterate_phdr_callback);
     data->recorder.record(RecordType::Free, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)));
 }
 
@@ -553,12 +599,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 
     Recorder::Scope recordScope(&data->recorder);
 
-    if (data->modulesDirty.load(std::memory_order_acquire)) {
-        data->recorder.record(RecordType::Libraries);
-        dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
-        data->modulesDirty.store(false, std::memory_order_release);
-    }
-
+    updateModuleCache(dl_iterate_phdr_callback);
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
                           mmap_ptr_cast(ret), alignToPage(length), prot, flags,
                           static_cast<uint32_t>(gettid()), Stack());
@@ -592,12 +633,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
 
     Recorder::Scope recordScope(&data->recorder);
 
-    if (data->modulesDirty.load(std::memory_order_acquire)) {
-        data->recorder.record(RecordType::Libraries);
-        dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
-        data->modulesDirty.store(false, std::memory_order_release);
-    }
-
+    updateModuleCache(dl_iterate_phdr_callback);
     data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
                           mmap_ptr_cast(ret), alignToPage(length), prot, flags,
                           static_cast<uint32_t>(gettid()), Stack());
@@ -753,7 +789,7 @@ void* dlopen(const char* filename, int flags)
     if (!mallocFree.wasInMallocFree()) {
         std::call_once(hookOnce, Hooks::hook);
     }
-    data->modulesDirty.store(true, std::memory_order_release);
+    ++data->moduleId;
     return callbacks.dlopen(filename, flags);
 }
 
@@ -764,7 +800,7 @@ int dlclose(void* handle)
         std::call_once(hookOnce, Hooks::hook);
     }
     if (data) {
-        data->modulesDirty.store(true, std::memory_order_release);
+        ++data->moduleId;
     }
     return callbacks.dlclose(handle);
 }
@@ -916,4 +952,18 @@ void* aligned_alloc(size_t alignment, size_t size)
         reportMalloc(ret, alignToSize(size, alignment));
     return ret;
 }
+
+int dl_iterate_phdr(DlIteratePhdCallbackSig callback, void* data)
+{
+    updateModuleCache();
+
+    for (auto& item : moduleCache) {
+        const int ret = callback(&item.info, item.size, data);
+        if (ret != 0)
+            return ret;
+    }
+
+    return 0;
+}
+
 } // extern "C"
