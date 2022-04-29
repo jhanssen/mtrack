@@ -1,44 +1,46 @@
+import { Mmap } from "./Mmap";
+import { Model } from "./Model";
+import { PageFault } from "./PageFault";
+import { ParseResult } from "./ParseResult";
+import { Stack } from "./Stack.js";
 import prettyBytes from "pretty-bytes";
 import prettyMS from "pretty-ms";
-import { Stack } from "./Stack.js";
 
-export class Printer
-{
-    constructor(model, parsed)
-    {
+export class Printer {
+    readonly model: Model;
+
+    constructor(model: Model, parsed: ParseResult) {
         this.model = model;
         console.log(`Loaded ${parsed.events} events spanning ${prettyMS(parsed.time)} creating ${parsed.pageFaults} pageFaults, currently ${parsed.mapped} are mapped in`);
     }
 
-    printPageFaultsAtStack(stack)
-    {
-        let byStack = this.model.pageFaultsByStack.get(stack);
+    printPageFaultsAtStack(stack: number): void {
+        const byStack = this.model.pageFaultsAtStack(stack);
         if (byStack) {
             this.printPageFaults(stack, byStack);
         } else {
-            console.log("No page faults with stack", stack, "\n", Array.from(this.model.pageFaultsByStack.keys()));
+            console.log("No page faults with stack", stack, "\n", this.model.allPageFaultStacks());
         }
     }
 
-    printPageFaultsAtMmapStack(stack)
-    {
-        let byStack = this.model.pageFaultsByMmapStack.get(stack);
+    printPageFaultsAtMmapStack(stack: number): void {
+        const byStack = this.model.pageFaultsAtMmapStack(stack);
         if (byStack) {
             this.printPageFaults(stack, byStack);
         } else {
-            console.log("No page faults with mmap stack", stack);
+            console.log("No page faults with mmap stack", stack, "\n", this.model.allMmapStacks());
         }
     }
 
-    printPageFaults(stack, pageFaults)
-    {
+    printPageFaults(stack: number, pageFaults: PageFault[]): void {
         let first = Number.MAX_SAFE_INTEGER, last = 0;
-        const threads = [];
+        const threads: number[] = [];
         const total = pageFaults.reduce((current, pageFault) => {
             first = Math.min(first, pageFault.time);
             last = Math.max(last, pageFault.time);
-            if (threads.indexOf(pageFault.thread) === -1)
+            if (threads.indexOf(pageFault.thread) === -1) {
                 threads.push(pageFault.thread);
+            }
             return current + pageFault.range.length;
         }, 0);
 
@@ -51,33 +53,22 @@ export class Printer
         console.log(Stack.print(this.model.data.stacks[stack], this.model.data.strings));
     }
 
-    pageFaultStacks()
-    {
-        return Array.from(this.model.pageFaultsByStack.keys());
+    pageFaultStacks(): number[] {
+        return this.model.allPageFaultStacks();
     }
 
-    pageFaultMmapStacks()
-    {
-        return Array.from(this.model.pageFaultsByMmapStack.keys());
+    pageFaultMmapStacks(): number[] {
+        return this.model.allMmapStacks();
     }
 
-    mmaps()
-    {
-        return this.model.mmap;
+    mmaps(): Mmap[] {
+        return this.model.mmaps;
     }
 
-    dump()
-    {
-        let sorted = [];
-        for (const [key, value] of this.model.pageFaultsByStack) {
-            sorted.push({ stack: key, length: value.reduce((cur, x, idx) => cur + x.range.length, 0) });
-        }
-        sorted = sorted.sort((a, b) => b.length - a.length);
-        sorted.length = Math.min(10, sorted.length);
-        sorted.forEach((x, idx) => {
+    dump(): void {
+        this.model.sortedStacks(10).forEach((stack: number, idx: number) => {
             console.log(`---------------- ${idx} ----------------`);
-            this.printPageFaultsAtStack(x.stack);
+            this.printPageFaultsAtStack(stack);
         });
     }
 }
-

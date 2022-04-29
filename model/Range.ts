@@ -1,18 +1,19 @@
-export class Range
-{
-    constructor(start, length)
-    {
+import { IntersectionType } from "./IntersectionType";
+
+export class Range {
+    start: number;
+    length: number;
+
+    constructor(start: number, length: number) {
         this.start = start;
         this.length = length;
     }
 
-    get end()
-    {
+    get end(): number {
         return this.start + this.length;
     }
 
-    set end(val)
-    {
+    set end(val: number) {
         if (val <= this.start) {
             throw new Error(`Invalid end ${val} <= ${this.start}`);
         }
@@ -20,58 +21,54 @@ export class Range
         this.length += diff;
     }
 
-    toString()
-    {
+    toString(): string {
         return `${this.start}-${this.end} length: ${this.length}`;
     }
 
-    clone()
-    {
+    clone(): Range {
         return new Range(this.start, this.length);
     }
 
-    intersects(range)
-    {
+    intersects(range: Range): IntersectionType {
         // this is before range
         if (this.end <= range.start) {
-            return Range.Before;
+            return IntersectionType.Before;
         }
 
         // this is after range
         if (this.start >= range.end) {
-            return Range.After;
+            return IntersectionType.After;
         }
 
         // this.range overlaps the start of range
         if (this.start <= range.start) {
             if (this.end >= range.end) {
                 // this.range contains all of range
-                return Range.Entire;
+                return IntersectionType.Entire;
             }
-            return Range.Beginning;
+            return IntersectionType.Beginning;
         }
 
         if (this.end >= range.end) {
             // this.range overlaps the end of range
-            return Range.End;
+            return IntersectionType.End;
         }
 
-        return Range.Middle;
+        return IntersectionType.Middle;
     }
 
     // returns a new range with the intersectioning part
-    intersection(range)
-    {
+    intersection(range: Range): Range | undefined {
         switch (this.intersects(range)) {
-        case Range.Entire:
+        case IntersectionType.Entire:
             return this.clone();
-        case Range.Beginning:
+        case IntersectionType.Beginning: {
             const ret = new Range(range.start, this.length);
             ret.end = this.end;
-            return ret;
-        case Range.End:
+            return ret; }
+        case IntersectionType.End:
             return new Range(this.start, range.end - this.start);
-        case Range.Middle:
+        case IntersectionType.Middle:
             return range.clone();
         default:
             break;
@@ -79,28 +76,26 @@ export class Range
         return undefined;
     }
 
-    equals(range)
-    {
-        return this.start === range.start && this.length == range.length;
+    equals(range: Range): boolean {
+        return this.start === range.start && this.length === range.length;
     }
 
-    remove(range)
-    {
+    remove(range: Range): Range | [Range, Range] | undefined {
         // console.log("removing range", range, this.intersects(range));
         switch (range.intersects(this)) {
-        case Range.Entire:
+        case IntersectionType.Entire:
             // remove the whole range, return undefined
             return undefined;
-        case Range.Beginning:
+        case IntersectionType.Beginning:
             // modify and return this
             this.length = range.end - this.start;
             this.start = range.end;
             return this;
-        case Range.End:
+        case IntersectionType.End:
             // modify and return this
             this.length = range.start - this.start;
             return this;
-        case Range.Middle:
+        case IntersectionType.Middle:
             // return a range for the parts at the start and end of range
             return [
                 new Range(this.start, range.start - this.start),
@@ -112,11 +107,4 @@ export class Range
         // unchanged
         return this;
     }
-};
-
-Range.Before = -2;
-Range.After = -1;
-Range.Entire = 0;
-Range.Beginning = 1;
-Range.End = 1;
-Range.Middle = 3;
+}

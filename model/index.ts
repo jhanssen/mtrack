@@ -1,22 +1,21 @@
-#!/usr/bin/env node
-
+import { Model } from "./Model.js";
+import { ModelOptions } from "./ModelOptions";
+import { Printer } from "./Printer.js";
+import { Until } from "./Until";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import readline from "readline";
-import { Model } from "./Model.js";
-import { Printer } from "./Printer.js";
+import readline, { CompleterResult } from "readline";
 
-function usage(out)
-{
+function usage(out: (...arg: unknown[]) => void): void {
     out(`${process.argv[0]} ${process.argv[1]} (--help|-h) (--until-ms <ms>) (--until-event <event>) (--verbose|-v) (--silent) <mtrack.json>`);
 }
 
 let dashDash = false;
 let file;
 let data;
-let until = {};
-let options = {};
+const until: Until = {};
+const options: ModelOptions = {};
 
 for (let idx=2; idx<process.argv.length; ++idx) {
     const arg = process.argv[idx];
@@ -69,12 +68,12 @@ if (!file) {
     file = "/dev/stdin";
 }
 
-let contents;
+let contents: string | undefined;
 try {
-    contents = fs.readFileSync(file);
-} catch (err) {
+    contents = fs.readFileSync(file, "utf8");
+} catch (err: unknown) {
     usage(console.error.bind(console));
-    console.error(`Failed to read file ${file} - ${err.message}`);
+    console.error(`Failed to read file ${file} - ${(err as Error).message}`);
     process.exit(1);
 }
 
@@ -82,7 +81,7 @@ try {
     data = JSON.parse(contents);
 } catch (err) {
     usage(console.error.bind(console));
-    console.error(`Failed to parse file ${file} - ${err.message}`);
+    console.error(`Failed to parse file ${file} - ${(err as Error).message}`);
     process.exit(1);
 }
 
@@ -90,23 +89,24 @@ const model = new Model(data, options);
 const parsed = model.parse(until);
 const printer = new Printer(model, parsed);
 
-let history;
-try {
-    history = fs.readFileSync(path.join(os.homedir(), ".mtrack-model-history"), "utf8").split("\n");
-} catch (err) {
-}
+// let history: undefined | string[];
+// try {
+//     history = fs.readFileSync(path.join(os.homedir(), ".mtrack-model-history"), "utf8").split("\n");
+// } catch (err) {
+//     /* */
+// }
 
 const completions = "help h ? quit q stacks s sm stacksMmap dump d pf mmaps m printPageFaults pfm printPageFaultsByMmap".split(" ");
-function completer(line) {
+function completer(line: string): CompleterResult {
     const split = line.split(" ").filter(x => x);
     if (split.length === 1) {
         switch (split[0]) {
         case "pf":
         case "printPageFaults":
-            return [model.pageFaultStacks().map(x => `${split[0]} ${x}`), line];
+            return [model.allPageFaultStacks().map(x => `${split[0]} ${x}`), line];
         case "pfm":
         case "printPageFaultsByMmap":
-            return [model.pageFaultMmapStacks().map(x => `${split[0]} ${x}`), line];
+            return [model.allMmapStacks().map(x => `${split[0]} ${x}`), line];
         }
     }
     const hits = completions.filter((c) => c.startsWith(line));
@@ -116,7 +116,7 @@ function completer(line) {
 const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    history,
+    // history,
     completer,
     removeHistoryDuplicates: true
 });
@@ -125,15 +125,14 @@ rl.on("history", historyArray => {
     try {
         fs.writeFileSync(path.join(os.homedir(), ".mtrack-model-history"), historyArray.join("\n"));
     } catch (err) {
+        /**/
     }
 });
 
-function prompt()
-{
-    rl.question("$ ", undefined, input => {
-        input = input.split(" ").map(x => x.trim()).filter(x => x);
+function prompt(): void {
+    rl.question("$ ", (query: string) => {
+        const input = query.split(" ").map(x => x.trim()).filter(x => x);
         const help = "help|h|?\nq|quit\ns|stacks\nsm stacksMmap|mmaps|m\ndump|d\npf|printPageFaults <stackid>\npfm|printPageFaultsAtMmapStack <stackid>";
-        let line;
         switch (input[0]) {
         case "help":
         case "h":
@@ -148,9 +147,9 @@ function prompt()
             console.log(printer.mmaps());
             break;
         case "s":
-        case "stacks":
-            line = [];
-            printer.pageFaultStacks().forEach(x => {
+        case "stacks": {
+            let line: number[] = [];
+            printer.pageFaultStacks().forEach((x: number) => {
                 line.push(x);
                 if (line.length === 8) {
                     console.log(line.join("\t"));
@@ -160,11 +159,11 @@ function prompt()
             if (line.length) {
                 console.log(line.join("\t"));
             }
-            break;
+            break; }
         case "sm":
-        case "stacksMmap":
-            line = [];
-            printer.pageFaultMmapStacks().forEach(x => {
+        case "stacksMmap": {
+            let line: number[] = [];
+            printer.pageFaultMmapStacks().forEach((x: number) => {
                 line.push(x);
                 if (line.length === 8) {
                     console.log(line.join("\t"));
@@ -174,7 +173,7 @@ function prompt()
             if (line.length) {
                 console.log(line.join("\t"));
             }
-            break;
+            break; }
         case "dump":
         case "d":
             printer.dump();
@@ -206,4 +205,6 @@ function prompt()
 }
 
 prompt();
+
+
 

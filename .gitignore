@@ -20,3 +20,7 @@ cmake_install.cmake
 /samples/mmap/mmap_sample
 /model/node_modules/
 /graph/src/Graph.js
+/model/mtrack.cjs
+/model/mtrack.cjs.map
+/model/tmp.jsc
+/model/.cache/
