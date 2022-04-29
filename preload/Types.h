@@ -2,15 +2,6 @@
 
 #include <cstdint>
 
-enum class EmitType : uint8_t {
-    Stack,
-    StackAddress,
-    Malloc,
-    PageFault,
-    ThreadName,
-    Time
-};
-
 enum class RecordType : uint8_t {
     Invalid          = 0,
     Executable       = 1,
@@ -30,9 +21,6 @@ enum class RecordType : uint8_t {
     WorkingDirectory = 15
 };
 
-namespace Limits {
-constexpr uint64_t PageSize = 4096;
-}
 
 inline static const char *recordTypeToString(RecordType t)
 {

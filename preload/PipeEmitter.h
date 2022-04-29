@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Emitter.h"
+#include <common/Emitter.h>
 #include <climits>
 #include <cstdint>
 #include <cstdio>

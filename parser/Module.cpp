@@ -62,7 +62,7 @@ void Module::btErrorHandler(void* data, const char* msg, int errnum)
 std::shared_ptr<Module> Module::create(Indexer<std::string>& indexer, const std::string& filename, uint64_t addr)
 {
     // assume we'll never have a hash collision?
-    const uint32_t idx = indexer.index(filename);
+    const auto [ idx, inserted ] = indexer.index(filename);
     if (idx < sModules.size() && sModules[idx] != nullptr)
         return sModules[idx]->shared_from_this();
     auto mod = Creatable<Module>::create(indexer, filename, addr);
@@ -100,7 +100,9 @@ Address Module::resolveAddress(uint64_t addr)
             // printf("pc frame %s %s %d\n", demangle(function).c_str(), file ? file : "(no file)", line);
             auto resolved = reinterpret_cast<ModuleCallback*>(data);
             Indexer<std::string>* indexer = &resolved->module->mIndexer;
-            Frame frame { indexer->index(demangle(function)), indexer->index(file ? std::string(file) : std::string {}), line };
+            const auto [ funIdx, funInserted ] = indexer->index(demangle(function));
+            const auto [ fileIdx, fileInserted ] = indexer->index(file ? std::string(file) : std::string {});
+            Frame frame { funIdx, fileIdx, line };
             if (!resolved->resolvedAddr.valid()) {
                 resolved->resolvedAddr.frame = std::move(frame);
             } else {
@@ -121,7 +123,8 @@ Address Module::resolveAddress(uint64_t addr)
                 auto resolved = reinterpret_cast<ModuleCallback*>(data);
                 Indexer<std::string>* indexer = &resolved->module->mIndexer;
                 if (!resolved->resolvedAddr.valid()) {
-                    resolved->resolvedAddr.frame.function = indexer->index(demangle(symname));
+                    const auto [ symIdx, symInserted ] = indexer->index(demangle(symname));
+                    resolved->resolvedAddr.frame.function = symIdx;
                 }
             },
             [](void* /*data*/, const char* msg, int errnum) {

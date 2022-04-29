@@ -1,69 +1,69 @@
 #include "Args.h"
 #include "Parser.h"
-#include <sys/mman.h>
+#include <climits>
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
-static void parse(const std::string& inf, const std::string& outf)
+#define EINTRWRAP(VAR, BLOCK)                   \
+    do {                                        \
+        VAR = BLOCK;                            \
+    } while (VAR == -1 && errno == EINTR)
+
+static void parse(const std::string& inf, const std::string& outf, bool packetMode)
 {
-    auto fd = open(inf.c_str(), O_RDONLY);
-    if (fd == -1) {
+    int infd = 0;
+    if (!inf.empty()) {
+        infd = open(inf.c_str(), O_RDONLY);
+    }
+    if (infd == -1) {
         fprintf(stderr, "no such file %s\n", inf.c_str());
         return;
     }
 
-    struct stat stat;
-    void* data = MAP_FAILED;
+    Parser parser(outf);
 
-    if (!fstat(fd, &stat)) {
-        data = mmap(nullptr, stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);;
+    uint32_t packetSize;
+    uint8_t packet[PIPE_BUF];
+    for (;;) {
+        if (packetMode) {
+            packetSize = ::read(infd, packet, PIPE_BUF);
+        } else {
+            ssize_t r;
+            EINTRWRAP(r, ::read(infd, &packetSize, sizeof(packetSize)));
+            if (r != sizeof(packetSize)) {
+                fprintf(stderr, "read size != than %zu, %zu\n", sizeof(packetSize), r);
+                abort();
+            }
+            if (packetSize > PIPE_BUF) {
+                fprintf(stderr, "packet too large %zu vs %d\n", r, PIPE_BUF);
+                abort();
+            }
+            uint32_t rem = packetSize;
+            while (rem > 0) {
+                EINTRWRAP(r, ::read(infd, packet + (packetSize - rem), rem));
+                if (r == -1) {
+                    fprintf(stderr, "file read error %d %m\n", errno);
+                    abort();
+                }
+                rem -= r;
+            }
+        }
+        parser.parsePacket(packet, packetSize);
     }
-    close(fd);
 
-    if (data == MAP_FAILED)
-        return;
-
-    Parser parser;
-    FILE* fi = fopen(outf.c_str(), "w");
-    if (!fi) {
-        munmap(data, stat.st_size);
-        fprintf(stderr, "can't open file for write '%s'\n", outf.c_str());
-        return;
+    if (infd != 0) {
+        int e;
+        EINTRWRAP(e, ::close(infd));
     }
-
-    const bool ok = parser.parse(static_cast<uint8_t*>(data), stat.st_size, fi);
-
-    fclose(fi);
-
-    fprintf(stdout, "%zu events. %zu recordings.\n%zu strings %zu hits %zu misses. %zu stacks %zu hits %zu misses.\n",
-            parser.eventCount(), parser.recordCount(),
-            parser.stringCount(), parser.stringHits(), parser.stringMisses(),
-            parser.stackCount(), parser.stackHits(), parser.stackMisses());
-
-    if (!ok)
-        return;
-
-    // const std::string json = parser.finalize();
-
-    // size_t off = 0;
-    // size_t rem = json.size();
-    // while (rem > 0) {
-    //     const auto w = fwrite(json.data() + off, 1, std::min<size_t>(rem, 4096), fi);
-    //     if (w == 0) {
-    //         fprintf(stderr, "unable to write to '%s'\n", outf.c_str());
-    //         fclose(fi);
-    //         return;
-    //     }
-    //     off += w;
-    //     rem -= w;
-    // }
-
-    // fclose(fi);
-    fprintf(stdout, "wrote '%s'.\n", outf.c_str());
+    // fprintf(stdout, "%zu events. %zu recordings.\n%zu strings %zu hits %zu misses. %zu stacks %zu hits %zu misses.\n",
+    //         parser.eventCount(), parser.recordCount(),
+    //         parser.stringCount(), parser.stringHits(), parser.stringMisses(),
+    //         parser.stackCount(), parser.stackHits(), parser.stackMisses());
 }
 
 int main(int argc, char** argv)
@@ -72,9 +72,13 @@ int main(int argc, char** argv)
         fprintf(stderr, "%s at offset %d word %s\n", msg, offset - 1, word);
     });
 
-    if (!args.has<std::string>("input")) {
-        fprintf(stderr, "missing --input\n");
-        return 1;
+    std::string input;
+    if (args.has<std::string>("input")) {
+        input = args.value<std::string>("input");
+    }
+    bool packetMode = false;
+    if (args.has<bool>("packet-mode")) {
+        packetMode = args.value<bool>("packet-mode");
     }
     std::string output;
     if (args.has<std::string>("output")) {
@@ -83,7 +87,7 @@ int main(int argc, char** argv)
         output = "mtrack.json";
     }
 
-    parse(args.value<std::string>("input"), output);
+    parse(input, output, packetMode);
 
     return 0;
 }

@@ -1,10 +1,11 @@
-#include "MmapTracker.h"
 #include "NoHook.h"
 #include "PipeEmitter.h"
 #include "Spinlock.h"
 #include "Stack.h"
-#include "Types.h"
+#include <common/MmapTracker.h>
+#include <common/RecordType.h>
 #include <common/Version.h>
+#include <common/Limits.h>
 
 #include <assert.h>
 #include <dlfcn.h>
@@ -448,9 +449,10 @@ void Hooks::hook()
         }
 
 
-        char* args[2] = {};
+        char* args[3] = {};
         args[0] = strdup(parser.c_str());
-        args[1] = nullptr;
+        args[1] = strdup("--packet-mode");
+        args[2] = nullptr;
         char* envs[1] = {};
         envs[0] = nullptr;
         const int ret = execve(parser.c_str(), args, envs);

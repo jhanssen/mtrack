@@ -1,320 +1,88 @@
 #include "Parser.h"
+#include <common/Limits.h>
 #include <common/Version.h>
+#include <common/MmapTracker.h>
 #include <fmt/core.h>
 #include <cassert>
 #include <climits>
 #include <cstdlib>
 #include <limits>
 
-inline void Parser::updateModuleCache()
-{
-    mModuleCache.clear();
+enum class EmitType : uint8_t {
+    Stack,
+    StackAddress,
+    Malloc,
+    PageFault,
+    ThreadName,
+    Time
+};
 
-    for (const auto& m : mModules) {
-        const auto& rs = m->ranges();
-        for (const auto& r : rs) {
-            mModuleCache.insert(std::make_pair(r.first, ModuleEntry { r.second, m.get() }));
+static inline bool intersects(uint64_t startA, uint64_t endA, uint64_t startB, uint64_t endB)
+{
+    return startA < endB && startB < endA;
+}
+
+Parser::Parser(const std::string& file)
+    : mFileEmitter(file)
+{
+}
+
+void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
+{
+    auto timestamp = []() {
+        timespec ts;
+        clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+        return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
+    };
+
+    const auto start = timestamp();
+
+    auto resolveStack = [&](int32_t idx) {
+        const auto prior = mStackAddrIndexer.size();
+        if (mLibraries.size() > mModules.size()) {
+            // create new modules
+            for (size_t libIdx = mModules.size(); libIdx < mLibraries.size(); ++libIdx) {
+                const auto& lib = mLibraries[libIdx];
+                if (lib.name.substr(0, 13) == "linux-vdso.so" || lib.name.substr(0, 13) == "linux-gate.so") {
+                    // skip
+                    continue;
+                }
+                auto name = lib.name;
+                if (name == "s") {
+                    name = mExe;
+                }
+                if (name.size() > 0 && name[0] != '/') {
+                    // relative path?
+                    char buf[4096];
+                    name = realpath((mCwd + name).c_str(), buf);
+                }
+
+                auto module = Module::create(mStackAddrIndexer, name, lib.addr);
+                for (const auto& hdr : lib.headers) {
+                    module->addHeader(hdr.addr, hdr.len);
+                }
+                mModules.push_back(std::move(module));
+            }
+            mModuleCache.clear();
         }
-    }
-}
-
-inline int32_t Parser::readStack()
-{
-    if (mModulesDirty) {
-        updateModuleCache();
-        mModulesDirty = false;
-    }
-
-    std::vector<uint64_t> stack;
-    const uint32_t count = readData<uint32_t>() / sizeof(void*);
-    for (uint32_t i=0; i<count; ++i) {
-        stack.push_back(readData<uint64_t>() - 1);
-    }
-
-    return mStackIndexer.index(stack);
-}
-
-inline void Parser::handleExe()
-{
-    mExe = readData<std::string>();
-}
-
-inline void Parser::handleFree()
-{
-    ++mStats.eventCount;
-    const auto addr = readData<uint64_t>();
-    const auto str = fmt::format("[{},{}],", static_cast<int>(RecordType::Free), addr);
-    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
-}
-
-inline void Parser::handleLibrary()
-{
-    auto name = readData<std::string>();
-    auto start = readData<uint64_t>();
-    if (name.substr(0, 13) == "linux-vdso.so" || name.substr(0, 13) == "linux-gate.so") {
-        // skip this
-        return;
-    }
-    if (name == "s") {
-        name = mExe;
-    }
-    if (name.size() > 0 && name[0] != '/') {
-        // relative path?
-        char buf[4096];
-        name = realpath((mCwd + name).c_str(), buf);
-    }
-
-    // printf("dlll '%s' %lx\n", name.c_str(), start);
-
-    auto mod = Module::create(mStringIndexer, name, start);
-    mCurrentModule = mod;
-    mModules.insert(mod);
-}
-
-inline void Parser::handleLibraryHeader()
-{
-    // two hex numbers
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
-
-    assert(mCurrentModule);
-    // printf("phhh %lx %lx (%lx %lx)\n", addr, size, mCurrentModule->address() + addr, mCurrentModule->address() + addr + size);
-    mCurrentModule->addHeader(addr, size);
-    mModulesDirty = true;
-}
-
-inline void Parser::handleMadvise(RecordType type)
-{
-    ++mStats.eventCount;
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
-    const auto advice = readData<int32_t>();
-    const auto deallocated = readData<uint64_t>();
-    const auto str = fmt::format("[{},{},{},{},{}],",
-                                 static_cast<int>(RecordType::Free), addr, size, advice, deallocated);
-    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
-}
-
-inline void Parser::handleMalloc()
-{
-    ++mStats.eventCount;
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
-    const auto thread = readData<uint32_t>();
-
-    const auto stack = readStack();
-    const auto str = fmt::format("[{},{},{},{},{}],",
-                                 static_cast<int>(RecordType::Malloc), addr, size, thread, stack);
-    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
-}
-
-inline void Parser::handleMmap(RecordType type)
-{
-    ++mStats.eventCount;
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
-    const auto allocated = readData<uint64_t>();
-    const auto prot = readData<int32_t>();
-    const auto flags = readData<int32_t>();
-    const auto fd = readData<int32_t>();
-    const auto off = readData<uint64_t>();
-    const auto tid = readData<uint32_t>();
-    const auto stack = readStack();
-
-    std::string tname;
-    auto tn = mThreadNames.find(tid);
-    if (tn != mThreadNames.end()) {
-        tname = tn->second;
-    }
-
-    const auto str = fmt::format("[{},{},{},{},{},{},{},{},{},{}],",
-                                 static_cast<int>(type), addr, size, allocated, prot, flags, fd, off, tid, stack);
-    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
-}
-
-inline void Parser::handleMunmap(RecordType type)
-{
-    ++mStats.eventCount;
-    const auto addr = readData<uint64_t>();
-    const auto size = readData<uint64_t>();
-    const auto deallocated = readData<uint64_t>();
-
-    const auto str = fmt::format("[{},{},{},{}],",
-                                 static_cast<int>(type), addr, size, deallocated);
-    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
-}
-
-inline void Parser::handlePageFault()
-{
-    ++mStats.eventCount;
-    const auto addr = readData<uint64_t>();
-    const auto tid = readData<uint32_t>();
-    const auto stack = readStack();
-
-    std::string tname;
-    auto tn = mThreadNames.find(tid);
-    if (tn != mThreadNames.end()) {
-        tname = tn->second;
-    }
-
-    const auto str = fmt::format("[{},{},4096,{},{}],",
-                                 static_cast<int>(RecordType::PageFault), addr, tid, stack);
-    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
-}
-
-inline void Parser::handleThreadName()
-{
-    const auto tid = readData<uint32_t>();
-    mThreadNames[tid] = readData<std::string>();
-}
-
-inline void Parser::handleTime()
-{
-    ++mStats.eventCount;
-    const auto time = readData<uint32_t>();
-    const auto str = fmt::format("[{},{}],",
-                                 static_cast<int>(RecordType::Time), time);
-    mError = !fwrite(str.c_str(), str.size(), 1, mOutFile);
-}
-
-inline void Parser::handleWorkingDirectory()
-{
-    mCwd = readData<std::string>() + "/";
-}
-
-bool Parser::parse(const uint8_t* data, size_t size, FILE* f)
-{
-    if (size < sizeof(FileVersion)) {
-        fprintf(stderr, "no version\n");
-        return false;
-    }
-
-    assert(f);
-    mOutFile = f;
-
-    mData = data;
-    mEnd = data + size;
-
-    auto version = readData<FileVersion>();
-    if (version != FileVersion::Current) {
-        fprintf(stderr, "invalid file version (got %u vs %u)\n",
-                static_cast<std::underlying_type_t<FileVersion>>(version),
-                static_cast<std::underlying_type_t<FileVersion>>(FileVersion::Current));
-        return false;
-    }
-
-    if (!fprintf(mOutFile, "{")) {
-        return false;
-    }
-
-    if (!writeEvents()) {
-        return false;
-    }
-
-    if (!writeStacks()) {
-        return false;
-    }
-
-    if (!writeStrings()) {
-        return false;
-    }
-    if (fprintf(mOutFile, "}\n") != 2) {
-        return false;
-    }
-    return false;
-}
-
-bool Parser::writeEvents()
-{
-    if (fprintf(mOutFile, "\"events\":[") != 10) {
-        return false;
-    }
-
-    const auto start = reinterpret_cast<unsigned long long>(mData);
-    const size_t total = mEnd - mData;
-    while (!mError && mData < mEnd) {
-        ++mStats.recordCount;
-
-        if (mStats.recordCount % 1000 == 0) {
-            const auto cur = reinterpret_cast<unsigned long long>(mData) - start;
-            printf("%zu %llu/%zu bytes left (%g%%)\n", mStats.recordCount, cur, total,
-                   (static_cast<double>(cur) / static_cast<double>(total)) * 100);
+        if (mModuleCache.empty()) {
+            // update module cache
+            for (const auto& m : mModules) {
+                const auto& rs = m->ranges();
+                for (const auto& r : rs) {
+                    mModuleCache.insert(std::make_pair(r.first, ModuleEntry { r.second, m.get() }));
+                }
+            }
         }
 
-        const auto type = readData<RecordType>();
-        // printf("hello %u (%s)\n", static_cast<std::underlying_type_t<RecordType>>(type),
-        //        recordTypeToString(type));
-        switch (type) {
-        case RecordType::Executable:
-            handleExe();
-            break;
-        case RecordType::Free:
-            handleFree();
-            break;
-        case RecordType::Library:
-            handleLibrary();
-            break;
-        case RecordType::LibraryHeader:
-            handleLibraryHeader();
-            break;
-        case RecordType::MadviseTracked:
-            handleMadvise(type);
-            break;
-        case RecordType::MadviseUntracked:
-            handleMadvise(type);
-            break;
-        case RecordType::Malloc:
-            handleMalloc();
-            break;
-        case RecordType::MmapTracked:
-            // printf("mmap2\n");
-            handleMmap(type);
-            break;
-        case RecordType::MmapUntracked:
-            // printf("mmap1\n");
-            handleMmap(type);
-            break;
-        case RecordType::MunmapTracked:
-            handleMunmap(type);
-            break;
-        case RecordType::MunmapUntracked:
-            handleMunmap(type);
-            break;
-        case RecordType::PageFault:
-            //printf("pf\n");
-            handlePageFault();
-            break;
-        case RecordType::Time:
-            handleTime();
-            break;
-        case RecordType::ThreadName:
-            handleThreadName();
-            break;
-        case RecordType::WorkingDirectory:
-            handleWorkingDirectory();
-            break;
-        default:
-            fprintf(stderr, "unhandled type %u\n", static_cast<std::underlying_type_t<RecordType>>(type));
-            mError = true;
-            break;
-        }
-    }
+        const auto& hashable = mHashIndexer.value(idx);
+        const uint32_t numStacks = hashable.size() / sizeof(void*);
+        const uint8_t* data = hashable.data<uint8_t>();
+        for (uint32_t i = 0; i < numStacks; ++i) {
+            void* ipptr;
+            memcpy(&ipptr, data + (i * sizeof(void*)), sizeof(void*));
+            const uint64_t ip = reinterpret_cast<uint64_t>(ipptr);
 
-    return !mError && fprintf(mOutFile, "null],\n") == 7;
-}
-
-bool Parser::writeStacks() const
-{
-    if (fprintf(mOutFile, "\"stacks\":[") != 10) {
-        // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
-        return false;
-    }
-
-    auto resolveStack = [this](const std::vector<uint64_t>& stack) {
-        std::vector<Address> astack;
-
-        // printf("Trying to read stack at %zu\n", mReadOffset);
-        for (const auto ip : stack) {
             auto it = mModuleCache.upper_bound(ip);
             if (it != mModuleCache.begin())
                 --it;
@@ -323,63 +91,190 @@ bool Parser::writeStacks() const
             Address address;
             if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end)
                 address = it->second.module->resolveAddress(ip);
-
-            astack.push_back(address);
         }
 
-        return astack;
+        for (size_t i = prior; i < mStackAddrIndexer.size(); ++i) {
+            mFileEmitter.emit(EmitType::StackAddress, Emitter::String(mStackAddrIndexer.value(i)));
+        }
     };
 
-    for (const auto& stack : mStackIndexer.values()) {
-        if (!fprintf(mOutFile, "[")) {
-            // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
-            return false;
+    auto removePageFaults = [this](uint64_t start, uint64_t end) {
+        auto item = std::lower_bound(mPageFaults.begin(), mPageFaults.end(), start, [](const auto& item, auto start) {
+            return item.place < start;
+        });
+        while (item != mPageFaults.end() && intersects(start, end, item->place, item->place + Limits::PageSize)) {
+            item = mPageFaults.erase(item);
+            assert(mPageFaultSize >= Limits::PageSize);
+            mPageFaultSize -= Limits::PageSize;
         }
-        for (const auto& saddr : resolveStack(stack)) {
-            auto str = fmt::format("[{},{},{}",
-                                   saddr.frame.function, saddr.frame.file, saddr.frame.line);
+    };
 
-            if (!saddr.inlined.empty()) {
-                str += ",[";
-                for (size_t i=0; i<saddr.inlined.size(); ++i) {
-                    const auto &inl = saddr.inlined[i];
-                    str += fmt::format("[{},{},{}]{}",
-                                       inl.function, inl.file, inl.line,
-                                       i + 1 == saddr.inlined.size() ? ']' : ',');
+    for (;;) {
+        const auto now = timestamp() - start;
+        mFileEmitter.emit(EmitType::Time, now);
+
+        size_t offset = 0;
+
+        auto readString = [data, &offset]() {
+            uint32_t size;
+            memcpy(&size, data + offset, sizeof(size));
+            offset += sizeof(size);
+            std::string str;
+            str.resize(size);
+            memcpy(&str[0], data + offset, size);
+            offset += size;
+            return str;
+        };
+
+        auto readUint32 = [data, &offset]() {
+            uint32_t ret;
+            memcpy(&ret, data + offset, sizeof(uint32_t));
+            offset += sizeof(uint32_t);
+            return ret;
+        };
+
+        auto readInt32 = [data, &offset]() {
+            int32_t ret;
+            memcpy(&ret, data + offset, sizeof(int32_t));
+            offset += sizeof(int32_t);
+            return ret;
+        };
+
+        auto readUint64 = [data, &offset]() {
+            uint64_t ret;
+            memcpy(&ret, data + offset, sizeof(uint64_t));
+            offset += sizeof(uint64_t);
+            return ret;
+        };
+
+        auto readHashable = [&](Hashable::Type type) {
+            uint32_t size;
+            memcpy(&size, data + offset, sizeof(size));
+            offset += sizeof(size);
+            if (mHashOffset + size > mHashData.size()) {
+                mHashData.resize(std::max(mHashOffset + size, std::min<size_t>(mHashData.size() * 2, 8192)));
+            }
+            memcpy(mHashData.data() + mHashOffset, data + offset, size);
+            const auto [ idx, inserted ] = mHashIndexer.index(Hashable(type, mHashData, mHashOffset, size));
+            offset += size;
+            mHashOffset += size;
+            return std::make_pair(idx, inserted);
+        };
+
+        auto readHashableString = [data, &offset, this]() {
+            uint32_t size;
+            memcpy(&size, data + offset, sizeof(size));
+            offset += sizeof(size);
+            if (mHashOffset + size > mHashData.size()) {
+                mHashData.resize(std::max(mHashOffset + size, std::min<size_t>(mHashData.size() * 2, 8192)));
+            }
+            memcpy(mHashData.data() + mHashOffset, data + offset, size);
+            offset += size;
+            mHashOffset += size;
+            return Hashable(Hashable::String, mHashData, mHashOffset - size, size);
+        };
+
+        while (offset < dataSize) {
+            const auto type = data[offset++];
+            //printf("gleh %u\n", type);
+            switch (static_cast<RecordType>(type)) {
+            case RecordType::Invalid:
+            case RecordType::Time:
+                abort();
+            case RecordType::Executable:
+                mExe = readString();
+                break;
+            case RecordType::WorkingDirectory:
+                mCwd = readString() + '/';
+                break;
+            case RecordType::Library:
+                mLibraries.push_back(Library{ readString(), readUint64(), {} });
+                break;
+            case RecordType::LibraryHeader:
+                mLibraries.back().headers.push_back(Library::Header { readUint64(), readUint64() });
+                break;
+            case RecordType::PageFault: {
+                const auto place = readUint64();
+                const auto ptid = readUint32();
+                const auto [ stackIdx, stackInserted ] = readHashable(Hashable::Stack);
+                if (stackInserted) {
+                    resolveStack(stackIdx);
+                    mFileEmitter.emit(EmitType::Stack, mHashIndexer.value(stackIdx));
                 }
+                auto it = std::upper_bound(mPageFaults.begin(), mPageFaults.end(), place, [](auto place, const auto& item) {
+                    return place < item.place;
+                });
+                mPageFaults.insert(it, PageFault { place, ptid, stackIdx });
+                mPageFaultSize += Limits::PageSize;
+                mFileEmitter.emit(EmitType::PageFault, mPageFaultSize);
+                break; }
+            case RecordType::Malloc: {
+                const auto addr = readUint64();
+                const auto size = readUint64();
+                const auto ptid = readUint32();
+                const auto [ stackIdx, stackInserted ] = readHashable(Hashable::Stack);
+                if (stackInserted) {
+                    resolveStack(stackIdx);
+                    mFileEmitter.emit(EmitType::Stack, mHashIndexer.value(stackIdx));
+                }
+                auto it = std::upper_bound(mMallocs.begin(), mMallocs.end(), addr, [](auto addr, const auto& item) {
+                    return addr < item.addr;
+                });
+                assert(it == mMallocs.end() || it->addr > addr);
+                mMallocs.insert(it, Malloc { addr, size, ptid, stackIdx });
+                mMallocSize += size;
+                mFileEmitter.emit(EmitType::Malloc, mMallocSize);
+                break; }
+            case RecordType::Free: {
+                const auto addr = readUint64();
+                auto it = std::lower_bound(mMallocs.begin(), mMallocs.end(), addr, [](const auto& item, auto addr) {
+                    return item.addr < addr;
+                });
+                if (it != mMallocs.end() && it->addr == addr) {
+                    mMallocSize -= it->size;
+                    mFileEmitter.emit(EmitType::Malloc, mMallocSize);
+                    mMallocs.erase(it);
+                }
+                break; }
+            case RecordType::MmapUntracked:
+            case RecordType::MmapTracked: {
+                const auto addr = readUint64();
+                const auto size = readUint64();
+                const auto prot = readInt32();
+                const auto flags = readInt32();
+                const auto ptid = readUint32();
+                const auto [ stackIdx, stackInserted ] = readHashable(Hashable::Stack);
+                if (stackInserted) {
+                    resolveStack(stackIdx);
+                    mFileEmitter.emit(EmitType::Stack, mHashIndexer.value(stackIdx));
+                }
+                mMmaps.mmap(addr, size, prot, flags, stackIdx);
+                break; }
+            case RecordType::MunmapUntracked:
+            case RecordType::MunmapTracked: {
+                const auto addr = readUint64();
+                const auto size = readUint64();
+                removePageFaults(addr, addr + size);
+                mFileEmitter.emit(EmitType::PageFault, mPageFaultSize);
+                mMmaps.munmap(addr, size);
+                break; }
+            case RecordType::MadviseUntracked:
+            case RecordType::MadviseTracked: {
+                const auto addr = readUint64();
+                const auto size = readUint64();
+                const auto advice = readInt32();
+                if (advice == MADV_DONTNEED) {
+                    removePageFaults(addr, addr + size);
+                    mFileEmitter.emit(EmitType::PageFault, mPageFaultSize);
+                }
+                mMmaps.madvise(addr, size);
+                break; }
+            case RecordType::ThreadName: {
+                const auto ptid = readUint32();
+                const auto name = readHashableString();
+                mFileEmitter.emit(EmitType::ThreadName, ptid, name);
+                break; }
             }
-            str += "],";
-            if (!fwrite(str.c_str(), str.size(), 1, mOutFile)) {
-                // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
-                return false;
-            }
-        }
-        if (fprintf(mOutFile, "null],") != 6) {
-            // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
-            return false;
         }
     }
-
-    if (fprintf(mOutFile, "null],\n") != 7) {
-        // printf("[Parser.cpp:%d]: return false;\n", __LINE__); fflush(stdout);
-        return false;
-    }
-    return true;
-}
-
-bool Parser::writeStrings() const
-{
-    if (fprintf(mOutFile, "\"strings\":[") != 11) {
-        return false;
-    }
-
-    for (const auto& string : mStringIndexer.values()) {
-        if (fprintf(mOutFile, "\"%s\",", string.c_str()) != string.size() + 3) {
-            return false;
-        }
-    }
-    if (fprintf(mOutFile, "null]\n") != 6) {
-        return false;
-    }
-    return true;
 }
