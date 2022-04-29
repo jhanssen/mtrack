@@ -134,9 +134,10 @@ void Recorder::process(Recorder* r)
 
     auto resolveStack = [&](int32_t idx) {
         const auto prior = stackAddrIndexer.size();
-        if (modules.empty()) {
-            // recreate modules
-            for (const auto& lib : libraries) {
+        if (libraries.size() > modules.size()) {
+            // create new modules
+            for (size_t libIdx = modules.size(); libIdx < libraries.size(); ++libIdx) {
+                const auto& lib = libraries[libIdx];
                 if (lib.name.substr(0, 13) == "linux-vdso.so" || lib.name.substr(0, 13) == "linux-gate.so") {
                     // skip
                     continue;
@@ -157,6 +158,7 @@ void Recorder::process(Recorder* r)
                 }
                 modules.push_back(std::move(module));
             }
+            moduleCache.clear();
         }
         if (moduleCache.empty()) {
             // update module cache
@@ -280,20 +282,18 @@ void Recorder::process(Recorder* r)
         };
 
         while (offset < dataSize) {
-            const auto fuck = data[offset++];
-            switch (static_cast<RecordType>(fuck)) {
+            const auto type = data[offset++];
+            //printf("gleh %u\n", type);
+            switch (static_cast<RecordType>(type)) {
             case RecordType::Invalid:
                 abort();
             case RecordType::Executable:
                 exe = readString();
                 break;
             case RecordType::WorkingDirectory:
-                cwd = readString();
+                cwd = readString() + '/';
                 break;
             case RecordType::Libraries:
-                libraries.clear();
-                modules.clear();
-                moduleCache.clear();
                 break;
             case RecordType::Library:
                 libraries.push_back(Library{ readString(), readUint64(), {} });
@@ -338,11 +338,11 @@ void Recorder::process(Recorder* r)
                 auto it = std::lower_bound(mallocs.begin(), mallocs.end(), addr, [](const auto& item, auto addr) {
                     return item.addr < addr;
                 });
-                assert(it != mallocs.end() && it->addr == addr);
-                assert(mallocSize >= it->size);
-                mallocSize -= it->size;
-                emitter.emit(EmitType::Malloc, mallocSize);
-                mallocs.erase(it);
+                if (it != mallocs.end() && it->addr == addr) {
+                    mallocSize -= it->size;
+                    emitter.emit(EmitType::Malloc, mallocSize);
+                    mallocs.erase(it);
+                }
                 break; }
             case RecordType::MmapUntracked:
             case RecordType::MmapTracked: {
@@ -350,6 +350,7 @@ void Recorder::process(Recorder* r)
                 const auto size = readUint64();
                 const auto prot = readInt32();
                 const auto flags = readInt32();
+                const auto ptid = readUint32();
                 const auto [ stackIdx, stackInserted ] = readHashable(Hashable::Stack);
                 if (stackInserted) {
                     resolveStack(stackIdx);
