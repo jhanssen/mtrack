@@ -6,9 +6,16 @@
 #include "Types.h"
 #include <map>
 #include <unistd.h>
+#include <limits.h>
 
 thread_local bool Recorder::tScoped = false;
 
+void Recorder::flush()
+{
+    int foo = PIPE_BUF;
+}
+
+/*
 struct Hashable
 {
     enum Type { String, Stack };
@@ -430,3 +437,4 @@ void Recorder::initialize(const char* file)
 
     mThread = std::thread(Recorder::process, this);
 }
+*/

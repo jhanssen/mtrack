@@ -1,6 +1,6 @@
 #include "MmapTracker.h"
 #include "NoHook.h"
-#include "Recorder.h"
+#include "PipeEmitter.h"
 #include "Spinlock.h"
 #include "Stack.h"
 #include "Types.h"
@@ -20,6 +20,7 @@
 #include <execinfo.h>
 #include <pthread.h>
 
+#include <cstdarg>
 #include <atomic>
 #include <mutex>
 #include <thread>
@@ -27,6 +28,11 @@
 
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
+
+#define EINTRWRAP(VAR, BLOCK)                   \
+    do {                                        \
+        VAR = BLOCK;                            \
+    } while (VAR == -1 && errno == EINTR)
 
 typedef void* (*MmapSig)(void*, size_t, int, int, int, off_t);
 typedef void* (*Mmap64Sig)(void*, size_t, int, int, int, __off64_t);
@@ -44,8 +50,6 @@ typedef void* (*ReallocSig)(void*, size_t);
 typedef void* (*ReallocArraySig)(void*, size_t, size_t);
 typedef int (*Posix_MemalignSig)(void **, size_t, size_t);
 typedef void* (*Aligned_AllocSig)(size_t, size_t);
-typedef int (*DlIteratePhdCallbackSig)(dl_phdr_info* info, size_t size, void* data);
-typedef int (*DlIteratePhdrSig)(DlIteratePhdCallbackSig callback, void* data);
 
 inline uint64_t alignToPage(uint64_t size)
 {
@@ -122,7 +126,6 @@ struct Callbacks
     ReallocArraySig reallocarray { nullptr };
     Posix_MemalignSig posix_memalign { nullptr };
     Aligned_AllocSig aligned_alloc { nullptr };
-    DlIteratePhdrSig dl_iterate_phdr { nullptr };
 } callbacks;
 
 Allocator<4096> allocator;
@@ -131,13 +134,12 @@ struct Data {
     int faultFd;
     std::thread thread;
     std::atomic_flag isShutdown = ATOMIC_FLAG_INIT;
+    std::atomic<bool> modulesDirty = true;
 
-    Spinlock moduleLock;
-    std::atomic<uint64_t> moduleId = 1;
+    int pfThreadPipe[2];
+    int emitPipe[2];
 
-    int pipe[2];
-
-    Recorder recorder;
+    PipeEmitter emitter;
 
     Spinlock mmapTrackerLock;
     MmapTracker mmapTracker;
@@ -152,54 +154,7 @@ bool safePrint(const char *string)
 
 thread_local bool hooked = true;
 thread_local bool inMallocFree = false;
-thread_local uint64_t moduleId = 0;
-struct DlPhdr
-{
-    dl_phdr_info info;
-    size_t size;
-
-    std::string name;
-    std::vector<ElfW(Phdr)> phdrs;
-};
-thread_local std::vector<DlPhdr> moduleCache;
-
-inline bool updateModuleCache(DlIteratePhdCallbackSig callback = nullptr, void* cdata = nullptr)
-{
-    const auto dataId = data->moduleId.load();
-    if (moduleId == dataId)
-        return false;
-
-    NoHook nohook;
-    ScopedSpinlock locker(data->moduleLock);
-
-    moduleCache.clear();
-    callbacks.dl_iterate_phdr([](dl_phdr_info* info, size_t size, void* data) -> int {
-        auto hdata = reinterpret_cast<decltype(moduleCache)*>(data);
-        hdata->push_back({});
-        auto back = &hdata->back();
-
-        memcpy(&back->info, info, size);
-        back->size = size;
-        back->name = std::string(info->dlpi_name);
-        for (ElfW(Half) i = 0; i < info->dlpi_phnum; ++i) {
-            back->phdrs.push_back({});
-            memcpy(&back->phdrs.back(), info->dlpi_phdr + i, sizeof(ElfW(Phdr)));
-        }
-        return 0;
-    }, &moduleCache);
-
-    for (auto& item : moduleCache) {
-        item.info.dlpi_name = item.name.c_str();
-        item.info.dlpi_phdr = item.phdrs.data();
-        if (callback) {
-            callback(&item.info, item.size, cdata);
-        }
-    }
-    moduleId = dataId;
-
-    return true;
-}
-}
+} // anonymous namespace
 
 NoHook::NoHook()
     : wasHooked(::hooked)
@@ -242,13 +197,12 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, 
         fileName = "s";
     }
 
-    assert(data->recorder.isScoped());
-    data->recorder.record(RecordType::Library, Recorder::String(fileName), static_cast<uint64_t>(info->dlpi_addr));
+    data->emitter.emit(RecordType::Library, Emitter::String(fileName), static_cast<uint64_t>(info->dlpi_addr));
 
     for (int i = 0; i < info->dlpi_phnum; i++) {
         const auto& phdr = info->dlpi_phdr[i];
         if (phdr.p_type == PT_LOAD) {
-            data->recorder.record(RecordType::LibraryHeader, static_cast<uint64_t>(phdr.p_vaddr), static_cast<uint64_t>(phdr.p_memsz));
+            data->emitter.emit(RecordType::LibraryHeader, static_cast<uint64_t>(phdr.p_vaddr), static_cast<uint64_t>(phdr.p_memsz));
         }
     }
 
@@ -261,7 +215,7 @@ static void hookThread()
 
     pollfd evt[] = {
         { .fd = data->faultFd, .events = POLLIN },
-        { .fd = data->pipe[0], .events = POLLIN }
+        { .fd = data->pfThreadPipe[0], .events = POLLIN }
     };
     for (;;) {
         // printf("- top of fault thread\n");
@@ -275,9 +229,9 @@ static void hookThread()
         }
 
         // printf("- fault thread 0\n");
-        {
-            Recorder::Scope recordScope(&data->recorder);
-            updateModuleCache(dl_iterate_phdr_callback);
+        if (data->modulesDirty.load(std::memory_order_acquire)) {
+            dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
+            data->modulesDirty.store(false, std::memory_order_release);
         }
 
         // printf("- fault thread 1 %d %d\n", evt[0].revents, evt[1].revents);
@@ -300,7 +254,7 @@ static void hookThread()
                     const auto place = static_cast<uint64_t>(fault_msg.arg.pagefault.address);
                     const auto ptid = static_cast<uint32_t>(fault_msg.arg.pagefault.feat.ptid);
                     // printf("  - pagefault %u\n", ptid);
-                    data->recorder.record(RecordType::PageFault, place, ptid, Stack(ptid));
+                    data->emitter.emit(RecordType::PageFault, place, ptid, Stack(ptid));
                     uffdio_zeropage zero = {
                         .range = {
                             .start = place,
@@ -345,12 +299,11 @@ static void hookCleanup()
         }
         int w;
         do {
-            w = ::write(data->pipe[1], "q", 1);
+            w = ::write(data->pfThreadPipe[1], "q", 1);
         } while (w == -1 && errno == EINTR);
         data->thread.join();
     }
     NoHook noHook;
-    data->recorder.cleanup();
     delete data;
     data = nullptr;
 }
@@ -445,13 +398,71 @@ void Hooks::hook()
         abort();
     }
 
-    callbacks.dl_iterate_phdr = reinterpret_cast<DlIteratePhdrSig>(dlsym(RTLD_NEXT, "dl_iterate_phdr"));
-    if (callbacks.dl_iterate_phdr == nullptr) {
-        safePrint("no dl_iterate_phdr\n");
+    data = new Data();
+
+    if (::pipe2(data->emitPipe, O_DIRECT) == -1) {
+        safePrint("no emitPipe\n");
         abort();
     }
 
-    data = new Data();
+    int e;
+    const auto pid = fork();
+    if (pid == 0) {
+        // child
+        NoHook nohook;
+
+        EINTRWRAP(e, ::close(data->emitPipe[1]));
+        EINTRWRAP(e, ::dup2(data->emitPipe[0], STDIN_FILENO));
+        EINTRWRAP(e, ::close(data->emitPipe[0]));
+
+        std::string parser;
+        const char* cparser = getenv("MTRACK_PARSER");
+        if (cparser != nullptr) {
+            parser = cparser;
+        }
+
+        if (parser.empty()) {
+            std::string self;
+            dl_iterate_phdr([](struct dl_phdr_info* info, size_t /*size*/, void* data) {
+                if (strstr(info->dlpi_name, "libmtrack_preload") != nullptr) {
+                    *reinterpret_cast<std::string*>(data) = std::string(info->dlpi_name);
+                    return 1;
+                }
+                return 0;
+            }, &self);
+
+            if (self.empty()) {
+                fprintf(stderr, "could not find the preload path\n");
+                abort();
+            }
+
+            // find the slash
+            auto slash = self.find_last_of('/');
+            slash = self.find_last_of('/', slash - 1);
+            if (slash == std::string::npos) {
+                fprintf(stderr, "invalid preload path '%s'\n", self.c_str());
+                abort();
+            }
+
+            parser = self.substr(0, slash + 1) + "bin/mtrack_parser";
+        }
+
+
+        char* args[2] = {};
+        args[0] = strdup(parser.c_str());
+        args[1] = nullptr;
+        char* envs[1] = {};
+        envs[0] = nullptr;
+        const int ret = execve(parser.c_str(), args, envs);
+        fprintf(stderr, "unable to execve %d %m\n", ret);
+        abort();
+    } else {
+        // parent
+        EINTRWRAP(e, ::close(data->emitPipe[0]));
+    }
+
+    data->emitter.setPipe(data->emitPipe[1]);
+
     data->faultFd = syscall(SYS_userfaultfd, O_NONBLOCK);
     if (data->faultFd == -1) {
         safePrint("no faultFd\n");
@@ -471,15 +482,13 @@ void Hooks::hook()
         abort();
     }
 
-    if (pipe2(data->pipe, O_NONBLOCK) == -1) {
-        safePrint("no pipe\n");
+    if (::pipe2(data->pfThreadPipe, O_NONBLOCK) == -1) {
+        safePrint("no pfThreadPipe\n");
         abort();
     }
 
     data->thread = std::thread(hookThread);
     atexit(hookCleanup);
-
-    data->recorder.initialize("./mtrack.data");
 
     // record the executable file
     char buf1[512];
@@ -490,7 +499,7 @@ void Hooks::hook()
         // badness
         fprintf(stderr, "no exe\n");
     } else {
-        data->recorder.record(RecordType::Executable, Recorder::String(buf2, l));
+        data->emitter.emit(RecordType::Executable, Emitter::String(buf2, l));
     }
 
     // record the working directory
@@ -499,7 +508,7 @@ void Hooks::hook()
         // badness
         fprintf(stderr, "no cwd\n");
     } else {
-        data->recorder.record(RecordType::WorkingDirectory, Recorder::String(buf2));
+        data->emitter.emit(RecordType::WorkingDirectory, Emitter::String(buf2));
     }
 
     NoHook nohook;
@@ -552,10 +561,11 @@ void reportMalloc(void* ptr, size_t size)
 {
     NoHook nohook;
 
-    Recorder::Scope recordScope(&data->recorder);
-
-    updateModuleCache(dl_iterate_phdr_callback);
-    data->recorder.record(RecordType::Malloc,
+    if (data->modulesDirty.load(std::memory_order_acquire)) {
+        dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
+        data->modulesDirty.store(false, std::memory_order_release);
+    }
+    data->emitter.emit(RecordType::Malloc,
                           static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
                           static_cast<uint64_t>(size),
                           static_cast<uint32_t>(gettid()),
@@ -566,10 +576,11 @@ void reportFree(void* ptr)
 {
     NoHook nohook;
 
-    Recorder::Scope recordScope(&data->recorder);
-
-    updateModuleCache(dl_iterate_phdr_callback);
-    data->recorder.record(RecordType::Free, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)));
+    if (data->modulesDirty.load(std::memory_order_acquire)) {
+        dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
+        data->modulesDirty.store(false, std::memory_order_release);
+    }
+    data->emitter.emit(RecordType::Free, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)));
 }
 
 extern "C" {
@@ -597,10 +608,11 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
         tracked = true;
     }
 
-    Recorder::Scope recordScope(&data->recorder);
-
-    updateModuleCache(dl_iterate_phdr_callback);
-    data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
+    if (data->modulesDirty.load(std::memory_order_acquire)) {
+        dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
+        data->modulesDirty.store(false, std::memory_order_release);
+    }
+    data->emitter.emit(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
                           mmap_ptr_cast(ret), alignToPage(length), prot, flags,
                           static_cast<uint32_t>(gettid()), Stack());
     return ret;
@@ -631,10 +643,11 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
         tracked = true;
     }
 
-    Recorder::Scope recordScope(&data->recorder);
-
-    updateModuleCache(dl_iterate_phdr_callback);
-    data->recorder.record(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
+    if (data->modulesDirty.load(std::memory_order_acquire)) {
+        dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
+        data->modulesDirty.store(false, std::memory_order_release);
+    }
+    data->emitter.emit(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
                           mmap_ptr_cast(ret), alignToPage(length), prot, flags,
                           static_cast<uint32_t>(gettid()), Stack());
 
@@ -665,7 +678,7 @@ int munmap(void* addr, size_t length)
         deallocated = data->mmapTracker.munmap(addr, length);
     }
 
-    data->recorder.record(deallocated > 0 ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
+    data->emitter.emit(deallocated > 0 ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
                           mmap_ptr_cast(addr), alignToPage(length));
     // if (updated) {
     //     printf("2--\n");
@@ -777,7 +790,7 @@ int madvise(void* addr, size_t length, int advice)
         deallocated = data->mmapTracker.madvise(addr, length);
     }
 
-    data->recorder.record(deallocated > 0 ? RecordType::MadviseTracked : RecordType::MadviseUntracked,
+    data->emitter.emit(deallocated > 0 ? RecordType::MadviseTracked : RecordType::MadviseUntracked,
                           mmap_ptr_cast(addr), alignToPage(length), advice);
 
     return callbacks.madvise(addr, length, advice);
@@ -789,7 +802,7 @@ void* dlopen(const char* filename, int flags)
     if (!mallocFree.wasInMallocFree()) {
         std::call_once(hookOnce, Hooks::hook);
     }
-    ++data->moduleId;
+    data->modulesDirty.store(true, std::memory_order_release);
     return callbacks.dlopen(filename, flags);
 }
 
@@ -800,7 +813,7 @@ int dlclose(void* handle)
         std::call_once(hookOnce, Hooks::hook);
     }
     if (data) {
-        ++data->moduleId;
+        data->modulesDirty.store(true, std::memory_order_release);
     }
     return callbacks.dlclose(handle);
 }
@@ -814,7 +827,7 @@ int pthread_setname_np(pthread_t thread, const char* name)
     // ### should fix this, this will drop unless we're the same thread
     if (pthread_equal(thread, pthread_self())) {
         NoHook nohook;
-        data->recorder.record(RecordType::ThreadName, static_cast<uint32_t>(gettid()), Recorder::String(name));
+        data->emitter.emit(RecordType::ThreadName, static_cast<uint32_t>(gettid()), Emitter::String(name));
     }
     return callbacks.pthread_setname_np(thread, name);
 }
@@ -951,19 +964,6 @@ void* aligned_alloc(size_t alignment, size_t size)
     if (!mallocFree.wasInMallocFree() && data)
         reportMalloc(ret, alignToSize(size, alignment));
     return ret;
-}
-
-int dl_iterate_phdr(DlIteratePhdCallbackSig callback, void* data)
-{
-    updateModuleCache();
-
-    for (auto& item : moduleCache) {
-        const int ret = callback(&item.info, item.size, data);
-        if (ret != 0)
-            return ret;
-    }
-
-    return 0;
 }
 
 } // extern "C"

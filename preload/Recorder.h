@@ -1,42 +1,19 @@
 #pragma once
 
-#include "Emitter.h"
+#include "PipeEmitter.h"
 #include "Types.h"
 #include "Spinlock.h"
-#include <common/Version.h>
-#include <cstdarg>
-#include <cstdio>
-#include <cstring>
 #include <atomic>
 #include <cstdint>
 #include <string>
-#include <thread>
-#include <vector>
-#include <concepts>
 
 class Recorder
 {
 public:
-    Recorder();
+    Recorder(int fd);
 
     template<typename... Ts>
     void record(RecordType type, Ts&&... args);
-
-    void initialize(const char* filename);
-    void cleanup();
-
-    struct String
-    {
-        String(const char* s);
-        String(const char* s, uint32_t sz);
-        String(const std::string& s);
-
-        const void *data() const { return str; }
-        uint32_t size() const { return len; }
-
-        const char* const str { nullptr };
-        const uint32_t len { 0 };
-    };
 
     class Scope
     {
@@ -53,15 +30,14 @@ public:
     bool isScoped() const;
 
 private:
-    static void process(Recorder* recorder);
+    void flush();
 
 private:
-    Spinlock mLock;
-    Emitter mEmitter;
-    std::thread mThread;
-    std::atomic<bool> mRunning;
+    PipeEmitter mEmitter;
     static thread_local bool tScoped;
-    FILE* mFile { nullptr };
+
+private:
+    friend class Scope;
 };
 
 inline Recorder::Scope::Scope(Recorder* recorder)
@@ -76,8 +52,10 @@ inline Recorder::Scope::Scope(Recorder* recorder)
 
 inline Recorder::Scope::~Scope()
 {
-    if (!mWasLocked)
+    if (!mWasLocked) {
         mRecorder->tScoped = mWasLocked;
+        mRecorder->flush();
+    }
 }
 
 inline bool Recorder::isScoped() const
@@ -85,22 +63,8 @@ inline bool Recorder::isScoped() const
     return tScoped;
 }
 
-inline Recorder::Recorder()
-{
-}
-
-inline Recorder::String::String(const char* s)
-    : str(s), len(static_cast<uint32_t>(strlen(s)))
-{
-}
-
-inline Recorder::String::String(const char* s, uint32_t sz)
-    : str(s), len(sz)
-{
-}
-
-inline Recorder::String::String(const std::string& s)
-    : str(s.c_str()), len(static_cast<uint32_t>(s.size()))
+inline Recorder::Recorder(int fd)
+    : mPipe(fd)
 {
 }
 
@@ -114,14 +78,8 @@ inline void Recorder::record(RecordType type, Ts&&... args)
 
     mEmitter.emitWithSize(size, type, std::forward<Ts>(args)...);
 
-    if (!tScoped)
+    if (!tScoped) {
         mLock.unlock();
-}
-
-inline void Recorder::cleanup()
-{
-    if (mRunning.load(std::memory_order_acquire)) {
-        mRunning.store(false, std::memory_order_release);
-        mThread.join();
+        flush();
     }
 }
