@@ -2,9 +2,6 @@ import commonjs from "@rollup/plugin-commonjs";
 import resolve from "@rollup/plugin-node-resolve";
 import typescript from "rollup-plugin-typescript2";
 
-const output = "mtrack.cjs";
-const input = "index.ts";
-
 const plugins = [
     resolve({
         preferBuiltins: true
@@ -22,13 +19,25 @@ const external = ["fs", "assert"];
 
 export default [
     {
-        input,
+        input: "src/cli.ts",
         plugins,
         external,
         output: {
-            file: output,
+            file: "cli.cjs",
             format,
-            name: "mtrack",
+            name: "cli",
+            exports: "named",
+            sourcemap: true
+        }
+    },
+    {
+        input: "src/webpage.ts",
+        plugins,
+        external,
+        output: {
+            file: "index.js",
+            format,
+            name: "webpage",
             exports: "named",
             sourcemap: true
         }

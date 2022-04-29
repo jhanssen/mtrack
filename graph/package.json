@@ -1,11 +1,12 @@
 {
-  "name": "model",
+  "name": "mtrack-graph",
   "version": "1.0.0",
   "license": "MIT",
   "type": "module",
-  "main": "index.js",
   "dependencies": {
-    "minimist": "^1.2.5",
+    "@types/d3": "^7.1.0",
+    "d3": "^4.13.0",
+    "d3-flame-graph": "^4.1.3",
     "pretty-bytes": "^6.0.0",
     "pretty-ms": "^7.0.1"
   },
@@ -28,7 +29,7 @@
   "scripts": {
     "lint": "eslint . --ext .ts",
     "rollup": "rollup -c",
-    "build": "yarn run run-p lint rollup && (echo \"#!/usr/bin/env node\" && cat mtrack.cjs) > tmp.cjs && mv tmp.cjs mtrack.cjs && chmod +x mtrack.cjs",
+    "build": "yarn run run-p lint rollup && (echo \"#!/usr/bin/env node\" && cat cli.cjs) > cli-tmp.cjs && mv cli-tmp.cjs cli.cjs && chmod +x cli.cjs",
     "clean:dist": "del-cli mtrack.js",
     "clean:cache": "del-cli .cache/*",
     "clean": "run-p clean:dist clean:cache",

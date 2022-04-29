@@ -17,7 +17,7 @@ export class Model {
     private readonly log: (...arg: unknown[]) => void;
     private readonly verbose: (...arg: unknown[]) => void;
     private pageFaults?: PageFault[];
-    private pageFaultsByStack?: Map<number, PageFault[]>;
+    private pageFaultMap?: Map<number, PageFault[]>;
     private pageFaultsByMmapStack?: Map<number, PageFault[]>;
     private mallocsByStack?: Map<number, Malloc[]>;
     private mallocsByAddress?: Map<number, Malloc>;
@@ -57,14 +57,21 @@ export class Model {
         return Stack.print(this.data.stacks[stack], this.data.strings);
     }
 
+    get pageFaultsByStack(): Map<number, PageFault[]> {
+        if (!this.pageFaultMap) {
+            throw new Error("Not parsed");
+        }
+        return this.pageFaultMap;
+    }
+
     sortedStacks(max?: number): number[] {
-        if (!this.pageFaultsByStack) {
+        if (!this.pageFaultMap) {
             throw new Error("Not parsed");
         }
 
         type Sortable = { stack: number, length: number };
         let sorted: Sortable[] = [];
-        for (const [key, value] of this.pageFaultsByStack) {
+        for (const [key, value] of this.pageFaultMap) {
             sorted.push({ stack: key, length: value.reduce((cur: number, x: PageFault) => cur + x.range.length, 0) });
         }
         sorted = sorted.sort((a, b) => b.length - a.length);
@@ -75,10 +82,10 @@ export class Model {
     }
 
     pageFaultsAtStack(stack: number): PageFault[] | undefined {
-        if (!this.pageFaultsByStack) {
+        if (!this.pageFaultMap) {
             throw new Error("Not parsed");
         }
-        return this.pageFaultsByStack.get(stack);
+        return this.pageFaultMap.get(stack);
     }
 
     pageFaultsAtMmapStack(stack: number): PageFault[] | undefined {
@@ -89,10 +96,10 @@ export class Model {
     }
 
     allPageFaultStacks(): number[] {
-        if (!this.pageFaultsByStack) {
+        if (!this.pageFaultMap) {
             throw new Error("Not parsed");
         }
-        return Array.from(this.pageFaultsByStack.keys());
+        return Array.from(this.pageFaultMap.keys());
     }
 
     allMmapStacks(): number[] {
@@ -106,7 +113,7 @@ export class Model {
     parse(until?: Until, callback?: (snapshot: Snapshot) => void): ParseResult {
         this.pageFaults = [];
         this.memmaps = [];
-        this.pageFaultsByStack = new Map();
+        this.pageFaultMap = new Map();
         this.pageFaultsByMmapStack = new Map();
         this.mallocsByStack = new Map();
         this.mallocsByAddress = new Map();
@@ -210,11 +217,11 @@ export class Model {
                 }
                 const pageFault = new PageFault(range, event[4], mmapStack, event[3], time);
                 ++pageFaultsCreated;
-                let pageFaults = this.pageFaultsByStack.get(pageFault.stack);
+                let pageFaults = this.pageFaultMap.get(pageFault.stack);
                 this.pageFaults.push(pageFault);
                 currentMemoryUsage += pageFault.range.length;
                 if (!pageFaults) {
-                    this.pageFaultsByStack.set(pageFault.stack, [ pageFault ]);
+                    this.pageFaultMap.set(pageFault.stack, [ pageFault ]);
                 } else {
                     pageFaults.push(pageFault);
                 }
@@ -244,7 +251,7 @@ export class Model {
             callback(new Snapshot(currentMemoryUsage, time, count));
         }
         // console.log(this.pageFaults.length,
-        //             Array.from(this.pageFaultsByStack.keys()),
+        //             Array.from(this.pageFaultMap.keys()),
         //             Array.from(this.pageFaultsByMmapStack.keys()));
 
 
@@ -276,16 +283,16 @@ export class Model {
             case IntersectionType.Middle:
                 throw new Error(`Partial munmap match for pageFault ${pageFault.range} ${removeRange} ${removeRange.intersects(pageFault.range)} ${pageFault.range.intersects(removeRange)}`);
             }
-            if (!this.pageFaultsByStack) {
+            if (!this.pageFaultMap) {
                 throw new Error("WTF?");
             }
-            let pageFaults = this.pageFaultsByStack.get(pageFault.stack);
+            let pageFaults = this.pageFaultMap.get(pageFault.stack);
             let idx = pageFaults ? pageFaults.indexOf(pageFault) : -1;
             if (idx === -1 || !pageFaults) {
-                throw new Error(`Didn't find pageFault ${pageFault} in pageFaultsByStack ${Array.from(this.pageFaultsByStack.keys())}`);
+                throw new Error(`Didn't find pageFault ${pageFault} in pageFaultMap ${Array.from(this.pageFaultMap.keys())}`);
             }
             if (pageFaults.length === 1) {
-                this.pageFaultsByStack.delete(pageFault.stack);
+                this.pageFaultMap.delete(pageFault.stack);
             } else {
                 pageFaults.splice(idx, 1);
             }

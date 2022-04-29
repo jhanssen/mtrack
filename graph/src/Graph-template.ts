@@ -1,22 +1,47 @@
-/* global d3, flamegraph */
+import { Data } from "./Data";
+import { FlameGraph, flamegraph } from "d3-flame-graph";
+import { Line, ScaleLinear, axisBottom, axisLeft, extent, line, max, scaleLinear, select } from "d3";
+import { Model } from "./Model.js";
+import { Stack } from "./Stack.js";
 
-import { Model } from "../../model/Model.js";
-import { Stack } from "../../model/Stack.js";
+type Margin = {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+};
+
+type LineData = {
+    margin: Margin;
+    width: number;
+    height: number;
+    x: ScaleLinear<number, number, never>;
+    y: ScaleLinear<number, number, never>;
+    svg: unknown;
+    valueLine: Line<[number, number]>;
+};
 
 export class Graph {
+    private _line: LineData;
+    private _flame: FlameGraph;
+    private _data: Data;
+    private _model: Model;
+
     constructor() {
         const margin = {top: 20, right: 20, bottom: 50, left: 70};
         const width = 750 - margin.left - margin.right;
         const height = 400 - margin.top - margin.bottom;
 
-        const x = d3.scaleLinear().range([0, width]);
-        const y = d3.scaleLinear().range([height, 0]);
+        const x = scaleLinear().range([0, width]);
+        const y = scaleLinear().range([height, 0]);
 
-        const valueLine = d3.line()
-              .x(d => x(d.time))
-              .y(d => y(d.used));
+        const valueLine = line()
+            // @ts-ignore
+            .x(d => x(d.time))
+            // @ts-ignore
+            .y(d => y(d.used));
 
-        const svg = d3.select("#linechart")
+        const svg = select("#linechart")
               .append("svg")
               .attr("width", width + margin.left + margin.top)
               .attr("height", height + margin.top + margin.bottom)
@@ -32,30 +57,36 @@ export class Graph {
             .cellHeight(18)
             .transitionDuration(750)
             .minFrameSize(5)
-            .transitionEase(d3.easeCubic)
+            // ### Had to change this
+            .transitionEase("easeCubic")
             .sort(true)
             .title("")
             //.onClick(onClick)
             .selfValue(false);
 
-        this._data = "$DATA_GOES_HERE$";
+        this._data = "$DATA_GOES_HERE$" as unknown as Data;
         this._model = new Model(this._data);
     }
 
     init() {
-        if (this._data === "$DATA_GOES_HERE$") {
+        if (this._data as unknown as string === "$DATA_GOES_HERE$") {
+            // @ts-ignore
             window.alert("No data");
         }
 
-        const data = [];
+        const data: { time: number, used: number }[] = [];
         this._model.parse(undefined, snapshot => {
             data.push({ time: snapshot.time, used: snapshot.used / (1024 * 1024) });
         });
+        // @ts-ignore there's probably a nice way to do this
         data.columns = ["time", "used"];
 
-        this._line.x.domain(d3.extent(data, d => d.time));
-        this._line.y.domain([0, d3.max(data, d => d.used)]);
+        // @ts-ignore
+        this._line.x.domain(extent(data, d => d.time));
+        // @ts-ignore
+        this._line.y.domain([0, max(data, d => d.used)]);
 
+        // @ts-ignore
         this._line.svg.append("path")
             .data([data])
             .attr("fill", "none")
@@ -63,40 +94,49 @@ export class Graph {
             .attr("stroke-width", 4)
             .attr("d", this._line.valueLine);
 
+        // @ts-ignore
         this._line.svg.selectAll("circles")
             .data(data)
             .enter()
             .append("circle")
             .attr("fill", "red")
             .attr("stroke", "none")
+            // @ts-ignore
             .attr("cx", d => this._line.x(d.time))
+            // @ts-ignore
             .attr("cy", d => this._line.y(d.used))
             .attr("r", 3)
-            .on("mouseover", function(d, i) {
-                d3.select(this).transition()
+            .on("mouseover", function() {
+                /* eslint-disable-next-line no-invalid-this */ /* @ts-ignore */
+                select(this).transition()
                     .duration(100)
                     .attr("r", 8);
-            }).on("mouseout", function(d, i) {
-                d3.select(this).transition()
+            }).on("mouseout", function() {
+                /* eslint-disable-next-line no-invalid-this */ /* @ts-ignore */
+                select(this).transition()
                     .duration(50)
                     .attr("r", 3);
+                // @ts-ignore
             }).on("click", (d, i) => {
                 this._flameify(d.time);
                 console.log("clk", d, i);
             });
 
+        // @ts-ignore
         this._line.svg.append("g")
             .attr("transform", `translate(0,${this._line.height})`)
-            .call(d3.axisBottom(this._line.x));
+            .call(axisBottom(this._line.x));
 
+        // @ts-ignore
         this._line.svg.append("g")
-            .call(d3.axisLeft(this._line.y));
+            .call(axisLeft(this._line.y));
 
         console.log("inited");
     }
 
-    _flameify(time) {
-        const children = [];
+    _flameify(time: number) {
+        type Child = { name: string, value: number, key: string, children: Child[] };
+        const children: Child[] = [];
         const data = { name: "nrdp", value: 0, children };
 
         this._model.parse({ ms: time });
@@ -113,8 +153,9 @@ export class Graph {
 
             for (let stackIdx = stack.length - 1; stackIdx >= 0; --stackIdx) {
                 const stackEntry = stack[stackIdx];
-                if (stackEntry === null)
+                if (stackEntry === null) {
                     continue;
+                }
                 const key = `${stackEntry[0]}:${stackEntry[1]}:${stackEntry[2]}`;
                 let curIdx = cur.findIndex(e => {
                     return e.key === key;
@@ -134,8 +175,9 @@ export class Graph {
 
         console.log(data);
 
-        d3.select("#flamechart")
+        select("#flamechart")
             .datum(data)
             .call(this._flame);
     }
 }
+

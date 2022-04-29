@@ -24,3 +24,10 @@ cmake_install.cmake
 /model/mtrack.cjs.map
 /model/tmp.jsc
 /model/.cache/
+/graph/.cache/
+/graph/cli.cjs
+/graph/cli.cjs.map
+/graph/cli.js
+/graph/cli.js.map
+/graph/index.js
+/graph/index.js.map
