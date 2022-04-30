@@ -15,8 +15,8 @@ enum class RecordType : uint8_t {
     MunmapUntracked  = 11,
     PageFault        = 12,
     ThreadName       = 13,
-    Time             = 14,
-    WorkingDirectory = 15
+    WorkingDirectory = 14,
+    Max              = WorkingDirectory
 };
 
 inline static const char *recordTypeToString(RecordType t)
@@ -36,7 +36,6 @@ inline static const char *recordTypeToString(RecordType t)
     case RecordType::MunmapUntracked: return "MunmapUntracked";
     case RecordType::PageFault: return "PageFault";
     case RecordType::ThreadName: return "ThreadName";
-    case RecordType::Time: return "Time";
     case RecordType::WorkingDirectory: return "WorkingDirectory";
     }
     return "Invalid";

@@ -1,11 +1,28 @@
 #pragma once
 
-#include "PipeEmitter.h"
-#include "Types.h"
 #include "Spinlock.h"
+#include <common/Version.h>
+#include <common/RecordType.h>
+#include <common/Emitter.h>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
 #include <atomic>
 #include <cstdint>
-#include <string>
+#include <thread>
+#include <vector>
+#include <concepts>
+
+class RecorderEmitter
+{
+public:
+    RecorderEmitter(Recorder* recorder);
+
+    virtual void writeBytes(const void* data, size_t size, WriteType type) override;
+
+private:
+    Recorder* mRecorder;
+};
 
 class Recorder
 {
@@ -13,7 +30,19 @@ public:
     Recorder(int fd);
 
     template<typename... Ts>
-    void record(RecordType type, Ts&&... args);
+    void record(RecordType type, Ts... args);
+
+    void initialize(const char* filename);
+    void cleanup();
+
+    struct String
+    {
+        String(const char* s);
+        String(const char* s, size_t sz);
+
+        const char* const str { nullptr };
+        const uint32_t size { 0 };
+    };
 
     class Scope
     {
@@ -30,14 +59,15 @@ public:
     bool isScoped() const;
 
 private:
-    void flush();
+    static void process(Recorder* recorder);
 
 private:
-    PipeEmitter mEmitter;
+    Spinlock mLock;
+    uint32_t mOffset { 0 };
+    std::vector<uint8_t> mData;
+    std::thread mThread;
+    std::atomic<bool> mRunning;
     static thread_local bool tScoped;
-
-private:
-    friend class Scope;
 };
 
 inline Recorder::Scope::Scope(Recorder* recorder)
@@ -52,34 +82,122 @@ inline Recorder::Scope::Scope(Recorder* recorder)
 
 inline Recorder::Scope::~Scope()
 {
-    if (!mWasLocked) {
+    if (!mWasLocked)
         mRecorder->tScoped = mWasLocked;
-        mRecorder->flush();
-    }
 }
 
-inline bool Recorder::isScoped() const
+inline bool Recorder::isScoped() const;
+
+inline Recorder::Recorder()
 {
-    return tScoped;
+    mData.resize(sizeof(FileVersion));
+    const auto version = FileVersion::Current;
+    memcpy(mData.data(), &version, sizeof(FileVersion));
+    mOffset = sizeof(FileVersion);
 }
 
-inline Recorder::Recorder(int fd)
-    : mPipe(fd)
+inline Recorder::String::String(const char* s)
+    : str(s), size(static_cast<uint32_t>(strlen(s)))
 {
 }
+
+inline Recorder::String::String(const char* s, size_t sz)
+    : str(s), size(sz)
+{
+}
+
+namespace detail {
+template<typename T>
+inline size_t recordSize_helper(T) requires std::integral<T>
+{
+    return sizeof(T);
+}
+
+template<typename T>
+inline size_t recordSize_helper(T) requires std::is_enum_v<T>
+{
+    return sizeof(T);
+}
+
+template<typename T>
+inline size_t recordSize_helper(const T str) requires std::same_as<T, Recorder::String>
+{
+    return str.size + sizeof(uint32_t);
+}
+
+template<typename T>
+inline size_t recordSize(T arg)
+{
+    return recordSize_helper<T>(arg);
+}
+
+template<typename T, typename... Ts>
+inline size_t recordSize(T arg, Ts... args)
+{
+    return recordSize_helper<T>(arg) + recordSize(args...);
+}
+
+template<typename T>
+inline void record_helper(uint8_t*& data, T arg) requires std::integral<T>
+{
+    memcpy(data, &arg, sizeof(T));
+    data += sizeof(T);
+}
+
+template<typename T>
+inline void record_helper(uint8_t*& data, T arg) requires std::is_enum_v<T>
+{
+    memcpy(data, &arg, sizeof(T));
+    data += sizeof(T);
+}
+
+template<typename T>
+inline void record_helper(uint8_t*& data, const T str) requires std::same_as<T, Recorder::String>
+{
+    record_helper(data, str.size);
+    memcpy(data, str.str, str.size);
+    data += str.size;
+}
+
+template<typename T>
+inline void record(uint8_t*& data, T arg)
+{
+    record_helper<T>(data, arg);
+}
+
+template<typename T, typename... Ts>
+inline void record(uint8_t*& data, T arg, Ts... args)
+{
+    record_helper<T>(data, arg);
+    record(data, args...);
+}
+} // namespace detail
 
 template<typename... Ts>
-inline void Recorder::record(RecordType type, Ts&&... args)
+inline void Recorder::record(RecordType type, Ts... args)
 {
-    const auto size = Emitter::emitSize(std::forward<Ts>(args)...) + 1;
+    const auto size = detail::recordSize(args...) + 1;
 
     if (!tScoped)
         mLock.lock();
 
-    mEmitter.emitWithSize(size, type, std::forward<Ts>(args)...);
+    if (mOffset + size >= mData.size()) {
+        mData.resize(mOffset + size);
+    }
 
-    if (!tScoped) {
+    uint8_t* data = mData.data() + mOffset;
+    *data++ = static_cast<uint8_t>(type);
+    detail::record(data, args...);
+    mOffset += size;
+
+    if (!tScoped)
         mLock.unlock();
-        flush();
+}
+
+inline void Recorder::cleanup()
+{
+    if (mRunning.load(std::memory_order_acquire)) {
+        mRunning.store(false, std::memory_order_release);
+        mThread.join();
     }
 }

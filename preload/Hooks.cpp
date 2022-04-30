@@ -140,8 +140,6 @@ struct Data {
     int pfThreadPipe[2];
     int emitPipe[2];
 
-    PipeEmitter emitter;
-
     Spinlock mmapTrackerLock;
     MmapTracker mmapTracker;
 } *data = nullptr;
@@ -198,12 +196,13 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, 
         fileName = "s";
     }
 
-    data->emitter.emit(RecordType::Library, Emitter::String(fileName), static_cast<uint64_t>(info->dlpi_addr));
+    PipeEmitter emitter(data->emitPipe[1]);
+    emitter.emit(RecordType::Library, Emitter::String(fileName), static_cast<uint64_t>(info->dlpi_addr));
 
     for (int i = 0; i < info->dlpi_phnum; i++) {
         const auto& phdr = info->dlpi_phdr[i];
         if (phdr.p_type == PT_LOAD) {
-            data->emitter.emit(RecordType::LibraryHeader, static_cast<uint64_t>(phdr.p_vaddr), static_cast<uint64_t>(phdr.p_memsz));
+            emitter.emit(RecordType::LibraryHeader, static_cast<uint64_t>(phdr.p_vaddr), static_cast<uint64_t>(phdr.p_memsz));
         }
     }
 
@@ -213,6 +212,8 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, 
 static void hookThread()
 {
     hooked = false;
+
+    PipeEmitter emitter(data->emitPipe[1]);
 
     pollfd evt[] = {
         { .fd = data->faultFd, .events = POLLIN },
@@ -255,7 +256,7 @@ static void hookThread()
                     const auto place = static_cast<uint64_t>(fault_msg.arg.pagefault.address);
                     const auto ptid = static_cast<uint32_t>(fault_msg.arg.pagefault.feat.ptid);
                     // printf("  - pagefault %u\n", ptid);
-                    data->emitter.emit(RecordType::PageFault, place, ptid, Stack(ptid));
+                    emitter.emit(RecordType::PageFault, place, ptid, Stack(ptid));
                     uffdio_zeropage zero = {
                         .range = {
                             .start = place,
@@ -303,6 +304,11 @@ static void hookCleanup()
             w = ::write(data->pfThreadPipe[1], "q", 1);
         } while (w == -1 && errno == EINTR);
         data->thread.join();
+    }
+    if (data->emitPipe[1] != -1) {
+        int e;
+        EINTRWRAP(e, ::close(data->emitPipe[1]));
+        data->emitPipe[1] = -1;
     }
     NoHook noHook;
     delete data;
@@ -448,22 +454,30 @@ void Hooks::hook()
             parser = self.substr(0, slash + 1) + "bin/mtrack_parser";
         }
 
-
-        char* args[3] = {};
-        args[0] = strdup(parser.c_str());
-        args[1] = strdup("--packet-mode");
-        args[2] = nullptr;
+        char* args[7] = {};
+        size_t argIdx = 0;
+        args[argIdx++] = strdup(parser.c_str());
+        args[argIdx++] = strdup("--packet-mode");
+        const char* log = getenv("MTRACK_PARSER_LOG");
+        if (log) {
+            args[argIdx++] = strdup("--log-file");
+            args[argIdx++] = strdup(log);
+        }
+        const char* dump = getenv("MTRACK_PARSER_DUMP");
+        if (dump) {
+            args[argIdx++] = strdup("--dump-file");
+            args[argIdx++] = strdup(dump);
+        }
+        args[argIdx++] = nullptr;
         char* envs[1] = {};
         envs[0] = nullptr;
         const int ret = execve(parser.c_str(), args, envs);
-        fprintf(stderr, "unable to execve %d %m\n", ret);
+        fprintf(stderr, "unable to execve '%s' %d %m\n", parser.c_str(), ret);
         abort();
     } else {
         // parent
         EINTRWRAP(e, ::close(data->emitPipe[0]));
     }
-
-    data->emitter.setPipe(data->emitPipe[1]);
 
     data->faultFd = syscall(SYS_userfaultfd, O_NONBLOCK);
     if (data->faultFd == -1) {
@@ -492,6 +506,8 @@ void Hooks::hook()
     data->thread = std::thread(hookThread);
     atexit(hookCleanup);
 
+    PipeEmitter emitter(data->emitPipe[1]);
+
     // record the executable file
     char buf1[512];
     char buf2[4096];
@@ -501,7 +517,7 @@ void Hooks::hook()
         // badness
         fprintf(stderr, "no exe\n");
     } else {
-        data->emitter.emit(RecordType::Executable, Emitter::String(buf2, l));
+        emitter.emit(RecordType::Executable, Emitter::String(buf2, l));
     }
 
     // record the working directory
@@ -510,7 +526,7 @@ void Hooks::hook()
         // badness
         fprintf(stderr, "no cwd\n");
     } else {
-        data->emitter.emit(RecordType::WorkingDirectory, Emitter::String(buf2));
+        emitter.emit(RecordType::WorkingDirectory, Emitter::String(buf2));
     }
 
     NoHook nohook;
@@ -567,11 +583,13 @@ void reportMalloc(void* ptr, size_t size)
         dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
         data->modulesDirty.store(false, std::memory_order_release);
     }
-    data->emitter.emit(RecordType::Malloc,
-                          static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
-                          static_cast<uint64_t>(size),
-                          static_cast<uint32_t>(gettid()),
-                          Stack());
+
+    PipeEmitter emitter(data->emitPipe[1]);
+    emitter.emit(RecordType::Malloc,
+                 static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
+                 static_cast<uint64_t>(size),
+                 static_cast<uint32_t>(gettid()),
+                 Stack());
 }
 
 void reportFree(void* ptr)
@@ -582,7 +600,9 @@ void reportFree(void* ptr)
         dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
         data->modulesDirty.store(false, std::memory_order_release);
     }
-    data->emitter.emit(RecordType::Free, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)));
+
+    PipeEmitter emitter(data->emitPipe[1]);
+    emitter.emit(RecordType::Free, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)));
 }
 
 extern "C" {
@@ -614,9 +634,10 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
         dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
         data->modulesDirty.store(false, std::memory_order_release);
     }
-    data->emitter.emit(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
-                          mmap_ptr_cast(ret), alignToPage(length), prot, flags,
-                          static_cast<uint32_t>(gettid()), Stack());
+    PipeEmitter emitter(data->emitPipe[1]);
+    emitter.emit(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
+                 mmap_ptr_cast(ret), alignToPage(length), prot, flags,
+                 static_cast<uint32_t>(gettid()), Stack());
     return ret;
 }
 
@@ -649,9 +670,10 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
         dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
         data->modulesDirty.store(false, std::memory_order_release);
     }
-    data->emitter.emit(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
-                          mmap_ptr_cast(ret), alignToPage(length), prot, flags,
-                          static_cast<uint32_t>(gettid()), Stack());
+    PipeEmitter emitter(data->emitPipe[1]);
+    emitter.emit(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
+                 mmap_ptr_cast(ret), alignToPage(length), prot, flags,
+                 static_cast<uint32_t>(gettid()), Stack());
 
     return ret;
 }
@@ -680,8 +702,9 @@ int munmap(void* addr, size_t length)
         deallocated = data->mmapTracker.munmap(addr, length);
     }
 
-    data->emitter.emit(deallocated > 0 ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
-                          mmap_ptr_cast(addr), alignToPage(length));
+    PipeEmitter emitter(data->emitPipe[1]);
+    emitter.emit(deallocated > 0 ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
+                 mmap_ptr_cast(addr), alignToPage(length));
     // if (updated) {
     //     printf("2--\n");
     //     for (const auto& item : data->mmapRanges) {
@@ -792,8 +815,9 @@ int madvise(void* addr, size_t length, int advice)
         deallocated = data->mmapTracker.madvise(addr, length);
     }
 
-    data->emitter.emit(deallocated > 0 ? RecordType::MadviseTracked : RecordType::MadviseUntracked,
-                          mmap_ptr_cast(addr), alignToPage(length), advice);
+    PipeEmitter emitter(data->emitPipe[1]);
+    emitter.emit(deallocated > 0 ? RecordType::MadviseTracked : RecordType::MadviseUntracked,
+                 mmap_ptr_cast(addr), alignToPage(length), advice);
 
     return callbacks.madvise(addr, length, advice);
 }
@@ -828,8 +852,8 @@ int pthread_setname_np(pthread_t thread, const char* name)
     }
     // ### should fix this, this will drop unless we're the same thread
     if (pthread_equal(thread, pthread_self())) {
-        NoHook nohook;
-        data->emitter.emit(RecordType::ThreadName, static_cast<uint32_t>(gettid()), Emitter::String(name));
+        PipeEmitter emitter(data->emitPipe[1]);
+        emitter.emit(RecordType::ThreadName, static_cast<uint32_t>(gettid()), Emitter::String(name));
     }
     return callbacks.pthread_setname_np(thread, name);
 }

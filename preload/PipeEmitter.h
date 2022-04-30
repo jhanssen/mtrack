@@ -1,10 +1,17 @@
 #pragma once
 
+#include "NoHook.h"
+#include "Spinlock.h"
 #include <common/Emitter.h>
+#include <atomic>
 #include <climits>
 #include <cstdint>
 #include <cstdio>
 #include <unistd.h>
+
+#ifndef PIPE_BUF
+#define PIPE_BUF 4096
+#endif
 
 class PipeEmitter : public Emitter
 {
@@ -23,6 +30,7 @@ public:
     virtual void writeBytes(const void* data, size_t size, WriteType type) override;
 
 private:
+    NoHook mNoHook;
     int mPipe { -1 };
 
     uint8_t mBuf[PIPE_BUF];

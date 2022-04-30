@@ -1,16 +1,17 @@
 #pragma once
 
-#include <cstring>
-#include <cstdint>
 #include "FileEmitter.h"
 #include "Module.h"
 #include <common/Indexer.h>
 #include <common/MmapTracker.h>
 #include <common/RecordType.h>
+#include <condition_variable>
+#include <cstdint>
+#include <cstring>
 #include <map>
+#include <mutex>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <thread>
 
 struct Library
 {
@@ -100,8 +101,10 @@ class Parser
 {
 public:
     Parser(const std::string& file);
+    ~Parser();
 
-    void parsePacket(const uint8_t* data, uint32_t size);
+    void feed(const uint8_t* data, uint32_t size);
+    void shutdown();
 
     // size_t eventCount() const;
     // size_t recordCount() const;
@@ -113,33 +116,12 @@ public:
     // size_t stackMisses() const;
 
 private:
-    inline void handleExe();
-    inline void handleFree();
-    inline void handleLibrary();
-    inline void handleLibraryHeader();
-    inline void handleMadvise(RecordType type);
-    inline void handleMalloc();
-    inline void handleMmap(RecordType type);
-    inline void handleMunmap(RecordType type);
-    inline void handlePageFault();
-    inline void handleThreadName();
-    inline void handleTime();
-    inline void handleWorkingDirectory();
-
-    inline int32_t readStack();
-
-    inline void updateModuleCache();
-
-    template<typename T>
-    T readData();
-
-    bool finalize() const;
-    bool writeEvents();
-    bool writeStacks() const;
-    bool writeStrings() const;
+    void parsePacket(const uint8_t* data, uint32_t size);
+    void parseThread();
 
 private:
-    size_t mHashOffset = 0;
+    size_t mPacketNo {};
+    size_t mHashOffset {};
     std::vector<uint8_t> mHashData;
     Indexer<Hashable> mHashIndexer;
     Indexer<std::string> mStackAddrIndexer;
@@ -151,13 +133,37 @@ private:
     std::map<uint64_t, ModuleEntry> mModuleCache;
     std::vector<std::shared_ptr<Module>> mModules;
 
-    uint64_t mPageFaultSize { 0 }, mMallocSize { 0 };
+    uint64_t mPageFaultSize {}, mMallocSize {};
     MmapTracker mMmaps;
 
     FileEmitter mFileEmitter;
 
     std::string mExe, mCwd;
+
+    std::thread mThread;
+    std::mutex mMutex;
+    std::condition_variable mCond;
+    std::vector<uint8_t> mData;
+    std::vector<uint32_t> mPacketSizes;
+    size_t mDataOffset {};
+    size_t mPacketSizeCount {};
+    bool mShutdown {};
 };
+
+inline void Parser::feed(const uint8_t* data, uint32_t size)
+{
+    std::lock_guard<std::mutex> lock(mMutex);
+    if (mData.size() < mDataOffset + size) {
+        mData.resize(std::max(mDataOffset + size, std::min<size_t>(mData.size() * 2, 1024 * 1024)));
+    }
+    memcpy(mData.data() + mDataOffset, data, size);
+    mDataOffset += size;
+    if (mPacketSizeCount == mPacketSizes.size()) {
+        mPacketSizes.resize(mPacketSizes.size() + 100);
+    }
+    mPacketSizes[mPacketSizeCount++] = size;
+    mCond.notify_one();
+}
 
 // inline size_t Parser::stringCount() const
 // {
