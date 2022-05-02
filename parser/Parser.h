@@ -64,7 +64,10 @@ struct Hashable
     template<typename T = void>
     const T* data() const { return reinterpret_cast<const T*>(mData ? mData->data() + mOffset : nullptr); }
 
-    bool operator==(const Hashable&) const = default;
+    bool operator==(const Hashable& other) const
+    {
+        return mType == other.mType && mSize == other.mSize && (mData == other.mData || !memcmp(mData + mOffset, other.mData + other.mOffset, mSize));
+    }
 
 private:
     Type mType {};
