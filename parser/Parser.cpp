@@ -98,7 +98,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
     const auto start = timestamp();
 
     auto resolveStack = [&](int32_t idx) {
-        const auto prior = mStackAddrIndexer.size();
+        // const auto prior = mStackAddrIndexer.size();
         if (mLibraries.size() > mModules.size()) {
             // create new modules
             for (size_t libIdx = mModules.size(); libIdx < mLibraries.size(); ++libIdx) {
@@ -169,7 +169,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         }
     };
 
-    const auto now = timestamp() - start;
+    // const auto now = timestamp() - start;
     // mFileEmitter.emit(EmitType::Time, now);
 
     size_t offset = 0;
