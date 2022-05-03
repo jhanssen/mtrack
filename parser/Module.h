@@ -58,7 +58,6 @@ private:
     uint64_t mAddr;
     std::vector<std::pair<uint64_t, uint64_t>> mRanges;
     backtrace_state* mState { nullptr };
-    bool mFirst { true };
 
 private:
     static std::vector<Module*> sModules;

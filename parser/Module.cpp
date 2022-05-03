@@ -87,6 +87,7 @@ Module::Module(Indexer<std::string>& indexer, const std::string& filename, uint6
         } else {
             state->syminfo_fn = &elf_nosyms;
         }
+        fileline_initialize(state, backtrace_errorCallback, this);
     }
 
     mState = state;
@@ -125,12 +126,7 @@ void Module::addHeader(uint64_t addr, uint64_t len)
 Address Module::resolveAddress(uint64_t addr)
 {
     ModuleCallback moduleCallback { {}, mIndexer };
-    if (mFirst) {
-        mFirst = false;
-        backtrace_pcinfo(mState, addr, backtrace_callback, backtrace_errorCallback, &moduleCallback);
-    } else {
-        mState->fileline_fn(mState, addr, backtrace_callback, backtrace_errorCallback, &moduleCallback);
-    }
+    mState->fileline_fn(mState, addr, backtrace_callback, backtrace_errorCallback, &moduleCallback);
 
     if (!moduleCallback.resolvedAddr.valid()) {
         mState->syminfo_fn(mState, addr, backtrace_symInfoCallback, backtrace_errorCallback, &moduleCallback);
