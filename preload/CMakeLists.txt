@@ -5,7 +5,7 @@ set(SOURCES
     Stack.cpp
     )
 
-set_source_files_properties(${SOURCES} PROPERTIES COMPILE_FLAGS "-fno-omit-frame-pointer")
+set_source_files_properties(${SOURCES} PROPERTIES COMPILE_FLAGS "-fno-omit-frame-pointer -Wall")
 
 add_library(mtrack_preload SHARED ${SOURCES})
 target_compile_features(mtrack_preload PRIVATE cxx_std_20)
