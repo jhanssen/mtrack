@@ -17,6 +17,8 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <execinfo.h>
 #include <pthread.h>
@@ -132,13 +134,14 @@ struct Callbacks
 Allocator<4096> allocator;
 
 struct Data {
-    int faultFd;
+    int faultFd {};
+    pid_t pid {};
     std::thread thread;
     std::atomic_flag isShutdown = ATOMIC_FLAG_INIT;
     std::atomic<bool> modulesDirty = true;
 
-    int pfThreadPipe[2];
-    int emitPipe[2];
+    int pfThreadPipe[2] { -1, -1 };
+    int emitPipe[2] { -1, -1 };
 
     Spinlock mmapTrackerLock;
     MmapTracker mmapTracker;
@@ -300,19 +303,24 @@ static void hookCleanup()
             data->faultFd = -1;
         }
         int w;
-        do {
-            w = ::write(data->pfThreadPipe[1], "q", 1);
-        } while (w == -1 && errno == EINTR);
+        EINTRWRAP(w, ::write(data->pfThreadPipe[1], "q", 1));
         data->thread.join();
     }
-    if (data->emitPipe[1] != -1) {
-        int e;
-        EINTRWRAP(e, ::close(data->emitPipe[1]));
-        data->emitPipe[1] = -1;
-    }
     NoHook noHook;
-    delete data;
+    Data *d = data;
     data = nullptr;
+
+    if (d->emitPipe[1] != -1) {
+        int e;
+        EINTRWRAP(e, ::close(d->emitPipe[1]));
+        d->emitPipe[1] = -1;
+    }
+    printf("Calling waitpid %d\n", d->pid);
+    int r;
+    int wstatus = 0;
+    EINTRWRAP(r, ::waitpid(d->pid, &wstatus, 0));
+    printf("Waitpid returned %d -> %d (%d)\n", r, wstatus, WEXITSTATUS(wstatus));
+    delete d;
 }
 
 void Hooks::hook()
@@ -413,7 +421,7 @@ void Hooks::hook()
     }
 
     int e;
-    const auto pid = fork();
+    pid_t pid = fork();
     if (pid == 0) {
         // child
         NoHook nohook;
@@ -458,12 +466,12 @@ void Hooks::hook()
         size_t argIdx = 0;
         args[argIdx++] = strdup(parser.c_str());
         args[argIdx++] = strdup("--packet-mode");
-        const char* log = getenv("MTRACK_PARSER_LOG");
+        const char* log = getenv("MTRACK_LOG_FILE");
         if (log) {
             args[argIdx++] = strdup("--log-file");
             args[argIdx++] = strdup(log);
         }
-        const char* dump = getenv("MTRACK_PARSER_DUMP");
+        const char* dump = getenv("MTRACK_DUMP");
         if (dump) {
             args[argIdx++] = strdup("--dump");
             args[argIdx++] = strdup(dump);
@@ -475,6 +483,7 @@ void Hooks::hook()
         fprintf(stderr, "unable to execve '%s' %d %m\n", parser.c_str(), ret);
         abort();
     } else {
+        data->pid = pid;
         // parent
         EINTRWRAP(e, ::close(data->emitPipe[0]));
     }
