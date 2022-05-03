@@ -147,7 +147,7 @@ struct Data {
 namespace {
 bool safePrint(const char *string)
 {
-    const size_t len = strlen(string);
+    const ssize_t len = strlen(string);
     return ::write(STDOUT_FILENO, string, len) == len;
 }
 
@@ -537,9 +537,8 @@ void Hooks::hook()
     safePrint("hook.\n");
 }
 
-uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
+void trackMmap(void* addr, size_t length, int prot, int flags)
 {
-    uint64_t allocated = 0;
     // printf("-maping %p %zu flags 0x%x priv/anon %d\n", addr, length, flags, (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS));
     {
         ScopedSpinlock lock(data->mmapTrackerLock);
@@ -563,16 +562,14 @@ uint64_t trackMmap(void* addr, size_t length, int prot, int flags)
 
         if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) == -1) {
             printf("register failed (1) %m\n");
-            return allocated;
+            return;
         }
 
         if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
             printf("no range (1) 0x%llx\n", reg.ioctls);
-            return allocated;
+            return;
         }
     }
-
-    return allocated;
 }
 
 void reportMalloc(void* ptr, size_t size)
@@ -658,11 +655,10 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
     NoHook nohook;
 
     bool tracked = false;
-    uint64_t allocated = 0;
     if (!mallocFree.wasInMallocFree()
         && (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)
         && fd == -1) {
-        allocated = trackMmap(ret, length, prot, flags);
+        trackMmap(ret, length, prot, flags);
         tracked = true;
     }
 

@@ -63,10 +63,10 @@ std::shared_ptr<Module> Module::create(Indexer<std::string>& indexer, const std:
 {
     // assume we'll never have a hash collision?
     const auto [ idx, inserted ] = indexer.index(filename);
-    if (idx < sModules.size() && sModules[idx] != nullptr)
+    if (static_cast<size_t>(idx) < sModules.size() && sModules[idx] != nullptr)
         return sModules[idx]->shared_from_this();
     auto mod = Creatable<Module>::create(indexer, filename, addr);
-    if (idx >= sModules.size()) {
+    if (static_cast<size_t>(idx) >= sModules.size()) {
         const auto num = idx - sModules.size() + 1;
         sModules.reserve(sModules.size() + num);
         for (size_t i = 0; i < num; ++i) {

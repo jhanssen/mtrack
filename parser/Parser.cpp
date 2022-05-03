@@ -307,7 +307,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         const auto size = readUint64();
         const auto prot = readInt32();
         const auto flags = readInt32();
-        const auto ptid = readUint32();
+        // const auto ptid = readUint32();
         const auto [ stackIdx, stackInserted ] = readHashable(Hashable::Stack);
         if (stackInserted) {
             resolveStack(stackIdx);

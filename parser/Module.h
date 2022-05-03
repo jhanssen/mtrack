@@ -80,7 +80,7 @@ inline const std::vector<std::pair<uint64_t, uint64_t>>& Module::ranges() const
 
 inline bool Address::valid() const
 {
-    return frame.function != std::numeric_limits<uint32_t>::max();
+    return frame.function != -1;
 }
 
 namespace std {
