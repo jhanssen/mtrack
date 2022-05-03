@@ -12,6 +12,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_set>
 
 struct Library
 {
@@ -98,6 +99,16 @@ public:
     }
 };
 
+template<>
+struct hash<Malloc>
+{
+public:
+    size_t operator()(const Malloc& malloc) const
+    {
+        return static_cast<size_t>(malloc.addr);
+    }
+};
+
 } // namespace std
 
 class Parser
@@ -134,7 +145,7 @@ private:
 
     std::vector<Library> mLibraries;
     std::vector<PageFault> mPageFaults;
-    std::vector<Malloc> mMallocs;
+    std::unordered_set<Malloc> mMallocs;
 
     std::map<uint64_t, ModuleEntry> mModuleCache;
     std::vector<std::shared_ptr<Module>> mModules;
@@ -171,6 +182,11 @@ inline void Parser::feed(const uint8_t* data, uint32_t size)
     }
     mPacketSizes[mPacketSizeCount++] = size;
     mCond.notify_one();
+}
+
+inline bool operator==(const Malloc& m1, const Malloc& m2)
+{
+    return m1.addr == m2.addr;
 }
 
 // inline size_t Parser::stringCount() const

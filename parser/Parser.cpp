@@ -301,20 +301,15 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         } else {
             // LOG("not inserted");
         }
-        auto it = std::upper_bound(mMallocs.begin(), mMallocs.end(), addr, [](auto addr, const auto& item) {
-            return addr < item.addr;
-        });
-        assert(it == mMallocs.end() || it->addr > addr);
-        mMallocs.insert(it, Malloc { addr, size, ptid, stackIdx });
+        mMallocs.insert(Malloc { addr, size, ptid, stackIdx });
         mMallocSize += size;
         // mFileEmitter.emit(EmitType::Malloc, mMallocSize);
         break; }
     case RecordType::Free: {
         const auto addr = readUint64();
-        auto it = std::lower_bound(mMallocs.begin(), mMallocs.end(), addr, [](const auto& item, auto addr) {
-            return item.addr < addr;
-        });
-        if (it != mMallocs.end() && it->addr == addr) {
+        auto it = mMallocs.find(Malloc { addr, static_cast<uint64_t>(0), static_cast<uint32_t>(0), static_cast<int32_t>(0) });
+        if (it != mMallocs.end()) {
+            assert(it->addr == addr);
             mMallocSize -= it->size;
             // mFileEmitter.emit(EmitType::Malloc, mMallocSize);
             mMallocs.erase(it);
