@@ -1,8 +1,8 @@
 import { Data } from "./Data";
 import { FlameGraph, flamegraph } from "d3-flame-graph";
 import { Line, ScaleLinear, axisBottom, axisLeft, extent, line, max, scaleLinear, select } from "d3";
-import { Model } from "./Model.js";
-import { Stack } from "./Stack.js";
+import { Model2 } from "./Model2";
+import { Stack } from "./Stack";
 
 type Margin = {
     top: number;
@@ -21,11 +21,17 @@ type LineData = {
     valueLine: Line<[number, number]>;
 };
 
+type Ready = {
+    resolve: () => void | PromiseLike<void>;
+    reject: (reason?: any) => void;
+};
+
 export class Graph {
     private _line: LineData;
     private _flame: FlameGraph;
-    private _data: Data;
-    private _model: Model;
+    private _model: Model2 | undefined;
+    private _nomodel: unknown | undefined;
+    private _readies: Ready[] = [];
 
     constructor() {
         const margin = {top: 20, right: 20, bottom: 50, left: 70};
@@ -64,16 +70,41 @@ export class Graph {
             //.onClick(onClick)
             .selfValue(false);
 
-        this._data = "$DATA_GOES_HERE$" as unknown as Data;
-        this._model = new Model(this._data);
+        const data = "data:application/octet-binary;base64,$DATA_GOES_HERE$";
+        window.fetch(data)
+            .then(res => res.arrayBuffer())
+            .then(buffer => {
+                this._model = new Model2(buffer);
+                for (const r of this._readies) {
+                    r.resolve();
+                }
+                this._readies = [];
+            }).catch(e => {
+                this._nomodel = e;
+                for (const r of this._readies) {
+                    r.reject(e);
+                }
+                this._readies = [];
+            });
+        //this._model = new Model(this._data);
+    }
+
+    ready() {
+        return new Promise<void>((resolve, reject) => {
+            if (this._model) {
+                resolve();
+            } else if (this._nomodel !== undefined) {
+                reject(this._nomodel);
+            } else {
+                this._readies.push({ resolve, reject });
+            }
+        });
     }
 
     init() {
-        if (this._data as unknown as string === "$DATA_GOES_HERE$") {
-            // @ts-ignore
-            window.alert("No data");
+        if (this._model === undefined) {
+            throw new Error("init called with no model");
         }
-
         const data: { time: number, used: number }[] = [];
         this._model.parse(undefined, snapshot => {
             data.push({ time: snapshot.time, used: snapshot.used / (1024 * 1024) });
@@ -135,6 +166,9 @@ export class Graph {
     }
 
     _flameify(time: number) {
+        if (this._model === undefined) {
+            throw new Error("_flameify called with no model");
+        }
         type Child = { name: string, value: number, key: string, children: Child[] };
         const children: Child[] = [];
         const data = { name: "nrdp", value: 0, children };
@@ -144,16 +178,13 @@ export class Graph {
         let cur = children;
         for (const [ stackid, pfs ] of this._model.pageFaultsByStack) {
             //console.log(stackid, pfs.length);
-            const stack = this._data.stacks[stackid];
+            const stack = this._model.stacks[stackid];
             //console.log(Stack.print(stack, this._data.strings));
-            let pfsize = 0;
-            for (const pf of pfs) {
-                pfsize += pf.range.length;
-            }
+            let pfsize = pfs.length * 4096;
 
             for (let stackIdx = stack.length - 1; stackIdx >= 0; --stackIdx) {
                 const stackEntry = stack[stackIdx];
-                if (stackEntry === null) {
+                if (!stackEntry) {
                     continue;
                 }
                 const key = `${stackEntry[0]}:${stackEntry[1]}:${stackEntry[2]}`;
@@ -162,7 +193,7 @@ export class Graph {
                 });
                 if (curIdx === -1) {
                     curIdx = cur.length;
-                    cur.push({ name: Stack.stringifyFrame(stackEntry, this._data.strings), value: pfsize, key, children: [] });
+                    cur.push({ name: Stack.stringifyFrame(stackEntry, this._model.stackStrings), value: pfsize, key, children: [] });
                 } else {
                     cur[curIdx].value += pfsize;
                 }

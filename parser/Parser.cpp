@@ -16,6 +16,7 @@ enum class EmitType : uint8_t {
     StackAddr,
     StackIp,
     Malloc,
+    Mmap,
     PageFault,
     ThreadName,
     Time
@@ -302,7 +303,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         });
         mPageFaults.insert(it, PageFault { place, ptid, stackIdx });
         mPageFaultSize += Limits::PageSize;
-        mFileEmitter.emit(EmitType::PageFault, mPageFaultSize);
+        mFileEmitter.emit(EmitType::PageFault, static_cast<double>(place), ptid, static_cast<double>(mPageFaultSize));
         break; }
     case RecordType::Malloc: {
         const auto addr = readUint64();
@@ -317,7 +318,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         }
         mMallocs.insert(Malloc { addr, size, ptid, stackIdx });
         mMallocSize += size;
-        mFileEmitter.emit(EmitType::Malloc, mMallocSize);
+        mFileEmitter.emit(EmitType::Malloc, ptid, static_cast<double>(mMallocSize));
         break; }
     case RecordType::Free: {
         const auto addr = readUint64();
@@ -325,7 +326,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         if (it != mMallocs.end()) {
             assert(it->addr == addr);
             mMallocSize -= it->size;
-            mFileEmitter.emit(EmitType::Malloc, mMallocSize);
+            mFileEmitter.emit(EmitType::Malloc, static_cast<double>(mMallocSize));
             mMallocs.erase(it);
         }
         break; }
@@ -343,13 +344,14 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
             resolveStack(stackIdx);
         }
         mMmaps.mmap(addr, size, prot, flags, stackIdx);
+        mFileEmitter.emit(EmitType::Mmap, static_cast<double>(addr), static_cast<double>(size));
         break; }
     case RecordType::MunmapUntracked:
     case RecordType::MunmapTracked: {
         const auto addr = readUint64();
         const auto size = readUint64();
         removePageFaults(addr, addr + size);
-        mFileEmitter.emit(EmitType::PageFault, mPageFaultSize);
+        mFileEmitter.emit(EmitType::PageFault, static_cast<double>(mPageFaultSize));
         mMmaps.munmap(addr, size);
         break; }
     case RecordType::MadviseUntracked:
@@ -359,15 +361,13 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         const auto advice = readInt32();
         if (advice == MADV_DONTNEED) {
             removePageFaults(addr, addr + size);
-            mFileEmitter.emit(EmitType::PageFault, mPageFaultSize);
+            mFileEmitter.emit(EmitType::PageFault, static_cast<double>(mPageFaultSize));
         }
         mMmaps.madvise(addr, size);
         break; }
     case RecordType::ThreadName: {
         const auto ptid = readUint32();
         const auto name = readHashableString();
-        static_cast<void>(ptid);
-        static_cast<void>(name);
         mFileEmitter.emit(EmitType::ThreadName, ptid, name);
         break; }
     default:

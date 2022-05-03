@@ -36,14 +36,14 @@ async function go() {
     let inputd, datad;
     try {
         inputd = await readFile(input, "utf8");
-        datad = await readFile(data, "utf8");
+        datad = await readFile(data);
     } catch (e) {
         console.error(e.message);
         process.exit(1);
     }
 
     // replace data
-    const needle = "\"$DATA_GOES_HERE$\"";
+    const needle = "$DATA_GOES_HERE$";
     const nidx = inputd.indexOf(needle);
     if (nidx === -1) {
         console.error(`Unable to find needle in ${input}`);
@@ -53,7 +53,7 @@ async function go() {
     try {
         const outfd = await open(output, "w");
         await outfd.write(inputd.substring(0, nidx));
-        await outfd.write(datad);
+        await outfd.write(datad.toString("base64"));
         await outfd.write(inputd.substring(nidx + needle.length));
         await outfd.close();
     } catch (e) {

@@ -13,7 +13,7 @@
         "strict": true,
         "sourceMap": true,
         "incremental": true,
-        "lib": ["es6"],
+        "lib": ["es6","dom"],
         "baseUrl": "."
     }
 }

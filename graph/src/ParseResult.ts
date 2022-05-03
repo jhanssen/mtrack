@@ -1,6 +1,6 @@
 export interface ParseResult {
     events: number;
     pageFaults: number;
-    mapped: number;
+    mapped?: number;
     time: number;
 }
