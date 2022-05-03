@@ -50,10 +50,10 @@ void Module::btErrorHandler(void* data, const char* msg, int errnum)
 std::shared_ptr<Module> Module::create(Indexer<std::string>& indexer, std::string&& filename, uint64_t addr)
 {
     // assume we'll never have a hash collision?
-    const auto [ idx, inserted ] = indexer.index(std::move(filename));
+    const auto [ idx, inserted ] = indexer.index(filename);
     if (static_cast<size_t>(idx) < sModules.size() && sModules[idx] != nullptr)
         return sModules[idx]->shared_from_this();
-    auto mod = Creatable<Module>::create(indexer, filename, addr);
+    auto mod = Creatable<Module>::create(indexer, std::move(filename), addr);
     if (static_cast<size_t>(idx) >= sModules.size()) {
         const auto num = idx - sModules.size() + 1;
         sModules.reserve(sModules.size() + num);

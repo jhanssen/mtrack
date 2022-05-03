@@ -14,7 +14,8 @@ class Indexer
 public:
     Indexer() = default;
 
-    std::pair<int32_t, bool> index(T&& str);
+    template <typename U = T>
+    std::pair<int32_t, bool> index(U&& str);
 
     const T& value(int32_t index) const;
     size_t size() const;
@@ -32,7 +33,8 @@ private:
 };
 
 template<typename T>
-inline std::pair<int32_t, bool> Indexer<T>::index(T&& str)
+template<typename U>
+inline std::pair<int32_t, bool> Indexer<T>::index(U&& str)
 {
     if (str.empty())
         return std::make_pair(-1, false);
@@ -44,7 +46,7 @@ inline std::pair<int32_t, bool> Indexer<T>::index(T&& str)
     ++mMisses;
     const int32_t id = static_cast<int32_t>(mValueList.size());
     mValueMap.insert(std::make_pair(str, id));
-    mValueList.push_back(std::move(str));
+    mValueList.push_back(std::forward<U>(str));
     return std::make_pair(id, true);
 }
 
