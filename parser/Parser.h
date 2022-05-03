@@ -109,7 +109,7 @@ public:
     void feed(const uint8_t* data, uint32_t size);
     void shutdown();
 
-    void setFileSize(size_t size);
+    void setFileSize(size_t size, size_t maxEventCount);
 
     // size_t eventCount() const;
     // size_t recordCount() const;
@@ -130,6 +130,7 @@ private:
     std::vector<uint8_t> mHashData;
     Indexer<Hashable> mHashIndexer;
     Indexer<std::string> mStackAddrIndexer;
+    std::unordered_map<uint64_t, Address> mAddressCache;
 
     std::vector<Library> mLibraries;
     std::vector<PageFault> mPageFaults;
@@ -139,7 +140,8 @@ private:
     std::vector<std::shared_ptr<Module>> mModules;
 
     uint64_t mPageFaultSize {}, mMallocSize {};
-    size_t mFileSize { 0 };
+    size_t mFileSize {};
+    size_t mMaxEvents {};
     MmapTracker mMmaps;
 
     FileEmitter mFileEmitter;

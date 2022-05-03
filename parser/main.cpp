@@ -19,7 +19,7 @@
         VAR = BLOCK;                            \
     } while (VAR == -1 && errno == EINTR)
 
-static void parse(const std::string& inf, const std::string& outf, const std::string& dumpFile, bool packetMode)
+static void parse(const std::string& inf, const std::string& outf, const std::string& dumpFile, bool packetMode, size_t maxEvents)
 {
     int infd = 0;
     if (!inf.empty()) {
@@ -43,7 +43,7 @@ static void parse(const std::string& inf, const std::string& outf, const std::st
     if (!inf.empty()) {
         struct stat st;
         if (!fstat(infd, &st)) {
-            parser.setFileSize(st.st_size);
+            parser.setFileSize(st.st_size, maxEvents);
         }
     }
 
@@ -51,7 +51,8 @@ static void parse(const std::string& inf, const std::string& outf, const std::st
     size_t totalRead = 0;
     uint32_t packetSize;
     uint8_t packet[PIPE_BUF];
-    for (;;) {
+    size_t eventIdx;
+    for (eventIdx = 0; eventIdx<maxEvents; ++eventIdx) {
         if (packetMode) {
             packetSize = ::read(infd, packet, PIPE_BUF);
             LOG("got packet {}", packetSize);
@@ -95,7 +96,7 @@ static void parse(const std::string& inf, const std::string& outf, const std::st
         parser.feed(packet, packetSize);
     }
 
-    LOG("done parsing\n");
+    LOG("done reading {} events\n", eventIdx);
 
     if (outfile) {
         int e;
@@ -140,7 +141,12 @@ int main(int argc, char** argv)
         dump = args.value<std::string>("dump");
     }
 
-    parse(input, output, dump, packetMode);
+    size_t maxEvents = std::numeric_limits<size_t>::max();
+    if (args.has<int64_t>("max-events")) {
+        maxEvents = args.value<int64_t>("max-events");
+    }
+
+    parse(input, output, dump, packetMode, maxEvents);
 
     return 0;
 }

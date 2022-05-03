@@ -19,10 +19,20 @@ enum class EmitType : uint8_t {
     Time
 };
 
-static inline bool intersects(uint64_t startA, uint64_t endA, uint64_t startB, uint64_t endB)
+namespace {
+bool intersects(uint64_t startA, uint64_t endA, uint64_t startB, uint64_t endB)
 {
     return startA < endB && startB < endA;
 }
+
+uint32_t timestamp()
+{
+    timespec ts;
+    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+    return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
+}
+} // anonymous namespace
+
 
 Parser::Parser(const std::string& file)
     : mFileEmitter(file)
@@ -42,7 +52,8 @@ Parser::~Parser()
 
 void Parser::parseThread()
 {
-    size_t dataSize = 0, packetSizeCount = 0;
+    const uint32_t started = timestamp();
+    size_t packetSizeCount = 0;
     std::vector<uint8_t> data;
     std::vector<uint32_t> packetSizes;
 
@@ -50,7 +61,7 @@ void Parser::parseThread()
     size_t bytesConsumed = 0;
 
     for (;;) {
-        LOG("loop.");
+        // LOG("loop.");
         {
             std::unique_lock<std::mutex> lock(mMutex);
             while (mPacketSizeCount == 0 && !mShutdown) {
@@ -63,7 +74,6 @@ void Parser::parseThread()
                 data.resize(mDataOffset);
             }
             memcpy(data.data(), mData.data(), mDataOffset);
-            dataSize = mDataOffset;
             mDataOffset = 0;
 
             if (mPacketSizeCount > packetSizes.size()) {
@@ -76,8 +86,13 @@ void Parser::parseThread()
 
         size_t dataOffset = 0;
         for (size_t packetNo = 0; packetNo < packetSizeCount; ++packetNo) {
-            if (!(totalPacketNo % 1000)) {
-                if (mFileSize) {
+            if (!(totalPacketNo % 100000)) {
+                if (mMaxEvents != std::numeric_limits<size_t>::max()) {
+                    LOG("parsing packet {}/{} {:.1f}%",
+                        totalPacketNo, mMaxEvents,
+                        (static_cast<double>(totalPacketNo) / static_cast<double>(mMaxEvents)) * 100.0);
+
+                } else if (mFileSize) {
                     LOG("parsing packet {} {}/{} {:.1f}%",
                         totalPacketNo, bytesConsumed, mFileSize,
                         (static_cast<double>(bytesConsumed) / static_cast<double>(mFileSize)) * 100.0);
@@ -91,21 +106,18 @@ void Parser::parseThread()
             ++totalPacketNo;
         }
     }
+
+    const uint32_t now = timestamp();
+    LOG("Finished parsing {} events in {}ms", totalPacketNo, now - started);
 }
 
 void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
 {
     ++mPacketNo;
 
-    auto timestamp = []() {
-        timespec ts;
-        clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
-        return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
-    };
+    // const auto start = timestamp();
 
-    const auto start = timestamp();
-
-    auto resolveStack = [&](int32_t idx) {
+    auto resolveStack = [this](int32_t idx) {
         // const auto prior = mStackAddrIndexer.size();
         if (mLibraries.size() > mModules.size()) {
             // create new modules
@@ -147,18 +159,25 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         const uint32_t numStacks = hashable.size() / sizeof(void*);
         const uint8_t* data = hashable.data<uint8_t>();
         for (uint32_t i = 0; i < numStacks; ++i) {
+            Address address;
             void* ipptr;
             memcpy(&ipptr, data + (i * sizeof(void*)), sizeof(void*));
             const uint64_t ip = reinterpret_cast<uint64_t>(ipptr);
 
-            auto it = mModuleCache.upper_bound(ip);
-            if (it != mModuleCache.begin())
-                --it;
-            if (mModuleCache.size() == 1)
-                it = mModuleCache.begin();
-            Address address;
-            if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end)
-                address = it->second.module->resolveAddress(ip);
+            auto ait = mAddressCache.find(ip);
+            if (ait != mAddressCache.end()) {
+                address = ait->second;
+            } else {
+                auto it = mModuleCache.upper_bound(ip);
+                if (it != mModuleCache.begin())
+                    --it;
+                if (mModuleCache.size() == 1)
+                    it = mModuleCache.begin();
+                if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end) {
+                    address = it->second.module->resolveAddress(ip);
+                    mAddressCache[ip] = address;
+                }
+            }
         }
 
         // for (size_t i = prior; i < mStackAddrIndexer.size(); ++i) {
@@ -353,9 +372,10 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
     }
 }
 
-void Parser::setFileSize(size_t size)
+void Parser::setFileSize(size_t size, size_t maxEvents)
 {
     mFileSize = size;
+    mMaxEvents = maxEvents;
     assert(!mDataOffset);
     mData.resize(size);
 }
