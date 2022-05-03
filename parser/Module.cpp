@@ -11,7 +11,8 @@ extern "C" {
 
 std::vector<Module*> Module::sModules;
 
-static inline std::string demangle(const char* function)
+namespace {
+inline std::string demangle(const char* function)
 {
     if (!function) {
         return {};
@@ -29,6 +30,44 @@ static inline std::string demangle(const char* function)
     return {};
 }
 
+struct ModuleCallback
+{
+    Address resolvedAddr;
+    Indexer<std::string>& indexer;
+};
+
+int backtrace_callback(void* data, uintptr_t /*addr*/, const char* file, int line, const char* function)
+{
+    // printf("pc frame %s %s %d\n", demangle(function).c_str(), file ? file : "(no file)", line);
+    auto resolved = reinterpret_cast<ModuleCallback*>(data);
+    Indexer<std::string>* indexer = &resolved->indexer;
+    const auto [ funIdx, funInserted ] = indexer->index(demangle(function));
+    const auto [ fileIdx, fileInserted ] = indexer->index(file ? std::string(file) : std::string {});
+    Frame frame { funIdx, fileIdx, line };
+    if (!resolved->resolvedAddr.valid()) {
+        resolved->resolvedAddr.frame = std::move(frame);
+    } else {
+        resolved->resolvedAddr.inlined.push_back(std::move(frame));
+    }
+    return 0;
+}
+
+void backtrace_symInfoCallback(void* data, uintptr_t /*pc*/, const char* symname, uintptr_t /*symval*/, uintptr_t /*symsize*/)
+{
+    // printf("syminfo instead %s\n", demangle(symname).c_str());
+    auto resolved = reinterpret_cast<ModuleCallback*>(data);
+    Indexer<std::string>* indexer = &resolved->indexer;
+    if (!resolved->resolvedAddr.valid()) {
+        const auto [ symIdx, symInserted ] = indexer->index(demangle(symname));
+        resolved->resolvedAddr.frame.function = symIdx;
+    }
+}
+
+void backtrace_errorCallback(void* /*data*/, const char* msg, int errnum)
+{
+    printf("pc frame bad %s %d\n", msg, errnum);
+}
+} // anonymous namespace
 
 Module::Module(Indexer<std::string>& indexer, const std::string& filename, uint64_t addr)
     : mIndexer(indexer), mFileName(filename), mAddr(addr)
@@ -85,52 +124,16 @@ void Module::addHeader(uint64_t addr, uint64_t len)
 
 Address Module::resolveAddress(uint64_t addr)
 {
-    struct ModuleCallback
-    {
-        Module* module;
-        Address resolvedAddr;
-    } moduleCallback = {
-        this,
-        Address {}
-    };
-
-    backtrace_pcinfo(
-        mState, addr,
-        [](void* data, uintptr_t /*addr*/, const char* file, int line, const char* function) -> int {
-            // printf("pc frame %s %s %d\n", demangle(function).c_str(), file ? file : "(no file)", line);
-            auto resolved = reinterpret_cast<ModuleCallback*>(data);
-            Indexer<std::string>* indexer = &resolved->module->mIndexer;
-            const auto [ funIdx, funInserted ] = indexer->index(demangle(function));
-            const auto [ fileIdx, fileInserted ] = indexer->index(file ? std::string(file) : std::string {});
-            Frame frame { funIdx, fileIdx, line };
-            if (!resolved->resolvedAddr.valid()) {
-                resolved->resolvedAddr.frame = std::move(frame);
-            } else {
-                resolved->resolvedAddr.inlined.push_back(std::move(frame));
-            }
-            return 0;
-        },
-        [](void* /*data*/, const char* msg, int errnum) {
-            printf("pc frame bad %s %d\n", msg, errnum);
-        },
-        &moduleCallback);
+    ModuleCallback moduleCallback { {}, mIndexer };
+    if (mFirst) {
+        mFirst = false;
+        backtrace_pcinfo(mState, addr, backtrace_callback, backtrace_errorCallback, &moduleCallback);
+    } else {
+        mState->fileline_fn(mState, addr, backtrace_callback, backtrace_errorCallback, &moduleCallback);
+    }
 
     if (!moduleCallback.resolvedAddr.valid()) {
-        backtrace_syminfo(
-            mState, addr,
-            [](void* data, uintptr_t /*pc*/, const char* symname, uintptr_t /*symval*/, uintptr_t /*symsize*/) {
-                // printf("syminfo instead %s\n", demangle(symname).c_str());
-                auto resolved = reinterpret_cast<ModuleCallback*>(data);
-                Indexer<std::string>* indexer = &resolved->module->mIndexer;
-                if (!resolved->resolvedAddr.valid()) {
-                    const auto [ symIdx, symInserted ] = indexer->index(demangle(symname));
-                    resolved->resolvedAddr.frame.function = symIdx;
-                }
-            },
-            [](void* /*data*/, const char* msg, int errnum) {
-                printf("syminfo frame bad %s %d\n", msg, errnum);
-            },
-            &moduleCallback);
+        mState->syminfo_fn(mState, addr, backtrace_symInfoCallback, backtrace_errorCallback, &moduleCallback);
     }
 
     return moduleCallback.resolvedAddr;
