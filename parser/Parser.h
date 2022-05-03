@@ -109,7 +109,7 @@ public:
     void feed(const uint8_t* data, uint32_t size);
     void shutdown();
 
-    void setFileSize(size_t size) { mFileSize = size; }
+    void setFileSize(size_t size);
 
     // size_t eventCount() const;
     // size_t recordCount() const;

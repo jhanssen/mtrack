@@ -352,3 +352,11 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         abort();
     }
 }
+
+void Parser::setFileSize(size_t size)
+{
+    mFileSize = size;
+    assert(!mDataOffset);
+    mData.resize(size);
+}
+
