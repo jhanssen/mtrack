@@ -73,7 +73,7 @@ std::shared_ptr<Module> Module::create(Indexer<std::string>& indexer, const std:
             sModules.push_back(nullptr);
         }
     }
-    assert(idx < sModules.size() && sModules[idx] == nullptr);
+    assert(static_cast<size_t>(idx) < sModules.size() && sModules[idx] == nullptr);
     sModules[idx] = mod.get();
     return mod;
 }

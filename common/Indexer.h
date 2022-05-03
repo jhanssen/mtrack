@@ -50,7 +50,7 @@ inline std::pair<int32_t, bool> Indexer<T>::index(const T& str)
 template<typename T>
 inline const T& Indexer<T>::value(int32_t index) const
 {
-    if (index >= mValueList.size())
+    if (static_cast<size_t>(index) >= mValueList.size())
         return mEmpty;
     return mValueList[index];
 }
