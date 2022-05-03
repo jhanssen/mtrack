@@ -47,6 +47,7 @@ void Parser::parseThread()
     std::vector<uint32_t> packetSizes;
 
     size_t totalPacketNo = 0;
+    size_t bytesConsumed = 0;
 
     for (;;) {
         LOG("loop.");
@@ -76,10 +77,17 @@ void Parser::parseThread()
         size_t dataOffset = 0;
         for (size_t packetNo = 0; packetNo < packetSizeCount; ++packetNo) {
             if (!(totalPacketNo % 1000)) {
-                LOG("parsing packet {}", totalPacketNo);
+                if (mFileSize) {
+                    LOG("parsing packet {} {}/{} {:.1f}%",
+                        totalPacketNo, bytesConsumed, mFileSize,
+                        (static_cast<double>(bytesConsumed) / static_cast<double>(mFileSize)) * 100.0);
+                } else {
+                    LOG("parsing packet {} {}", totalPacketNo, bytesConsumed);
+                }
             }
             parsePacket(data.data() + dataOffset, packetSizes[packetNo]);
             dataOffset += packetSizes[packetNo];
+            bytesConsumed += packetSizes[packetNo];
             ++totalPacketNo;
         }
     }
@@ -272,7 +280,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
             resolveStack(stackIdx);
             // mFileEmitter.emit(EmitType::Stack, mHashIndexer.value(stackIdx));
         } else {
-            LOG("not inserted");
+            // LOG("not inserted");
         }
         auto it = std::upper_bound(mMallocs.begin(), mMallocs.end(), addr, [](auto addr, const auto& item) {
             return addr < item.addr;

@@ -29,6 +29,7 @@ static void parse(const std::string& inf, const std::string& outf, const std::st
         LOG("no such file {}\n", inf);
         return;
     }
+
     FILE* outfile = nullptr;
     if (!dumpFile.empty()) {
         outfile = ::fopen(dumpFile.c_str(), "w");
@@ -39,6 +40,13 @@ static void parse(const std::string& inf, const std::string& outf, const std::st
     }
 
     Parser parser(outf);
+    if (!inf.empty()) {
+        struct stat st;
+        if (!fstat(infd, &st)) {
+            parser.setFileSize(st.st_size);
+        }
+    }
+
 
     size_t totalRead = 0;
     uint32_t packetSize;

@@ -109,6 +109,8 @@ public:
     void feed(const uint8_t* data, uint32_t size);
     void shutdown();
 
+    void setFileSize(size_t size) { mFileSize = size; }
+
     // size_t eventCount() const;
     // size_t recordCount() const;
     // size_t stringCount() const;
@@ -137,6 +139,7 @@ private:
     std::vector<std::shared_ptr<Module>> mModules;
 
     uint64_t mPageFaultSize {}, mMallocSize {};
+    size_t mFileSize { 0 };
     MmapTracker mMmaps;
 
     FileEmitter mFileEmitter;
