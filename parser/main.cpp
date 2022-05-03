@@ -131,7 +131,7 @@ int main(int argc, char** argv)
     if (args.has<std::string>("output")) {
         output = args.value<std::string>("output");
     } else {
-        output = "mtrack.json";
+        output = "mtrackp.out";
     }
     if (args.has<std::string>("log-file")) {
         Logger::create(args.value<std::string>("log-file"));

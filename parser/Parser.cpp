@@ -12,7 +12,9 @@
 
 enum class EmitType : uint8_t {
     Stack,
-    StackAddress,
+    StackString,
+    StackAddr,
+    StackIp,
     Malloc,
     PageFault,
     ThreadName,
@@ -115,10 +117,10 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
 {
     ++mPacketNo;
 
-    // const auto start = timestamp();
+    const auto start = timestamp();
 
     auto resolveStack = [this](int32_t idx) {
-        // const auto prior = mStackAddrIndexer.size();
+        auto prior = mStackAddrIndexer.size();
         if (mLibraries.size() > mModules.size()) {
             // create new modules
             for (size_t libIdx = mModules.size(); libIdx < mLibraries.size(); ++libIdx) {
@@ -176,13 +178,20 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
                 if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end) {
                     address = it->second.module->resolveAddress(ip);
                     mAddressCache[ip] = address;
+
+                    for (size_t i = prior; i < mStackAddrIndexer.size(); ++i) {
+                        mFileEmitter.emit(EmitType::StackString, Emitter::String(mStackAddrIndexer.value(i)));
+                    }
+                    prior = mStackAddrIndexer.size();
+
+                    mFileEmitter.emit(EmitType::StackAddr, static_cast<double>(ip), address.frame.function, address.frame.file, address.frame.line, static_cast<int32_t>(address.inlined.size()));
+                    for (const auto& inl : address.inlined) {
+                        mFileEmitter.emit(inl.function, inl.file, inl.line);
+                    }
                 }
             }
+            mFileEmitter.emit(EmitType::StackIp, static_cast<double>(ip));
         }
-
-        // for (size_t i = prior; i < mStackAddrIndexer.size(); ++i) {
-        //     mFileEmitter.emit(EmitType::StackAddress, Emitter::String(mStackAddrIndexer.value(i)));
-        // }
     };
 
     auto removePageFaults = [this](uint64_t start, uint64_t end) {
@@ -196,8 +205,8 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         }
     };
 
-    // const auto now = timestamp() - start;
-    // mFileEmitter.emit(EmitType::Time, now);
+    const auto now = timestamp() - start;
+    mFileEmitter.emit(EmitType::Time, now);
 
     size_t offset = 0;
 
@@ -279,31 +288,31 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         const auto place = readUint64();
         const auto ptid = readUint32();
         const auto [ stackIdx, stackInserted ] = readHashable(Hashable::Stack);
+        mFileEmitter.emit(EmitType::Stack, static_cast<uint32_t>(stackIdx));
         if (stackInserted) {
             resolveStack(stackIdx);
-            // mFileEmitter.emit(EmitType::Stack, mHashIndexer.value(stackIdx));
         }
         auto it = std::upper_bound(mPageFaults.begin(), mPageFaults.end(), place, [](auto place, const auto& item) {
             return place < item.place;
         });
         mPageFaults.insert(it, PageFault { place, ptid, stackIdx });
         mPageFaultSize += Limits::PageSize;
-        // mFileEmitter.emit(EmitType::PageFault, mPageFaultSize);
+        mFileEmitter.emit(EmitType::PageFault, mPageFaultSize);
         break; }
     case RecordType::Malloc: {
         const auto addr = readUint64();
         const auto size = readUint64();
         const auto ptid = readUint32();
         const auto [ stackIdx, stackInserted ] = readHashable(Hashable::Stack);
+        mFileEmitter.emit(EmitType::Stack, static_cast<uint32_t>(stackIdx));
         if (stackInserted) {
             resolveStack(stackIdx);
-            // mFileEmitter.emit(EmitType::Stack, mHashIndexer.value(stackIdx));
         } else {
             // LOG("not inserted");
         }
         mMallocs.insert(Malloc { addr, size, ptid, stackIdx });
         mMallocSize += size;
-        // mFileEmitter.emit(EmitType::Malloc, mMallocSize);
+        mFileEmitter.emit(EmitType::Malloc, mMallocSize);
         break; }
     case RecordType::Free: {
         const auto addr = readUint64();
@@ -311,7 +320,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         if (it != mMallocs.end()) {
             assert(it->addr == addr);
             mMallocSize -= it->size;
-            // mFileEmitter.emit(EmitType::Malloc, mMallocSize);
+            mFileEmitter.emit(EmitType::Malloc, mMallocSize);
             mMallocs.erase(it);
         }
         break; }
@@ -324,9 +333,9 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         const auto ptid = readUint32();
         static_cast<void>(ptid);
         const auto [ stackIdx, stackInserted ] = readHashable(Hashable::Stack);
+        mFileEmitter.emit(EmitType::Stack, static_cast<uint32_t>(stackIdx));
         if (stackInserted) {
             resolveStack(stackIdx);
-            // mFileEmitter.emit(EmitType::Stack, mHashIndexer.value(stackIdx));
         }
         mMmaps.mmap(addr, size, prot, flags, stackIdx);
         break; }
@@ -335,7 +344,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         const auto addr = readUint64();
         const auto size = readUint64();
         removePageFaults(addr, addr + size);
-        // mFileEmitter.emit(EmitType::PageFault, mPageFaultSize);
+        mFileEmitter.emit(EmitType::PageFault, mPageFaultSize);
         mMmaps.munmap(addr, size);
         break; }
     case RecordType::MadviseUntracked:
@@ -345,7 +354,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         const auto advice = readInt32();
         if (advice == MADV_DONTNEED) {
             removePageFaults(addr, addr + size);
-            // mFileEmitter.emit(EmitType::PageFault, mPageFaultSize);
+            mFileEmitter.emit(EmitType::PageFault, mPageFaultSize);
         }
         mMmaps.madvise(addr, size);
         break; }
@@ -354,7 +363,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         const auto name = readHashableString();
         static_cast<void>(ptid);
         static_cast<void>(name);
-        // mFileEmitter.emit(EmitType::ThreadName, ptid, name);
+        mFileEmitter.emit(EmitType::ThreadName, ptid, name);
         break; }
     default:
         LOG("INVALID type {}", type);

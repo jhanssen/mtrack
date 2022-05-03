@@ -47,11 +47,22 @@ public:
         String(const char* s, uint32_t sz);
         String(const std::string& s);
 
-        const void *data() const { return str; }
+        const void* data() const { return str; }
         uint32_t size() const { return len; }
 
         const char* const str { nullptr };
         const uint32_t len { 0 };
+    };
+
+    struct Data
+    {
+        Data(const void* d, uint32_t sz);
+
+        const void* data() const { return dta; }
+        uint32_t size() const { return siz; }
+
+        const void* const dta { nullptr };
+        const uint32_t siz { 0 };
     };
 
     virtual void writeBytes(const void* data, size_t size, WriteType type) = 0;
@@ -85,7 +96,7 @@ private:
 template<typename T>
 inline size_t Emitter::emitSize_helper(T&&) requires (!detail::HasDataSize<std::decay_t<T>>)
 {
-    static_assert(std::is_enum_v<std::decay_t<T>> || std::is_integral_v<std::decay_t<T>>, "Must be integral or enum");
+    static_assert(std::is_enum_v<std::decay_t<T>> || std::is_arithmetic_v<std::decay_t<T>>, "Must be arithmetic or enum");
     return sizeof(T);
 }
 
@@ -115,7 +126,7 @@ inline size_t Emitter::emitSize(T&& arg, Ts&&... args)
 template<typename T>
 inline void Emitter::emit_helper(T&& arg, WriteType type) requires (!detail::HasDataSize<std::decay_t<T>>)
 {
-    static_assert(std::is_enum_v<std::decay_t<T>> || std::is_integral_v<std::decay_t<T>>, "Must be integral or enum");
+    static_assert(std::is_enum_v<std::decay_t<T>> || std::is_arithmetic_v<std::decay_t<T>>, "Must be arithmetic or enum");
     writeBytes(&arg, sizeof(T), type);
 }
 
@@ -170,5 +181,10 @@ inline Emitter::String::String(const char* s, uint32_t sz)
 
 inline Emitter::String::String(const std::string& s)
     : str(s.c_str()), len(static_cast<uint32_t>(s.size()))
+{
+}
+
+inline Emitter::Data::Data(const void* d, uint32_t sz)
+    : dta(d), siz(sz)
 {
 }
