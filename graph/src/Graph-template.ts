@@ -1,4 +1,3 @@
-import { Data } from "./Data";
 import { FlameGraph, flamegraph } from "d3-flame-graph";
 import { Line, ScaleLinear, axisBottom, axisLeft, extent, line, max, scaleLinear, select } from "d3";
 import { Model2 } from "./Model2";
@@ -23,7 +22,7 @@ type LineData = {
 
 type Ready = {
     resolve: () => void | PromiseLike<void>;
-    reject: (reason?: any) => void;
+    reject: (reason?: unknown) => void;
 };
 
 export class Graph {
@@ -180,7 +179,7 @@ export class Graph {
             //console.log(stackid, pfs.length);
             const stack = this._model.stacks[stackid];
             //console.log(Stack.print(stack, this._data.strings));
-            let pfsize = pfs.length * 4096;
+            const pfsize = pfs.length * 4096;
 
             for (let stackIdx = stack.length - 1; stackIdx >= 0; --stackIdx) {
                 const stackEntry = stack[stackIdx];
