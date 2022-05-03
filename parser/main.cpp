@@ -127,12 +127,12 @@ int main(int argc, char** argv)
     if (args.has<std::string>("log-file")) {
         Logger::create(args.value<std::string>("log-file"));
     }
-    std::string dumpFile;
-    if (args.has<std::string>("dump-file")) {
-        dumpFile = args.value<std::string>("dump-file");
+    std::string dump;
+    if (args.has<std::string>("dump")) {
+        dump = args.value<std::string>("dump");
     }
 
-    parse(input, output, dumpFile, packetMode);
+    parse(input, output, dump, packetMode);
 
     return 0;
 }

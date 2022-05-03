@@ -465,7 +465,7 @@ void Hooks::hook()
         }
         const char* dump = getenv("MTRACK_PARSER_DUMP");
         if (dump) {
-            args[argIdx++] = strdup("--dump-file");
+            args[argIdx++] = strdup("--dump");
             args[argIdx++] = strdup(dump);
         }
         args[argIdx++] = nullptr;
