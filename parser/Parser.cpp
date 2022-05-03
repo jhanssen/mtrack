@@ -307,7 +307,8 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         const auto size = readUint64();
         const auto prot = readInt32();
         const auto flags = readInt32();
-        // const auto ptid = readUint32();
+        const auto ptid = readUint32();
+        static_cast<void>(ptid);
         const auto [ stackIdx, stackInserted ] = readHashable(Hashable::Stack);
         if (stackInserted) {
             resolveStack(stackIdx);
@@ -337,6 +338,8 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
     case RecordType::ThreadName: {
         const auto ptid = readUint32();
         const auto name = readHashableString();
+        static_cast<void>(ptid);
+        static_cast<void>(name);
         // mFileEmitter.emit(EmitType::ThreadName, ptid, name);
         break; }
     default:
