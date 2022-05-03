@@ -46,7 +46,9 @@ void PipeEmitter::writeBytes(const void* data, size_t size, WriteType type)
     ::memcpy(mBuf + mOffset, data, size);
     mOffset += size;
     if (type == WriteType::Last) {
-        ::write(mPipe, mBuf, mOffset);
+        if (::write(mPipe, mBuf, mOffset) != mOffset) {
+            fprintf(stderr, "Failed to write %zu bytes to pipe %m\n", mOffset);
+        }
         mOffset = 0;
     }
 }
