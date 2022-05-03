@@ -43,7 +43,7 @@ Parser::Parser(const Options& options)
     mThread = std::thread(std::bind(&Parser::parseThread, this));
     if (options.maxEventCount != std::numeric_limits<size_t>::max() && options.maxEventCount > 0) {
         mData.resize(options.maxEventCount * 16); // ??? ### WTF BBQ?
-    } else if (options.fileSize) {
+    } else if (options.fileSize != std::numeric_limits<size_t>::max() && options.fileSize > 0) {
         mData.resize(options.fileSize);
     }
 }
