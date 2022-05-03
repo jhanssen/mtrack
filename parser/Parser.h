@@ -114,13 +114,17 @@ public:
 class Parser
 {
 public:
-    Parser(const std::string& file);
+    struct Options {
+        std::string output;
+        size_t fileSize { std::numeric_limits<size_t>::max() };
+        size_t maxEventCount { std::numeric_limits<size_t>::max() };
+        size_t resolverThreads { 2 };
+   };
+    Parser(const Options& options);
     ~Parser();
 
     void feed(const uint8_t* data, uint32_t size);
     void shutdown();
-
-    void setFileSize(size_t size, size_t maxEventCount);
 
     // size_t eventCount() const;
     // size_t recordCount() const;
@@ -136,6 +140,7 @@ private:
     void parseThread();
 
 private:
+    const Options mOptions;
     size_t mPacketNo {};
     size_t mHashOffset {};
     std::vector<uint8_t> mHashData;
@@ -151,8 +156,6 @@ private:
     std::vector<std::shared_ptr<Module>> mModules;
 
     uint64_t mPageFaultSize {}, mMallocSize {};
-    size_t mFileSize {};
-    size_t mMaxEvents {};
     MmapTracker mMmaps;
 
     FileEmitter mFileEmitter;

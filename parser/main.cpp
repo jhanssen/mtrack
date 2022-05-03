@@ -19,41 +19,52 @@
         VAR = BLOCK;                            \
     } while (VAR == -1 && errno == EINTR)
 
-static void parse(const std::string& inf, const std::string& outf, const std::string& dumpFile, bool packetMode, size_t maxEvents)
+struct Options : public Parser::Options {
+    std::string input;
+    std::string dumpFile;
+    bool packetMode {};
+};
+
+static void parse(Options &&options)
 {
     int infd = 0;
-    if (!inf.empty()) {
-        infd = open(inf.c_str(), O_RDONLY);
+    if (!options.input.empty()) {
+        infd = open(options.input.c_str(), O_RDONLY);
     }
     if (infd == -1) {
-        LOG("no such file {}\n", inf);
+        LOG("no such file {}\n", options.input);
         return;
     }
 
     FILE* outfile = nullptr;
-    if (!dumpFile.empty()) {
-        outfile = ::fopen(dumpFile.c_str(), "w");
+    if (!options.dumpFile.empty()) {
+        outfile = ::fopen(options.dumpFile.c_str(), "w");
         if (!outfile) {
-            LOG("no out file {} {}\n", errno, dumpFile);
+            LOG("no out file {} {}\n", errno, options.dumpFile);
             return;
         }
     }
 
-    Parser parser(outf);
-    if (!inf.empty()) {
+    if (!options.input.empty()) {
         struct stat st;
         if (!fstat(infd, &st)) {
-            parser.setFileSize(st.st_size, maxEvents);
+            options.fileSize = st.st_size;
         }
     }
+    Parser parser(options);
+
+    // mFileSize = size;
+    // mMaxEvents = maxEvents;
+    // assert(!mDataOffset);
+    // mData.resize(size);
 
 
     size_t totalRead = 0;
     uint32_t packetSize;
     uint8_t packet[PIPE_BUF];
     size_t eventIdx;
-    for (eventIdx = 0; eventIdx<maxEvents; ++eventIdx) {
-        if (packetMode) {
+    for (eventIdx = 0; eventIdx<options.maxEventCount; ++eventIdx) {
+        if (options.packetMode) {
             packetSize = ::read(infd, packet, PIPE_BUF);
             LOG("got packet {}", packetSize);
 
@@ -119,34 +130,39 @@ int main(int argc, char** argv)
         fprintf(stderr, "%s at offset %d word %s\n", msg, offset - 1, word);
     });
 
-    std::string input;
+    Options options;
+
     if (args.has<std::string>("input")) {
-        input = args.value<std::string>("input");
+        options.input = args.value<std::string>("input");
     }
-    bool packetMode = false;
+
     if (args.has<bool>("packet-mode")) {
-        packetMode = args.value<bool>("packet-mode");
+        options.packetMode = args.value<bool>("packet-mode");
     }
-    std::string output;
+
     if (args.has<std::string>("output")) {
-        output = args.value<std::string>("output");
+        options.output = args.value<std::string>("output");
     } else {
-        output = "mtrackp.out";
+        options.output = "mtrackp.out";
     }
+
     if (args.has<std::string>("log-file")) {
         Logger::create(args.value<std::string>("log-file"));
     }
-    std::string dump;
+
     if (args.has<std::string>("dump")) {
-        dump = args.value<std::string>("dump");
+        options.dumpFile = args.value<std::string>("dump");
     }
 
-    size_t maxEvents = std::numeric_limits<size_t>::max();
     if (args.has<int64_t>("max-events")) {
-        maxEvents = args.value<int64_t>("max-events");
+        options.maxEventCount = args.value<int64_t>("max-events");
     }
 
-    parse(input, output, dump, packetMode, maxEvents);
+    if (args.has<int64_t>("threads")) {
+        options.resolverThreads = args.value<int64_t>("threads");
+    }
+
+    parse(std::move(options));
 
     return 0;
 }

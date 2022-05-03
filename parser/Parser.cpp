@@ -36,10 +36,15 @@ uint32_t timestamp()
 } // anonymous namespace
 
 
-Parser::Parser(const std::string& file)
-    : mFileEmitter(file)
+Parser::Parser(const Options& options)
+    : mOptions(options), mFileEmitter(options.output)
 {
     mThread = std::thread(std::bind(&Parser::parseThread, this));
+    if (options.maxEventCount) {
+        mData.resize(options.maxEventCount * 16); // ??? ### WTF BBQ?
+    } else if (options.fileSize) {
+        mData.resize(options.fileSize);
+    }
 }
 
 Parser::~Parser()
@@ -89,15 +94,15 @@ void Parser::parseThread()
         size_t dataOffset = 0;
         for (size_t packetNo = 0; packetNo < packetSizeCount; ++packetNo) {
             if (!(totalPacketNo % 100000)) {
-                if (mMaxEvents != std::numeric_limits<size_t>::max()) {
+                if (mOptions.maxEventCount != std::numeric_limits<size_t>::max()) {
                     LOG("parsing packet {}/{} {:.1f}%",
-                        totalPacketNo, mMaxEvents,
-                        (static_cast<double>(totalPacketNo) / static_cast<double>(mMaxEvents)) * 100.0);
+                        totalPacketNo, mOptions.maxEventCount,
+                        (static_cast<double>(totalPacketNo) / static_cast<double>(mOptions.maxEventCount)) * 100.0);
 
-                } else if (mFileSize) {
+                } else if (mOptions.fileSize) {
                     LOG("parsing packet {} {}/{} {:.1f}%",
-                        totalPacketNo, bytesConsumed, mFileSize,
-                        (static_cast<double>(bytesConsumed) / static_cast<double>(mFileSize)) * 100.0);
+                        totalPacketNo, bytesConsumed, mOptions.fileSize,
+                        (static_cast<double>(bytesConsumed) / static_cast<double>(mOptions.fileSize)) * 100.0);
                 } else {
                     LOG("parsing packet {} {}", totalPacketNo, bytesConsumed);
                 }
@@ -374,13 +379,5 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         LOG("unexpected remaining bytes {} vs {}", offset, dataSize);
         abort();
     }
-}
-
-void Parser::setFileSize(size_t size, size_t maxEvents)
-{
-    mFileSize = size;
-    mMaxEvents = maxEvents;
-    assert(!mDataOffset);
-    mData.resize(size);
 }
 
