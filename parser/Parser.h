@@ -2,6 +2,7 @@
 
 #include "FileEmitter.h"
 #include "Module.h"
+#include "Address.h"
 #include <common/Indexer.h>
 #include <common/MmapTracker.h>
 #include <common/RecordType.h>
@@ -111,6 +112,7 @@ public:
 
 } // namespace std
 
+class ResolverThread;
 class Parser
 {
 public:
@@ -126,18 +128,14 @@ public:
     void feed(const uint8_t* data, uint32_t size);
     void shutdown();
 
-    // size_t eventCount() const;
-    // size_t recordCount() const;
-    // size_t stringCount() const;
-    // size_t stringHits() const;
-    // size_t stringMisses() const;
-    // size_t stackCount() const;
-    // size_t stackHits() const;
-    // size_t stackMisses() const;
+    void onResolvedAddresses(std::vector<Address<std::string>>&& addresses);
 
 private:
     void parsePacket(const uint8_t* data, uint32_t size);
     void parseThread();
+    void resolveStack(int32_t idx);
+    inline Frame<int32_t> convertFrame(Frame<std::string> &&frame);
+    inline void emitAddress(Address<std::string> &&addr);
 
 private:
     const Options mOptions;
@@ -145,8 +143,10 @@ private:
     size_t mHashOffset {};
     std::vector<uint8_t> mHashData;
     Indexer<Hashable> mHashIndexer;
-    Indexer<std::string> mStackAddrIndexer;
-    std::unordered_map<uint64_t, Address> mAddressCache;
+    Indexer<std::string> mStringIndexer;
+    std::unordered_map<uint64_t, std::optional<Address<int32_t>>> mAddressCache;
+    std::mutex mResolvedAddressesMutex;
+    std::vector<Address<std::string>> mResolvedAddresses;
 
     std::vector<Library> mLibraries;
     std::vector<PageFault> mPageFaults;
@@ -170,6 +170,8 @@ private:
     size_t mDataOffset {};
     size_t mPacketSizeCount {};
     bool mShutdown {};
+
+    std::unique_ptr<ResolverThread> mResolverThread;
 };
 
 inline void Parser::feed(const uint8_t* data, uint32_t size)
@@ -191,33 +193,3 @@ inline bool operator==(const Malloc& m1, const Malloc& m2)
 {
     return m1.addr == m2.addr;
 }
-
-// inline size_t Parser::stringCount() const
-// {
-//     return mStringIndexer.size();
-// }
-
-// inline size_t Parser::stringHits() const
-// {
-//     return mStringIndexer.hits();
-// }
-
-// inline size_t Parser::stringMisses() const
-// {
-//     return mStringIndexer.misses();
-// }
-
-// inline size_t Parser::stackCount() const
-// {
-//     return mStackIndexer.size();
-// }
-
-// inline size_t Parser::stackHits() const
-// {
-//     return mStackIndexer.hits();
-// }
-
-// inline size_t Parser::stackMisses() const
-// {
-//     return mStackIndexer.misses();
-// }

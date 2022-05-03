@@ -5,6 +5,7 @@ set(SOURCES
     Logger.cpp
     Module.cpp
     Parser.cpp
+    ResolverThread.cpp
     )
 
 add_executable(mtrack_parser ${SOURCES})

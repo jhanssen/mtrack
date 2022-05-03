@@ -9,7 +9,7 @@ const enum EventType {
     Stack,
     StackString,
     StackAddr,
-    StackIp,
+    StackFrames,
     Malloc,
     Mmap,
     PageFault,
@@ -119,7 +119,7 @@ export class Model2 {
                 }
                 stackAddrs.set(ip, frame);
                 break; }
-            case EventType.StackIp: {
+            case EventType.StackFrames: {
                 const ip = this._readFloat64();
                 // goes into stackIdx
                 const addr = stackAddrs.get(ip);

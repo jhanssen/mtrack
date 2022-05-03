@@ -1,5 +1,6 @@
 #include "Parser.h"
 #include "Logger.h"
+#include "ResolverThread.h"
 #include <common/Limits.h>
 #include <common/Version.h>
 #include <common/MmapTracker.h>
@@ -14,7 +15,7 @@ enum class EmitType : uint8_t {
     Stack,
     StackString,
     StackAddr,
-    StackIp,
+    StackFrames,
     Malloc,
     Mmap,
     PageFault,
@@ -38,7 +39,7 @@ uint32_t timestamp()
 
 
 Parser::Parser(const Options& options)
-    : mOptions(options), mFileEmitter(options.output)
+    : mOptions(options), mFileEmitter(options.output), mResolverThread(std::make_unique<ResolverThread>(this))
 {
     mThread = std::thread(std::bind(&Parser::parseThread, this));
     if (options.maxEventCount != std::numeric_limits<size_t>::max() && options.maxEventCount > 0) {
@@ -56,6 +57,125 @@ Parser::~Parser()
         mCond.notify_one();
     }
     mThread.join();
+    mResolverThread->stop();
+}
+
+void Parser::onResolvedAddresses(std::vector<Address<std::string>>&& addresses)
+{
+    std::unique_lock<std::mutex> lock(mResolvedAddressesMutex);
+    mResolvedAddresses.insert(mResolvedAddresses.end(), std::make_move_iterator(addresses.begin()), std::make_move_iterator(addresses.end()));
+}
+
+void Parser::resolveStack(int32_t idx)
+{
+    // auto prior = mStackAddrIndexer.size();
+    if (mLibraries.size() > mModules.size()) {
+        // create new modules
+        for (size_t libIdx = mModules.size(); libIdx < mLibraries.size(); ++libIdx) {
+            const auto& lib = mLibraries[libIdx];
+            if (lib.name.substr(0, 13) == "linux-vdso.so" || lib.name.substr(0, 13) == "linux-gate.so") {
+                // skip
+                continue;
+            }
+            auto name = lib.name;
+            if (name == "s") {
+                name = mExe;
+            }
+            if (name.size() > 0 && name[0] != '/') {
+                // relative path?
+                char buf[4096];
+                name = realpath((mCwd + name).c_str(), buf);
+            }
+
+            auto module = Module::create(mStringIndexer, std::move(name), lib.addr);
+            for (const auto& hdr : lib.headers) {
+                module->addHeader(hdr.addr, hdr.len);
+            }
+            mModules.push_back(std::move(module));
+        }
+        mModuleCache.clear();
+    }
+    if (mModuleCache.empty()) {
+        // update module cache
+        for (const auto& m : mModules) {
+            const auto& rs = m->ranges();
+            for (const auto& r : rs) {
+                mModuleCache.insert(std::make_pair(r.first, ModuleEntry { r.second, m.get() }));
+            }
+        }
+    }
+
+    const auto& hashable = mHashIndexer.value(idx);
+    const uint32_t numFrames = hashable.size() / sizeof(void*);
+    const uint8_t* data = hashable.data<uint8_t>();
+    std::vector<UnresolvedAddress> stackFrames;
+    stackFrames.resize(numFrames);
+    std::vector<UnresolvedAddress> unresolved;
+    mFileEmitter.emit(EmitType::StackFrames, numFrames);
+    for (uint32_t i = 0; i < numFrames; ++i) {
+        void* ipptr;
+        memcpy(&ipptr, data + (i * sizeof(void*)), sizeof(void*));
+        const uint64_t ip = reinterpret_cast<uint64_t>(ipptr);
+
+        auto ait = mAddressCache.find(ip);
+        if (ait == mAddressCache.end()) {
+            auto it = mModuleCache.upper_bound(ip);
+            if (it != mModuleCache.begin())
+                --it;
+            if (mModuleCache.size() == 1)
+                it = mModuleCache.begin();
+            if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end) {
+                unresolved.push_back({ ip, it->second.module->state() });
+                mAddressCache[ip] = std::nullopt;
+            } else {
+                mAddressCache[ip] = Address<int32_t>();
+            }
+        }
+        mFileEmitter.emit(static_cast<double>(ip));
+    }
+    if (!unresolved.empty()) {
+        auto lock = mResolverThread->lock();
+        lock->insert(lock->end(), unresolved.begin(), unresolved.end());
+    }
+}
+
+inline Frame<int32_t> Parser::convertFrame(Frame<std::string> &&frame)
+{
+    Frame<int32_t> ret;
+    {
+        const auto [ i, inserted ] = mStringIndexer.index(std::move(frame.function));
+        if (inserted) {
+            mFileEmitter.emit(EmitType::StackString, Emitter::String(mStringIndexer.value(i)));
+        }
+        ret.function = i;
+    }
+    if (!frame.file.empty()) {
+        const auto [ i, inserted ] = mStringIndexer.index(std::move(frame.file));
+        if (inserted) {
+            mFileEmitter.emit(EmitType::StackString, Emitter::String(mStringIndexer.value(i)));
+        }
+        ret.file = i;
+        ret.line = frame.line;
+    }
+    return ret;
+}
+
+inline void Parser::emitAddress(Address<std::string> &&strAddr)
+{
+    Address<int32_t> intAddr;
+    if (!strAddr.frame.function.empty()) {
+        intAddr.frame = convertFrame(std::move(strAddr.frame));
+    }
+    intAddr.inlined.resize(strAddr.inlined.size());
+    for (size_t i=0; i<strAddr.inlined.size(); ++i) {
+        intAddr.inlined[i] = convertFrame(std::move(strAddr.inlined[i]));
+    }
+    mFileEmitter.emit(EmitType::StackAddr, static_cast<double>(strAddr.ip), static_cast<uint32_t>(intAddr.inlined.size() + 1));
+
+    mFileEmitter.emit(intAddr.frame.function, intAddr.frame.file, intAddr.frame.line);
+    for (const Frame<int32_t> &frame : intAddr.inlined) {
+        mFileEmitter.emit(frame.function, frame.file, frame.line);
+    }
 }
 
 void Parser::parseThread()
@@ -113,6 +233,15 @@ void Parser::parseThread()
             bytesConsumed += packetSizes[packetNo];
             ++totalPacketNo;
         }
+
+        std::vector<Address<std::string>> resolved;
+        {
+            std::unique_lock<std::mutex> lock(mResolvedAddressesMutex);
+            std::swap(resolved, mResolvedAddresses);
+        }
+        for (Address<std::string> &strAddress : resolved) {
+            emitAddress(std::move(strAddress));
+        }
     }
 
     const uint32_t now = timestamp();
@@ -124,81 +253,6 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
     ++mPacketNo;
 
     const auto start = timestamp();
-
-    auto resolveStack = [this](int32_t idx) {
-        auto prior = mStackAddrIndexer.size();
-        if (mLibraries.size() > mModules.size()) {
-            // create new modules
-            for (size_t libIdx = mModules.size(); libIdx < mLibraries.size(); ++libIdx) {
-                const auto& lib = mLibraries[libIdx];
-                if (lib.name.substr(0, 13) == "linux-vdso.so" || lib.name.substr(0, 13) == "linux-gate.so") {
-                    // skip
-                    continue;
-                }
-                auto name = lib.name;
-                if (name == "s") {
-                    name = mExe;
-                }
-                if (name.size() > 0 && name[0] != '/') {
-                    // relative path?
-                    char buf[4096];
-                    name = realpath((mCwd + name).c_str(), buf);
-                }
-
-                auto module = Module::create(mStackAddrIndexer, name, lib.addr);
-                for (const auto& hdr : lib.headers) {
-                    module->addHeader(hdr.addr, hdr.len);
-                }
-                mModules.push_back(std::move(module));
-            }
-            mModuleCache.clear();
-        }
-        if (mModuleCache.empty()) {
-            // update module cache
-            for (const auto& m : mModules) {
-                const auto& rs = m->ranges();
-                for (const auto& r : rs) {
-                    mModuleCache.insert(std::make_pair(r.first, ModuleEntry { r.second, m.get() }));
-                }
-            }
-        }
-
-        const auto& hashable = mHashIndexer.value(idx);
-        const uint32_t numStacks = hashable.size() / sizeof(void*);
-        const uint8_t* data = hashable.data<uint8_t>();
-        for (uint32_t i = 0; i < numStacks; ++i) {
-            Address address;
-            void* ipptr;
-            memcpy(&ipptr, data + (i * sizeof(void*)), sizeof(void*));
-            const uint64_t ip = reinterpret_cast<uint64_t>(ipptr);
-
-            auto ait = mAddressCache.find(ip);
-            if (ait != mAddressCache.end()) {
-                address = ait->second;
-            } else {
-                auto it = mModuleCache.upper_bound(ip);
-                if (it != mModuleCache.begin())
-                    --it;
-                if (mModuleCache.size() == 1)
-                    it = mModuleCache.begin();
-                if (it != mModuleCache.end() && ip >= it->first && ip <= it->second.end) {
-                    address = it->second.module->resolveAddress(ip);
-                    mAddressCache[ip] = address;
-
-                    for (size_t i = prior; i < mStackAddrIndexer.size(); ++i) {
-                        mFileEmitter.emit(EmitType::StackString, Emitter::String(mStackAddrIndexer.value(i)));
-                    }
-                    prior = mStackAddrIndexer.size();
-
-                    mFileEmitter.emit(EmitType::StackAddr, static_cast<double>(ip), address.frame.function, address.frame.file, address.frame.line, static_cast<int32_t>(address.inlined.size()));
-                    for (const auto& inl : address.inlined) {
-                        mFileEmitter.emit(inl.function, inl.file, inl.line);
-                    }
-                }
-            }
-            mFileEmitter.emit(EmitType::StackIp, static_cast<double>(ip));
-        }
-    };
 
     auto removePageFaults = [this](uint64_t start, uint64_t end) {
         auto item = std::lower_bound(mPageFaults.begin(), mPageFaults.end(), start, [](const auto& item, auto start) {

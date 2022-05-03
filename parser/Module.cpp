@@ -1,73 +1,21 @@
 #include "Module.h"
+#include "Parser.h"
 #include "Creatable.h"
 #include <cassert>
 #include <cstring>
 #include <backtrace.h>
-#include <cxxabi.h>
-
+#include <functional>
 extern "C" {
 #include <internal.h>
 }
 
 std::vector<Module*> Module::sModules;
-
 namespace {
-inline std::string demangle(const char* function)
-{
-    if (!function) {
-        return {};
-    } else if (function[0] != '_' || function[1] != 'Z') {
-        return function;
-    }
-
-    int status = 0;
-    char* demangled = abi::__cxa_demangle(function, 0, 0, &status);
-    if (demangled && status == 0) {
-        std::string ret = demangled;
-        free(demangled);
-        return ret;
-    }
-    return {};
-}
-
-struct ModuleCallback
-{
-    Address resolvedAddr;
-    Indexer<std::string>& indexer;
-};
-
-int backtrace_callback(void* data, uintptr_t /*addr*/, const char* file, int line, const char* function)
-{
-    // printf("pc frame %s %s %d\n", demangle(function).c_str(), file ? file : "(no file)", line);
-    auto resolved = reinterpret_cast<ModuleCallback*>(data);
-    Indexer<std::string>* indexer = &resolved->indexer;
-    const auto [ funIdx, funInserted ] = indexer->index(demangle(function));
-    const auto [ fileIdx, fileInserted ] = indexer->index(file ? std::string(file) : std::string {});
-    Frame frame { funIdx, fileIdx, line };
-    if (!resolved->resolvedAddr.valid()) {
-        resolved->resolvedAddr.frame = std::move(frame);
-    } else {
-        resolved->resolvedAddr.inlined.push_back(std::move(frame));
-    }
-    return 0;
-}
-
-void backtrace_symInfoCallback(void* data, uintptr_t /*pc*/, const char* symname, uintptr_t /*symval*/, uintptr_t /*symsize*/)
-{
-    // printf("syminfo instead %s\n", demangle(symname).c_str());
-    auto resolved = reinterpret_cast<ModuleCallback*>(data);
-    Indexer<std::string>* indexer = &resolved->indexer;
-    if (!resolved->resolvedAddr.valid()) {
-        const auto [ symIdx, symInserted ] = indexer->index(demangle(symname));
-        resolved->resolvedAddr.frame.function = symIdx;
-    }
-}
-
-void backtrace_errorCallback(void* /*data*/, const char* msg, int errnum)
+void backtrace_moduleErrorCallback(void* /*data*/, const char* msg, int errnum)
 {
     printf("pc frame bad %s %d\n", msg, errnum);
 }
-} // anonymous namespace
+}
 
 Module::Module(Indexer<std::string>& indexer, const std::string& filename, uint64_t addr)
     : mIndexer(indexer), mFileName(filename), mAddr(addr)
@@ -87,7 +35,7 @@ Module::Module(Indexer<std::string>& indexer, const std::string& filename, uint6
         } else {
             state->syminfo_fn = &elf_nosyms;
         }
-        fileline_initialize(state, backtrace_errorCallback, this);
+        fileline_initialize(state, backtrace_moduleErrorCallback, this);
     }
 
     mState = state;
@@ -99,10 +47,10 @@ void Module::btErrorHandler(void* data, const char* msg, int errnum)
     fprintf(stderr, "libbacktrace error %s: %s - %s(%d)\n", module->mFileName.c_str(), msg, strerror(errnum), errnum);
 };
 
-std::shared_ptr<Module> Module::create(Indexer<std::string>& indexer, const std::string& filename, uint64_t addr)
+std::shared_ptr<Module> Module::create(Indexer<std::string>& indexer, std::string&& filename, uint64_t addr)
 {
     // assume we'll never have a hash collision?
-    const auto [ idx, inserted ] = indexer.index(filename);
+    const auto [ idx, inserted ] = indexer.index(std::move(filename));
     if (static_cast<size_t>(idx) < sModules.size() && sModules[idx] != nullptr)
         return sModules[idx]->shared_from_this();
     auto mod = Creatable<Module>::create(indexer, filename, addr);
@@ -121,16 +69,4 @@ std::shared_ptr<Module> Module::create(Indexer<std::string>& indexer, const std:
 void Module::addHeader(uint64_t addr, uint64_t len)
 {
     mRanges.push_back(std::make_pair(mAddr + addr, mAddr + addr + len));
-}
-
-Address Module::resolveAddress(uint64_t addr)
-{
-    ModuleCallback moduleCallback { {}, mIndexer };
-    mState->fileline_fn(mState, addr, backtrace_callback, backtrace_errorCallback, &moduleCallback);
-
-    if (!moduleCallback.resolvedAddr.valid()) {
-        mState->syminfo_fn(mState, addr, backtrace_symInfoCallback, backtrace_errorCallback, &moduleCallback);
-    }
-
-    return moduleCallback.resolvedAddr;
 }

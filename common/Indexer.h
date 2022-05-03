@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -13,7 +14,7 @@ class Indexer
 public:
     Indexer() = default;
 
-    std::pair<int32_t, bool> index(const T& str);
+    std::pair<int32_t, bool> index(T&& str);
 
     const T& value(int32_t index) const;
     size_t size() const;
@@ -31,7 +32,7 @@ private:
 };
 
 template<typename T>
-inline std::pair<int32_t, bool> Indexer<T>::index(const T& str)
+inline std::pair<int32_t, bool> Indexer<T>::index(T&& str)
 {
     if (str.empty())
         return std::make_pair(-1, false);
@@ -43,15 +44,14 @@ inline std::pair<int32_t, bool> Indexer<T>::index(const T& str)
     ++mMisses;
     const int32_t id = static_cast<int32_t>(mValueList.size());
     mValueMap.insert(std::make_pair(str, id));
-    mValueList.push_back(str);
+    mValueList.push_back(std::move(str));
     return std::make_pair(id, true);
 }
 
 template<typename T>
 inline const T& Indexer<T>::value(int32_t index) const
 {
-    if (static_cast<size_t>(index) >= mValueList.size())
-        return mEmpty;
+    assert(static_cast<size_t>(index) < mValueList.size());
     return mValueList[index];
 }
 
