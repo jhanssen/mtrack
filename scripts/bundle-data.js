@@ -1,4 +1,5 @@
 import { readFile, open } from "fs/promises";
+import { gzip } from "zlib";
 
 let input, data, output;
 
@@ -32,11 +33,24 @@ if (output === undefined) {
     process.exit(1);
 }
 
+function gzipify(data) {
+    return new Promise((resolve, reject) => {
+        gzip(data, (err, chunk) => {
+            if (err === null) {
+                resolve(chunk);
+            } else {
+                reject(err);
+            }
+        });
+    });
+}
+
 async function go() {
-    let inputd, datad;
+    let inputd, datad, zipd;
     try {
         inputd = await readFile(input, "utf8");
         datad = await readFile(data);
+        zipd = await gzipify(datad);
     } catch (e) {
         console.error(e.message);
         process.exit(1);
@@ -53,7 +67,7 @@ async function go() {
     try {
         const outfd = await open(output, "w");
         await outfd.write(inputd.substring(0, nidx));
-        await outfd.write(datad.toString("base64"));
+        await outfd.write(zipd.toString("base64"));
         await outfd.write(inputd.substring(nidx + needle.length));
         await outfd.close();
     } catch (e) {

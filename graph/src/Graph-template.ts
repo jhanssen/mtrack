@@ -25,6 +25,13 @@ type Ready = {
     reject: (reason?: unknown) => void;
 };
 
+declare class DecompressionStream {
+    constructor(format: string);
+
+    readonly readable: ReadableStream<BufferSource>;
+    readonly writable: WritableStream<Uint8Array>;
+}
+
 export class Graph {
     private _line: LineData;
     private _flame: FlameGraph;
@@ -70,21 +77,31 @@ export class Graph {
             .selfValue(false);
 
         const data = "data:application/octet-binary;base64,$DATA_GOES_HERE$";
-        window.fetch(data)
-            .then(res => res.arrayBuffer())
-            .then(buffer => {
-                this._model = new Model2(buffer);
-                for (const r of this._readies) {
-                    r.resolve();
-                }
-                this._readies = [];
-            }).catch(e => {
-                this._nomodel = e;
-                for (const r of this._readies) {
-                    r.reject(e);
-                }
-                this._readies = [];
-            });
+        try {
+            window.fetch(data)
+                .then(res => res.blob())
+                .then(blob => {
+                    const ds = new DecompressionStream("gzip");
+                    const decompressedStream = blob.stream().pipeThrough(ds);
+                    return new Response(decompressedStream).blob();
+                })
+                .then(blob => blob.arrayBuffer())
+                .then(buffer => {
+                    this._model = new Model2(buffer);
+                    for (const r of this._readies) {
+                        r.resolve();
+                    }
+                    this._readies = [];
+                }).catch(e => {
+                    this._nomodel = e;
+                    for (const r of this._readies) {
+                        r.reject(e);
+                    }
+                    this._readies = [];
+                });
+        } catch (e) {
+            console.error("fetch??", e);
+        }
         //this._model = new Model(this._data);
     }
 

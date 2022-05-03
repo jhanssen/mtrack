@@ -15,7 +15,6 @@
         "dot-notation": "error",
         "eqeqeq": "error",
         "grouped-accessor-pairs": "error",
-        "max-classes-per-file": ["error", 1],
         "no-caller": "error",
         "no-case-declarations": "error",
         "no-constructor-return": "error",
