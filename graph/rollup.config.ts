@@ -19,18 +19,6 @@ const external = ["fs", "assert"];
 
 export default [
     {
-        input: "src/cli.ts",
-        plugins,
-        external,
-        output: {
-            file: "cli.cjs",
-            format,
-            name: "cli",
-            exports: "named",
-            sourcemap: true
-        }
-    },
-    {
         input: "src/webpage.ts",
         plugins,
         external,
