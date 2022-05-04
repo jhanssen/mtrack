@@ -122,34 +122,46 @@ export class Graph {
         if (this._model === undefined) {
             throw new Error("init called with no model");
         }
-        const mdata: { time: number, used: number }[] = [];
-        const sdata: { time: number, used: number }[] = [];
+        const mdata_t: { time: number, used: number }[] = [];
+        const mdata_p: { time: number, used: number }[] = [];
+        const mdata_m: { time: number, used: number }[] = [];
+        const sdata_t: { time: number, used: number }[] = [];
         this._model.parse();
         for (const memory of this._model.memories) {
-            mdata.push({ time: memory.time, used: (memory.pageFault + memory.malloc) / (1024 * 1024) });
+            mdata_t.push({ time: memory.time, used: (memory.pageFault + memory.malloc) / (1024 * 1024) });
+            mdata_p.push({ time: memory.time, used: memory.pageFault / (1024 * 1024) });
+            mdata_m.push({ time: memory.time, used: memory.malloc / (1024 * 1024) });
         }
         for (const snapshot of this._model.snapshots) {
-            sdata.push({ time: snapshot.time, used: (snapshot.pageFault + snapshot.malloc) / (1024 * 1024) });
+            sdata_t.push({ time: snapshot.time, used: (snapshot.pageFault + snapshot.malloc) / (1024 * 1024) });
         }
         // @ts-ignore there's probably a nice way to do this
-        mdata.columns = ["time", "used"];
+        mdata_t.columns = ["time", "used"];
+        // @ts-ignore
+        mdata_p.columns = ["time", "used"];
+        // @ts-ignore
+        mdata_m.columns = ["time", "used"];
 
         // @ts-ignore
-        this._line.x.domain(extent(mdata, d => d.time));
+        this._line.x.domain(extent(mdata_t, d => d.time));
         // @ts-ignore
-        this._line.y.domain([0, max(mdata, d => d.used)]);
+        this._line.y.domain([0, max(mdata_t, d => d.used)]);
+
+        const lineColors = ["steelblue", "red", "green"];
 
         // @ts-ignore
-        this._line.svg.append("path")
-            .data([mdata])
+        this._line.svg.selectAll("lines")
+            .data([mdata_t, mdata_m, mdata_p])
+            .enter()
+            .append("path")
             .attr("fill", "none")
-            .attr("stroke", "steelblue")
+            .attr("stroke", (d: unknown, i: number) => { return lineColors[i]; })
             .attr("stroke-width", 4)
-            .attr("d", this._line.valueLine);
+            .attr("d", this._line.valueLine)
 
         // @ts-ignore
         this._line.svg.selectAll("circles")
-            .data(sdata)
+            .data(sdata_t)
             .enter()
             .append("circle")
             .attr("fill", "red")
@@ -225,9 +237,9 @@ export class Graph {
                 if (!stackFrame) {
                     continue;
                 }
-                const frame = stackFrame.frame;
+                let frame = stackFrame.frame;
                 if (!frame) {
-                    throw new Error(`unresolved frame`);
+                    frame = [-1, -1, 0];
                 }
                 const key = `${frame[0]}:${frame[1]}:${frame[2]}`;
                 let curIdx = cur.findIndex(e => {
@@ -245,8 +257,6 @@ export class Graph {
 
             cur = children;
         }
-
-        console.log(data);
 
         select("#flamechart")
             .datum(data)

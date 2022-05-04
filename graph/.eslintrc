@@ -49,7 +49,7 @@
                 "memberSyntaxSortOrder": ["none", "all", "multiple", "single"]
             }
         ],
-        "brace-style": ["error", "1tbs", { "allowSingleLine": false }],
+        "brace-style": ["error", "1tbs", { "allowSingleLine": true }],
 
         "class-methods-use-this": "warn",
         "consistent-return": "warn",
