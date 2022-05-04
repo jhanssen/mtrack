@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 #include <map>
 #include <mutex>
 #include <string>
@@ -18,11 +19,11 @@
 struct Library
 {
     std::string name;
-    uint64_t addr;
+    uint64_t addr {};
 
     struct Header {
-        uint64_t addr;
-        uint64_t len;
+        uint64_t addr {};
+        uint64_t len {};
     };
 
     std::vector<Header> headers;
@@ -30,23 +31,25 @@ struct Library
 
 struct PageFault
 {
-    uint64_t place;
-    uint32_t ptid;
-    int32_t stack;
+    uint64_t place {};
+    uint32_t ptid {};
+    int32_t stack {};
+    uint32_t time {};
 };
 
 struct Malloc
 {
-    uint64_t addr;
-    uint64_t size;
-    uint32_t ptid;
-    int32_t stack;
+    uint64_t addr {};
+    uint64_t size {};
+    uint32_t ptid {};
+    int32_t stack {};
+    uint32_t time {};
 };
 
 struct ModuleEntry
 {
-    uint64_t end;
-    Module* module;
+    uint64_t end {};
+    Module* module {};
 };
 
 struct Hashable
@@ -151,11 +154,40 @@ private:
     std::vector<Library> mLibraries;
     std::vector<PageFault> mPageFaults;
     std::unordered_set<Malloc> mMallocs;
+    std::unordered_set<int32_t> mPendingStacks;
 
     std::map<uint64_t, ModuleEntry> mModuleCache;
     std::vector<std::shared_ptr<Module>> mModules;
 
-    uint64_t mPageFaultSize {}, mMallocSize {};
+    struct {
+        uint64_t pageFaultBytes {};
+        uint64_t mallocBytes {};
+        uint32_t time {};
+        int64_t combinedBytes() const { return mallocBytes + pageFaultBytes; }
+        bool shouldSend(uint32_t now, uint32_t timeThreshold,
+                        uint64_t mallocSize, uint64_t pageFaultSize, double growthThreshold)
+        {
+            if (now - time >= timeThreshold) {
+                time = now;
+                pageFaultBytes = pageFaultSize;
+                mallocBytes = mallocSize;
+                return true;
+            }
+            const int64_t combined = mallocSize + pageFaultSize;
+            const auto delta = std::fabs((combined - combinedBytes()) / static_cast<double>(combined));
+            if (delta >= growthThreshold) {
+                time = now;
+                pageFaultBytes = pageFaultSize;
+                mallocBytes = mallocSize;
+                return true;
+            }
+            return false;
+        }
+
+    } mLastMemory, mLastSnapshot;
+
+    uint64_t mMallocSize {};
+
     MmapTracker mMmaps;
 
     FileEmitter mFileEmitter;
@@ -169,9 +201,10 @@ private:
     std::vector<uint32_t> mPacketSizes;
     size_t mDataOffset {};
     size_t mPacketSizeCount {};
-    bool mShutdown {};
-
+    uint32_t mStart {};
     std::unique_ptr<ResolverThread> mResolverThread;
+
+    bool mShutdown {};
 };
 
 inline void Parser::feed(const uint8_t* data, uint32_t size)
