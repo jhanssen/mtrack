@@ -35,12 +35,12 @@ macro(CONFIGURE_FILE_IF_DIFFERENT input output)
 endmacro()
 
 set(MTRACK_GRAPH_SOURCE ${CMAKE_CURRENT_LIST_DIR})
-
+execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink ${CMAKE_CURRENT_LIST_DIR}/src ${CMAKE_CURRENT_BINARY_DIR}/src)
 configure_file_if_different(${CMAKE_CURRENT_LIST_DIR}/index.html ${CMAKE_CURRENT_BINARY_DIR}/index.html)
 configure_file_if_different(${CMAKE_CURRENT_LIST_DIR}/package.json.in ${CMAKE_CURRENT_BINARY_DIR}/package.json)
 configure_file_if_different(${CMAKE_CURRENT_LIST_DIR}/tsconfig.json.in ${CMAKE_CURRENT_BINARY_DIR}/tsconfig.json)
 configure_file_if_different(${CMAKE_CURRENT_LIST_DIR}/rollup.config.ts.in ${CMAKE_CURRENT_BINARY_DIR}/rollup.config.ts)
-configure_file_if_different(${CMAKE_CURRENT_LIST_DIR}/.eslintrc ${CMAKE_CURRENT_BINARY_DIR}/.eslintrc)
+configure_file_if_different(${CMAKE_CURRENT_LIST_DIR}/.eslintrc.in ${CMAKE_CURRENT_BINARY_DIR}/.eslintrc)
 execute_process(COMMAND npm install WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 set(SOURCES
