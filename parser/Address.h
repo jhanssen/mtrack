@@ -28,7 +28,7 @@ struct Frame
 {
     T function { frameDefault<T>() };
     T file { frameDefault<T>() };
-    int32_t line { 0 };
+    int32_t line { frameDefault<int32_t>() };
 
     bool operator==(const Frame& other) const
     {
