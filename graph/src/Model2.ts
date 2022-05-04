@@ -136,8 +136,9 @@ export class Model2 {
                 }
                 break; }
             case EventType.StackString: {
+                const idx = this._readInt32();
                 const str = this._readString();
-                stackStrings.push(str);
+                stackStrings[idx] = str;
                 break; }
             case EventType.StackAddr: {
                 let frame: FrameOrSingleFrame | undefined;

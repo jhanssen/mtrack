@@ -155,14 +155,14 @@ inline Frame<int32_t> Parser::convertFrame(Frame<std::string> &&frame)
     {
         const auto [ i, inserted ] = mStringIndexer.index(std::move(frame.function));
         if (inserted) {
-            EMIT(mFileEmitter.emit(EmitType::StackString, Emitter::String(mStringIndexer.value(i))));
+            EMIT(mFileEmitter.emit(EmitType::StackString, i, Emitter::String(mStringIndexer.value(i))));
         }
         ret.function = i;
     }
     if (!frame.file.empty()) {
         const auto [ i, inserted ] = mStringIndexer.index(std::move(frame.file));
         if (inserted) {
-            EMIT(mFileEmitter.emit(EmitType::StackString, Emitter::String(mStringIndexer.value(i))));
+            EMIT(mFileEmitter.emit(EmitType::StackString, i, Emitter::String(mStringIndexer.value(i))));
         }
         ret.file = i;
         ret.line = frame.line;

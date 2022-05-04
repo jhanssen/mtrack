@@ -1,5 +1,5 @@
 import { FlameGraph, flamegraph } from "d3-flame-graph";
-import { Line, ScaleLinear, axisBottom, axisLeft, extent, line, max, scaleLinear, select } from "d3";
+import { Line, ScaleLinear, axisBottom, axisLeft, easeCubic, extent, line, max, scaleLinear, select } from "d3";
 import { Model2, PageSize, Snapshot } from "./Model2";
 import { Stack } from "./Stack";
 
@@ -14,8 +14,8 @@ type LineData = {
     margin: Margin;
     width: number;
     height: number;
-    x: ScaleLinear<number, number, never>;
-    y: ScaleLinear<number, number, never>;
+    x: ScaleLinear<number, number>;
+    y: ScaleLinear<number, number>;
     svg: unknown;
     valueLine: Line<[number, number]>;
 };
@@ -69,8 +69,8 @@ export class Graph {
             .cellHeight(18)
             .transitionDuration(750)
             .minFrameSize(5)
-            // ### Had to change this
-            .transitionEase("easeCubic")
+            // flamegraph types are wrong
+            .transitionEase(easeCubic as unknown as string)
             .sort(true)
             .title("")
             //.onClick(onClick)
@@ -131,8 +131,6 @@ export class Graph {
         for (const snapshot of this._model.snapshots) {
             sdata.push({ time: snapshot.time, used: (snapshot.pageFault + snapshot.malloc) / (1024 * 1024) });
         }
-        console.log(mdata);
-        console.log(sdata);
         // @ts-ignore there's probably a nice way to do this
         mdata.columns = ["time", "used"];
 
