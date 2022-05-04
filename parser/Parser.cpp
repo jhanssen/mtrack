@@ -287,6 +287,7 @@ void Parser::parseThread()
             bytesConsumed += packetSizes[packetNo];
             ++totalPacketNo;
         }
+        packetSizeCount = 0;
 
         std::vector<Address<std::string>> resolved;
         {
