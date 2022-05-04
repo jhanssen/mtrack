@@ -176,13 +176,13 @@ export class Model2 {
                 const time = this._readUint32();
                 const pageFault = this._readFloat64();
                 const malloc = this._readFloat64();
-                // console.log("got mem", time, pageFault, malloc);
                 memories.push({ time, pageFault, malloc });
                 break; }
             case EventType.Snapshot: {
                 const time = this._readUint32();
                 const pageFault = this._readFloat64();
                 const malloc = this._readFloat64();
+                memories.push({ time, pageFault, malloc });
                 const numPfs = this._readUint32();
                 const numMallocs = this._readUint32();
                 const numMmaps = this._readUint32();
