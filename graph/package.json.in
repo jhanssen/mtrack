@@ -29,7 +29,7 @@
   "scripts": {
     "lint": "eslint . --ext .ts",
     "rollup": "rollup -c",
-    "build": "yarn run run-p lint rollup && (echo \"#!/usr/bin/env node\" && cat cli.cjs) > cli-tmp.cjs && mv cli-tmp.cjs cli.cjs && chmod +x cli.cjs",
+    "build": "run-p lint rollup",
     "clean:dist": "del-cli mtrack.js",
     "clean:cache": "del-cli .cache/*",
     "clean": "run-p clean:dist clean:cache",

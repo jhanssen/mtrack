@@ -1,4 +1,6 @@
-import { Frame, SingleFrame } from "./Frame";
+export type SingleFrame = [number, number, number];
+export type FrameWithInlines = [number, number, number, SingleFrame[]];
+export type Frame = SingleFrame | FrameWithInlines;
 
 /*
   Frame: number[] [ function, file, line ],
