@@ -34,7 +34,7 @@ uint32_t timestamp()
 }
 } // anonymous namespace
 
-#define DEBUG_EMITS
+// #define DEBUG_EMITS
 #ifdef DEBUG_EMITS
 static std::map<int, size_t> emitted;
 #define EMIT(cmd) emitted[__LINE__] += cmd
@@ -61,7 +61,6 @@ Parser::~Parser()
         mCond.notify_one();
     }
     mThread.join();
-    mResolverThread->stop();
 
 #ifdef DEBUG_EMITS
     for (const auto &ref : emitted) {
@@ -205,21 +204,21 @@ inline void Parser::emitSnapshot(uint32_t now)
     };
 
     // emit a memory as well to ease parsing this in javascript
-    mFileEmitter.emit(EmitType::Memory, now, static_cast<double>(mLastMemory.pageFaultBytes), static_cast<double>(mLastMemory.mallocBytes));
-    mFileEmitter.emit(EmitType::Snapshot, now, static_cast<double>(mLastSnapshot.pageFaultBytes), static_cast<double>(mLastSnapshot.mallocBytes),
-                      static_cast<uint32_t>(mPageFaults.size()), static_cast<uint32_t>(mMallocs.size()),
-                      static_cast<uint32_t>(mMmaps.size()));
+    EMIT(mFileEmitter.emit(EmitType::Memory, now, static_cast<double>(mLastMemory.pageFaultBytes), static_cast<double>(mLastMemory.mallocBytes)));
+    EMIT(mFileEmitter.emit(EmitType::Snapshot, now, static_cast<double>(mLastSnapshot.pageFaultBytes), static_cast<double>(mLastSnapshot.mallocBytes),
+                           static_cast<uint32_t>(mPageFaults.size()), static_cast<uint32_t>(mMallocs.size()),
+                           static_cast<uint32_t>(mMmaps.size())));
 
     for (const auto& pf : mPageFaults) {
-        mFileEmitter.emit(static_cast<double>(pf.place), pf.ptid, pf.stack, pf.time);
+        EMIT(mFileEmitter.emit(static_cast<double>(pf.place), pf.ptid, pf.stack, pf.time));
         checkStack(pf.stack);
     }
     for (const auto& m : mMallocs) {
-        mFileEmitter.emit(static_cast<double>(m.addr), static_cast<double>(m.size), m.ptid, m.stack, m.time);
+        EMIT(mFileEmitter.emit(static_cast<double>(m.addr), static_cast<double>(m.size), m.ptid, m.stack, m.time));
         checkStack(m.stack);
     }
     mMmaps.forEach([this, &checkStack](uintptr_t start, uintptr_t end, int32_t /*prot*/, int32_t /*flags*/, int32_t stack) {
-        mFileEmitter.emit(static_cast<double>(start), static_cast<double>(end), stack);
+        EMIT(mFileEmitter.emit(static_cast<double>(start), static_cast<double>(end), stack));
         checkStack(stack);
     });
 
@@ -240,7 +239,8 @@ void Parser::parseThread()
     mStart = timestamp();
     mLastSnapshot.time = mStart;
 
-    for (;;) {
+    bool done = false;
+    while (!done) {
         // LOG("loop.");
         {
             std::unique_lock<std::mutex> lock(mMutex);
@@ -248,23 +248,23 @@ void Parser::parseThread()
                 mCond.wait(lock);
             }
             if (mShutdown && mPacketSizeCount == 0) {
-                emitSnapshot(timestamp() - mStart);
+                mResolverThread->stop();
                 LOG("hepp stacks {}", mStacksResolved);
-                break;
-            }
+                done = true;
+            } else {
+                if (mDataOffset > data.size()) {
+                    data.resize(mDataOffset);
+                }
+                memcpy(data.data(), mData.data(), mDataOffset);
+                mDataOffset = 0;
 
-            if (mDataOffset > data.size()) {
-                data.resize(mDataOffset);
+                if (mPacketSizeCount > packetSizes.size()) {
+                    packetSizes.resize(mPacketSizeCount);
+                }
+                memcpy(packetSizes.data(), mPacketSizes.data(), mPacketSizeCount * sizeof(uint32_t));
+                packetSizeCount = mPacketSizeCount;
+                mPacketSizeCount = 0;
             }
-            memcpy(data.data(), mData.data(), mDataOffset);
-            mDataOffset = 0;
-
-            if (mPacketSizeCount > packetSizes.size()) {
-                packetSizes.resize(mPacketSizeCount);
-            }
-            memcpy(packetSizes.data(), mPacketSizes.data(), mPacketSizeCount * sizeof(uint32_t));
-            packetSizeCount = mPacketSizeCount;
-            mPacketSizeCount = 0;
         }
 
         size_t dataOffset = 0;
@@ -298,6 +298,8 @@ void Parser::parseThread()
             emitAddress(std::move(strAddress));
         }
     }
+
+    emitSnapshot(timestamp() - mStart);
 
     const uint32_t now = timestamp();
     LOG("Finished parsing {} events in {}ms", totalPacketNo, now - started);
@@ -495,7 +497,8 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         const uint64_t pageFaultSize = mPageFaults.size() * Limits::PageSize;
         if (mLastMemory.shouldSend(now, 250, 50, mMallocSize, pageFaultSize, .1)) {
             LOG("emitting memory");
-            mFileEmitter.emit(EmitType::Memory, now - mStart, static_cast<double>(mLastMemory.pageFaultBytes), static_cast<double>(mLastMemory.mallocBytes));
+            EMIT(mFileEmitter.emit(EmitType::Memory, now - mStart, static_cast<double>(mLastMemory.pageFaultBytes),
+                                   static_cast<double>(mLastMemory.mallocBytes)));
         }
 
         if (mLastSnapshot.shouldSend(now, 10000, 500, mMallocSize, pageFaultSize, .2)) {
