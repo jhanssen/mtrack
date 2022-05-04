@@ -6,13 +6,15 @@ import { Until } from "./Until";
 
 // needs to match EmitType in Parser.cpp
 const enum EventType {
-    Stack,
-    StackString,
-    StackAddr,
-    StackFrames,
     Malloc,
+    Memory,
     Mmap,
     PageFault,
+    Snapshot,
+    Stack,
+    StackAddr,
+    StackFrames,
+    StackString,
     ThreadName,
     Time
 }

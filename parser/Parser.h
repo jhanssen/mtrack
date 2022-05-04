@@ -138,8 +138,9 @@ private:
     void parsePacket(const uint8_t* data, uint32_t size);
     void parseThread();
     void resolveStack(int32_t idx);
-    inline Frame<int32_t> convertFrame(Frame<std::string> &&frame);
-    inline void emitAddress(Address<std::string> &&addr);
+    void writeSnapshot(uint32_t now);
+    Frame<int32_t> convertFrame(Frame<std::string> &&frame);
+    void emitAddress(Address<std::string> &&addr);
 
 private:
     const Options mOptions;
@@ -165,7 +166,7 @@ private:
         uint64_t mallocBytes {};
         uint32_t time {};
         int64_t combinedBytes() const { return mallocBytes + pageFaultBytes; }
-        bool shouldSend(uint32_t now, uint32_t timeThreshold,
+        bool shouldSend(uint32_t now, uint32_t timeThreshold, uint32_t growthTimeThreshold,
                         uint64_t mallocSize, uint64_t pageFaultSize, double growthThreshold)
         {
             if (now - time >= timeThreshold) {
@@ -176,7 +177,7 @@ private:
             }
             const int64_t combined = mallocSize + pageFaultSize;
             const auto delta = std::fabs((combined - combinedBytes()) / static_cast<double>(combined));
-            if (delta >= growthThreshold) {
+            if (delta >= growthThreshold && now - time >= growthTimeThreshold) {
                 time = now;
                 pageFaultBytes = pageFaultSize;
                 mallocBytes = mallocSize;

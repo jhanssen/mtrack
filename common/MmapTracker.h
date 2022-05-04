@@ -8,6 +8,8 @@
 class MmapTracker
 {
 public:
+    typedef std::vector<std::tuple<uintptr_t, uintptr_t, int32_t, int32_t, int32_t>> Mmaps;
+
     MmapTracker() = default;
 
     void mmap(void* addr, size_t size, int32_t prot, int32_t flags, int32_t stack);
@@ -22,9 +24,10 @@ public:
     template<typename Func>
     void forEach(Func&& func) const;
 
-private:
-    typedef std::vector<std::tuple<uintptr_t, uintptr_t, int32_t, int32_t, int32_t>> Mmaps;
+    const Mmaps& data() const;
+    size_t size() const;
 
+private:
     bool intersects(Mmaps::const_iterator it, uintptr_t start, uintptr_t end);
 
 private:
@@ -244,4 +247,14 @@ inline void MmapTracker::forEach(Func&& func) const
     for (const auto& t : mMmaps) {
         func(std::get<0>(t), std::get<1>(t), std::get<2>(t), std::get<3>(t), std::get<4>(t));
     }
+}
+
+inline const MmapTracker::Mmaps& MmapTracker::data() const
+{
+    return mMmaps;
+}
+
+inline size_t MmapTracker::size() const
+{
+    return mMmaps.size();
 }
