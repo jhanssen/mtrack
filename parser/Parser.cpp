@@ -204,7 +204,6 @@ inline void Parser::emitSnapshot(uint32_t now)
     };
 
     // emit a memory as well to ease parsing this in javascript
-    EMIT(mFileEmitter.emit(EmitType::Memory, now, static_cast<double>(mLastMemory.pageFaultBytes), static_cast<double>(mLastMemory.mallocBytes)));
     EMIT(mFileEmitter.emit(EmitType::Snapshot, now, static_cast<double>(mLastSnapshot.pageFaultBytes), static_cast<double>(mLastSnapshot.mallocBytes),
                            static_cast<uint32_t>(mPageFaults.size()), static_cast<uint32_t>(mMallocs.size()),
                            static_cast<uint32_t>(mMmaps.size())));
