@@ -20,4 +20,5 @@ void FileEmitter::writeBytes(const void* data, size_t size, WriteType)
         fprintf(stderr, "file write error\n");
         abort();
     }
+    mOffset += size;
 }

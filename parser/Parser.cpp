@@ -12,17 +12,12 @@
 #include <functional>
 
 enum class EmitType : uint8_t {
-    Malloc,
     Memory,
-    Mmap,
-    PageFault,
     Snapshot,
     Stack,
     StackAddr,
-    StackFrames,
     StackString,
-    ThreadName,
-    Time
+    ThreadName
 };
 
 namespace {
@@ -81,8 +76,9 @@ void Parser::onResolvedAddresses(std::vector<Address<std::string>>&& addresses)
     mResolvedAddresses.insert(mResolvedAddresses.end(), std::make_move_iterator(addresses.begin()), std::make_move_iterator(addresses.end()));
 }
 
-void Parser::resolveStack(int32_t idx)
+void Parser::emitStack(int32_t idx)
 {
+    ++mStacksResolved;
     // auto prior = mStackAddrIndexer.size();
     if (mLibraries.size() > mModules.size()) {
         // create new modules
@@ -126,7 +122,7 @@ void Parser::resolveStack(int32_t idx)
     std::vector<UnresolvedAddress> stackFrames;
     stackFrames.resize(numFrames);
     std::vector<UnresolvedAddress> unresolved;
-    EMIT(mFileEmitter.emit(EmitType::StackFrames, numFrames));
+    EMIT(mFileEmitter.emit(EmitType::Stack, idx, numFrames));
     for (uint32_t i = 0; i < numFrames; ++i) {
         void* ipptr;
         memcpy(&ipptr, data + (i * sizeof(void*)), sizeof(void*));
@@ -193,7 +189,7 @@ inline void Parser::emitAddress(Address<std::string> &&strAddr)
     }
 }
 
-inline void Parser::writeSnapshot(uint32_t now)
+inline void Parser::emitSnapshot(uint32_t now)
 {
     LOG("emitting snapshot");
     // send snapshot
@@ -208,8 +204,9 @@ inline void Parser::writeSnapshot(uint32_t now)
         newStacks.push_back(stack);
     };
 
-    const uint64_t pageFaultSize = mPageFaults.size() * Limits::PageSize;
-    mFileEmitter.emit(EmitType::Snapshot, now, static_cast<double>(pageFaultSize), static_cast<double>(mMallocSize),
+    // emit a memory as well to ease parsing this in javascript
+    mFileEmitter.emit(EmitType::Memory, now, static_cast<double>(mLastMemory.pageFaultBytes), static_cast<double>(mLastMemory.mallocBytes));
+    mFileEmitter.emit(EmitType::Snapshot, now, static_cast<double>(mLastSnapshot.pageFaultBytes), static_cast<double>(mLastSnapshot.mallocBytes),
                       static_cast<uint32_t>(mPageFaults.size()), static_cast<uint32_t>(mMallocs.size()),
                       static_cast<uint32_t>(mMmaps.size()));
 
@@ -227,7 +224,7 @@ inline void Parser::writeSnapshot(uint32_t now)
     });
 
     for (const int32_t stack : newStacks) {
-        resolveStack(stack);
+        emitStack(stack);
     }
 }
 
@@ -251,7 +248,8 @@ void Parser::parseThread()
                 mCond.wait(lock);
             }
             if (mShutdown && mPacketSizeCount == 0) {
-                writeSnapshot(timestamp());
+                emitSnapshot(timestamp() - mStart);
+                LOG("hepp stacks {}", mStacksResolved);
                 break;
             }
 
@@ -457,7 +455,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
             // resolveStack(stackIdx);
         }
         mMmaps.mmap(addr, size, prot, flags, stackIdx);
-        EMIT(mFileEmitter.emit(EmitType::Mmap, static_cast<double>(addr), static_cast<double>(size)));
+        //EMIT(mFileEmitter.emit(EmitType::Mmap, static_cast<double>(addr), static_cast<double>(size)));
         break; }
     case RecordType::MunmapUntracked:
     case RecordType::MunmapTracked: {
@@ -497,11 +495,11 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         const uint64_t pageFaultSize = mPageFaults.size() * Limits::PageSize;
         if (mLastMemory.shouldSend(now, 250, 50, mMallocSize, pageFaultSize, .1)) {
             LOG("emitting memory");
-            mFileEmitter.emit(EmitType::Memory, now, mLastMemory.mallocBytes, mLastMemory.pageFaultBytes);
+            mFileEmitter.emit(EmitType::Memory, now - mStart, static_cast<double>(mLastMemory.pageFaultBytes), static_cast<double>(mLastMemory.mallocBytes));
         }
 
         if (mLastSnapshot.shouldSend(now, 10000, 500, mMallocSize, pageFaultSize, .2)) {
-            writeSnapshot(now);
+            emitSnapshot(now - mStart);
         }
     }
     // if (mLastMemoryTime

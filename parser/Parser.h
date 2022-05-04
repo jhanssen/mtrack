@@ -137,10 +137,10 @@ public:
 private:
     void parsePacket(const uint8_t* data, uint32_t size);
     void parseThread();
-    void resolveStack(int32_t idx);
-    void writeSnapshot(uint32_t now);
     Frame<int32_t> convertFrame(Frame<std::string> &&frame);
+    void emitStack(int32_t idx);
     void emitAddress(Address<std::string> &&addr);
+    void emitSnapshot(uint32_t now);
 
 private:
     const Options mOptions;
@@ -152,6 +152,7 @@ private:
     std::unordered_map<uint64_t, std::optional<Address<int32_t>>> mAddressCache;
     std::mutex mResolvedAddressesMutex;
     std::vector<Address<std::string>> mResolvedAddresses;
+    size_t mStacksResolved {};
 
     std::vector<Library> mLibraries;
     std::vector<PageFault> mPageFaults;

@@ -1,35 +1,78 @@
 import { Frame, SingleFrame } from "./Frame";
-import { PageFault2 } from "./PageFault2";
-import { ParseResult } from "./ParseResult";
-import { Snapshot } from "./Snapshot";
-import { Until } from "./Until";
+import { assert } from "./Assert";
+
+export const PageSize = 4096;
 
 // needs to match EmitType in Parser.cpp
 const enum EventType {
-    Malloc,
     Memory,
-    Mmap,
-    PageFault,
     Snapshot,
     Stack,
     StackAddr,
-    StackFrames,
     StackString,
-    ThreadName,
-    Time
+    ThreadName
 }
 
-type FrameOrSingleFrame = Frame | SingleFrame | undefined;
-type Stack = FrameOrSingleFrame[];
+type FrameOrSingleFrame = Frame | SingleFrame;
+
+interface StackFrame {
+    ip: number,
+    frame?: FrameOrSingleFrame
+}
+
+type Stack = StackFrame[];
+
+export interface Memory {
+    time: number;
+    pageFault: number;
+    malloc: number;
+}
+
+interface Pagefault {
+    place: number;
+    ptid: number;
+    stackIdx: number;
+    time: number;
+}
+
+interface Malloc {
+    addr: number;
+    size: number;
+    ptid: number;
+    stackIdx: number;
+    time: number;
+}
+
+interface Mmap {
+    start: number;
+    end: number;
+    stackIdx: number;
+}
+
+export interface Snapshot {
+    time: number;
+    pageFault: number;
+    malloc: number;
+
+    pageFaults: Pagefault[];
+    mallocs: Malloc[];
+    mmaps: Mmap[];
+}
+
+export const enum CallbackType {
+    Memory,
+    Snapshot
+}
 
 export class Model2 {
     private _decoder: TextDecoder;
     private _data: ArrayBuffer;
     private _view: DataView;
     private _offset: number;
-    private _pageFaultMap?: Map<number, PageFault2[]>;
-    private _stacks: Stack[] | undefined;
     private _stackStrings: string[] | undefined;
+    private _stacks: Stack[] | undefined;
+    private _memories: Memory[] | undefined;
+    private _snapshots: Snapshot[] | undefined;
 
     constructor(data: ArrayBuffer) {
         this._decoder = new TextDecoder;
@@ -39,19 +82,19 @@ export class Model2 {
     }
 
     private _readFloat64() {
-        const n = this._view.getFloat64(this._offset);
+        const n = this._view.getFloat64(this._offset, true);
         this._offset += 8;
         return n;
     }
 
     private _readUint32() {
-        const n = this._view.getUint32(this._offset);
+        const n = this._view.getUint32(this._offset, true);
         this._offset += 4;
         return n;
     }
 
     private _readInt32() {
-        const n = this._view.getInt32(this._offset);
+        const n = this._view.getInt32(this._offset, true);
         this._offset += 4;
         return n;
     }
@@ -63,140 +106,134 @@ export class Model2 {
         return str;
     }
 
-    public parse(until?: Until, callback?: (snapshot: Snapshot) => void): ParseResult {
-        let eventNo = 0;
-        let pageFaults = 0;
-        let mallocs = 0;
-        let pageFaultSize = 0;
-        let mallocSize = 0;
-        let time = 0;
-        let callbackAt: number | undefined;
-        const stacks: FrameOrSingleFrame[][] = [];
+    public parse() {
+        const stacks: Stack[] = [];
         const stackStrings: string[] = [];
-        const stackAddrs: Map<number, FrameOrSingleFrame> = new Map();
         const threads: Map<number, string> = new Map();
-        let stackIdx = 0;
-
-        this._pageFaultMap = new Map();
-
-        const sendCallback = () => {
-            if (!callback) {
-                return;
-            }
-            callback(new Snapshot(pageFaultSize, time, eventNo));
-        };
+        const ipToStacks: Map<number, Stack[]> = new Map();
+        const memories: Memory[] = [];
+        const snapshots: Snapshot[] = [];
 
         while (this._offset < this._data.byteLength) {
             const et = this._view.getUint8(this._offset++);
+            // console.log("got event", et);
             switch (et) {
             case EventType.Stack: {
-                const idx = this._readUint32();
-                if (idx >= stacks.length) {
+                const idx = this._readInt32();
+                if (idx >= stacks.length || stacks[idx] === undefined) {
                     stacks[idx] = [];
                 }
-                stackIdx = idx;
+                const numFrames = this._readUint32();
+                for (let n = 0; n < numFrames; ++n) {
+                    const ip = this._readFloat64();
+                    stacks[idx].push({ ip });
+                    const ipts = ipToStacks.get(ip);
+                    if (ipts === undefined) {
+                        ipToStacks.set(ip, [ stacks[idx] ]);
+                    } else {
+                        ipts.push(stacks[idx]);
+                    }
+                }
                 break; }
             case EventType.StackString: {
                 const str = this._readString();
                 stackStrings.push(str);
                 break; }
             case EventType.StackAddr: {
+                let frame: FrameOrSingleFrame | undefined;
                 const ip = this._readFloat64();
-                const func = this._readInt32();
-                const file = this._readInt32();
-                const line = this._readInt32();
-                const inlsz = this._readInt32();
-                let frame: FrameOrSingleFrame;
-                if (inlsz === 0) {
-                    frame = [func, file, line];
-                } else {
-                    const inls: SingleFrame[] = []
-                    for (let inl = 0; inl < inlsz; ++inl) {
-                        const func = this._readInt32();
-                        const file = this._readInt32();
-                        const line = this._readInt32();
-                        inls.push([func, file, line]);
+                const numf = this._readUint32();
+                for (let n = 0; n < numf; ++n) {
+                    const func = this._readInt32();
+                    const file = this._readInt32();
+                    const line = this._readInt32();
+                    if (n === 0) {
+                        frame = [func, file, line];
+                    } else {
+                        assert(frame !== undefined);
+                        if (frame[3] === undefined) {
+                            frame[3] = [ [func, file, line] ];
+                        } else {
+                            frame[3].push([func, file, line]);
+                        }
                     }
-                    frame = [func, file, line, inls];
                 }
-                stackAddrs.set(ip, frame);
-                break; }
-            case EventType.StackFrames: {
-                const ip = this._readFloat64();
-                // goes into stackIdx
-                const addr = stackAddrs.get(ip);
-                if (addr === undefined) {
-                    // should not happen
-                    throw new Error(`Got undefined for stack ip ${ip}`);
+                if (frame !== undefined) {
+                    const ipts = ipToStacks.get(ip);
+                    if (ipts !== undefined) {
+                        for (const st of ipts) {
+                            for (let n = 0; n < st.length; ++n) {
+                                if (st[n].ip === ip) {
+                                    st[n].frame = frame;
+                                }
+                            }
+                        }
+                        ipToStacks.delete(ip);
+                    }
                 }
-                stacks[stackIdx].push(addr);
                 break; }
-            case EventType.Malloc: {
-                ++mallocs;
-                const ptid = this._readUint32();
-                const sz = this._readFloat64();
-                mallocSize = sz;
+            case EventType.Memory: {
+                const time = this._readUint32();
+                const pageFault = this._readFloat64();
+                const malloc = this._readFloat64();
+                // console.log("got mem", time, pageFault, malloc);
+                memories.push({ time, pageFault, malloc });
                 break; }
-            case EventType.Mmap: {
-                const addr = this._readFloat64();
-                const size = this._readFloat64();
-                break; }
-            case EventType.PageFault: {
-                ++pageFaults;
-                const addr = this._readFloat64();
-                const ptid = this._readUint32();
-                const sz = this._readFloat64();
-                pageFaultSize = sz;
-
-                const pageFaultEntry = this._pageFaultMap.get(stackIdx);
-                const pf2 = new PageFault2(stackIdx, undefined, ptid, time);
-                if (!pageFaultEntry) {
-                    this._pageFaultMap.set(stackIdx, [ pf2 ]);
-                } else {
-                    pageFaultEntry.push(pf2);
+            case EventType.Snapshot: {
+                const time = this._readUint32();
+                const pageFault = this._readFloat64();
+                const malloc = this._readFloat64();
+                const numPfs = this._readUint32();
+                const numMallocs = this._readUint32();
+                const numMmaps = this._readUint32();
+                const snapshot: Snapshot = { time, pageFault, malloc, pageFaults: [], mallocs: [], mmaps: [] };
+                for (let n = 0; n < numPfs; ++n) {
+                    const place = this._readFloat64();
+                    const ptid = this._readUint32();
+                    const stackIdx = this._readInt32();
+                    const time = this._readUint32();
+                    snapshot.pageFaults.push({ place, ptid, stackIdx, time });
                 }
+                for (let n = 0; n < numMallocs; ++n) {
+                    const addr = this._readFloat64();
+                    const size = this._readFloat64();
+                    const ptid = this._readUint32();
+                    const stackIdx = this._readInt32();
+                    const time = this._readUint32();
+                    snapshot.mallocs.push({ addr, size, ptid, stackIdx, time });
+                }
+                for (let n = 0; n < numMmaps; ++n) {
+                    const start = this._readFloat64();
+                    const end = this._readFloat64();
+                    const stackIdx = this._readInt32();
+                    snapshot.mmaps.push({ start, end, stackIdx });
+                }
+                snapshots.push(snapshot);
                 break; }
             case EventType.ThreadName: {
                 const ptid = this._readUint32();
                 const fn = this._readString();
                 threads.set(ptid, fn);
                 break; }
-            case EventType.Time: {
-                const ts = this._readUint32();
-                if (ts > time) {
-                    // call callback
-                    callbackAt = eventNo;
-                    sendCallback();
-                }
-                time = ts;
-                if (until && until.ms as number >= time) {
-                    break;
-                }
-                break; }
             default:
                 throw new Error(`Unhandled event type: ${et}`);
             }
-            if (until && until.event === eventNo) {
-                break;
-            }
-            ++eventNo;
         }
 
-        if (callbackAt === undefined || callbackAt < eventNo - 1) {
-            sendCallback();
-        }
-
+        this._snapshots = snapshots;
+        this._memories = memories.sort((m1, m2) => {
+            return m1.time - m2.time;
+        });
+        console.log(this._memories);
         this._stacks = stacks;
         this._stackStrings = stackStrings;
-
-        return { events: eventNo, pageFaults, time };
     }
 
-    get pageFaultsByStack(): Map<number, PageFault2[]> {
-        if (!this._pageFaultMap) {
+    get stackStrings(): string[] {
+        if (!this._stackStrings) {
             throw new Error("Not parsed");
         }
-        return this._pageFaultMap;
+        return this._stackStrings;
     }
 
     get stacks(): Stack[] {
@@ -206,10 +243,17 @@ export class Model2 {
         return this._stacks;
     }
 
-    get stackStrings(): string[] {
-        if (!this._stackStrings) {
+    get memories(): Memory[] {
+        if (!this._memories) {
             throw new Error("Not parsed");
         }
-        return this._stackStrings;
+        return this._memories;
+    }
+
+    get snapshots(): Snapshot[] {
+        if (!this._snapshots) {
+            throw new Error("Not parsed");
+        }
+        return this._snapshots;
     }
 }

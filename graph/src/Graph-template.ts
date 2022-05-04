@@ -1,6 +1,6 @@
 import { FlameGraph, flamegraph } from "d3-flame-graph";
 import { Line, ScaleLinear, axisBottom, axisLeft, extent, line, max, scaleLinear, select } from "d3";
-import { Model2 } from "./Model2";
+import { Model2, PageSize, Snapshot } from "./Model2";
 import { Stack } from "./Stack";
 
 type Margin = {
@@ -87,6 +87,7 @@ export class Graph {
                 })
                 .then(blob => blob.arrayBuffer())
                 .then(buffer => {
+                    console.log("got decompressed", buffer.byteLength);
                     this._model = new Model2(buffer);
                     for (const r of this._readies) {
                         r.resolve();
@@ -121,21 +122,28 @@ export class Graph {
         if (this._model === undefined) {
             throw new Error("init called with no model");
         }
-        const data: { time: number, used: number }[] = [];
-        this._model.parse(undefined, snapshot => {
-            data.push({ time: snapshot.time, used: snapshot.used / (1024 * 1024) });
-        });
+        const mdata: { time: number, used: number }[] = [];
+        const sdata: { time: number, used: number }[] = [];
+        this._model.parse();
+        for (const memory of this._model.memories) {
+            mdata.push({ time: memory.time, used: (memory.pageFault + memory.malloc) / (1024 * 1024) });
+        }
+        for (const snapshot of this._model.snapshots) {
+            sdata.push({ time: snapshot.time, used: (snapshot.pageFault + snapshot.malloc) / (1024 * 1024) });
+        }
+        console.log(mdata);
+        console.log(sdata);
         // @ts-ignore there's probably a nice way to do this
-        data.columns = ["time", "used"];
+        mdata.columns = ["time", "used"];
 
         // @ts-ignore
-        this._line.x.domain(extent(data, d => d.time));
+        this._line.x.domain(extent(mdata, d => d.time));
         // @ts-ignore
-        this._line.y.domain([0, max(data, d => d.used)]);
+        this._line.y.domain([0, max(mdata, d => d.used)]);
 
         // @ts-ignore
         this._line.svg.append("path")
-            .data([data])
+            .data([mdata])
             .attr("fill", "none")
             .attr("stroke", "steelblue")
             .attr("stroke-width", 4)
@@ -143,7 +151,7 @@ export class Graph {
 
         // @ts-ignore
         this._line.svg.selectAll("circles")
-            .data(data)
+            .data(sdata)
             .enter()
             .append("circle")
             .attr("fill", "red")
@@ -189,29 +197,49 @@ export class Graph {
         const children: Child[] = [];
         const data = { name: "nrdp", value: 0, children };
 
-        this._model.parse({ ms: time });
+        // find this snapshot
+        let snapshot: Snapshot | undefined;
+        for (const s of this._model.snapshots) {
+            if (s.time === time) {
+                snapshot = s;
+                break;
+            }
+        }
+
+        if (snapshot === undefined) {
+            throw new Error(`no such snapshot ${time}`);
+        }
+
+        // build a size per stack data structure
+        const byStack: Map<number, number> = new Map();
+        for (const pf of snapshot.pageFaults) {
+            byStack.set(pf.stackIdx, (byStack.get(pf.stackIdx) || 0) + PageSize);
+        }
 
         let cur = children;
-        for (const [ stackid, pfs ] of this._model.pageFaultsByStack) {
+        for (const [ stackIdx, bytes ] of byStack) {
             //console.log(stackid, pfs.length);
-            const stack = this._model.stacks[stackid];
+            const stack = this._model.stacks[stackIdx];
             //console.log(Stack.print(stack, this._data.strings));
-            const pfsize = pfs.length * 4096;
 
             for (let stackIdx = stack.length - 1; stackIdx >= 0; --stackIdx) {
-                const stackEntry = stack[stackIdx];
-                if (!stackEntry) {
+                const stackFrame = stack[stackIdx];
+                if (!stackFrame) {
                     continue;
                 }
-                const key = `${stackEntry[0]}:${stackEntry[1]}:${stackEntry[2]}`;
+                const frame = stackFrame.frame;
+                if (!frame) {
+                    throw new Error(`unresolved frame`);
+                }
+                const key = `${frame[0]}:${frame[1]}:${frame[2]}`;
                 let curIdx = cur.findIndex(e => {
                     return e.key === key;
                 });
                 if (curIdx === -1) {
                     curIdx = cur.length;
-                    cur.push({ name: Stack.stringifyFrame(stackEntry, this._model.stackStrings), value: pfsize, key, children: [] });
+                    cur.push({ name: Stack.stringifyFrame(frame, this._model.stackStrings), value: bytes, key, children: [] });
                 } else {
-                    cur[curIdx].value += pfsize;
+                    cur[curIdx].value += bytes;
                 }
                 cur = cur[curIdx].children;
             }
