@@ -12,6 +12,7 @@
 #include <cmath>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_set>
