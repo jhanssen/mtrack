@@ -2,7 +2,6 @@
 #include "Logger.h"
 #include "ResolverThread.h"
 #include <common/Limits.h>
-#include <common/Version.h>
 #include <common/MmapTracker.h>
 #include <fmt/core.h>
 #include <cassert>

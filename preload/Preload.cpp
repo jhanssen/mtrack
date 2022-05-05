@@ -5,7 +5,6 @@
 #include "Stack.h"
 #include <common/MmapTracker.h>
 #include <common/RecordType.h>
-#include <common/Version.h>
 #include <common/Limits.h>
 
 #include <assert.h>
