@@ -336,6 +336,10 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         return str;
     };
 
+    auto readUint8 = [data, &offset]() {
+        return data[offset++];
+    };
+
     auto readUint32 = [data, &offset]() {
         uint32_t ret;
         memcpy(&ret, data + offset, sizeof(uint32_t));
@@ -390,6 +394,33 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
     case RecordType::Executable:
         mExe = readString();
         break;
+    case RecordType::Command: {
+        bool handled = false;
+        const CommandType type = static_cast<CommandType>(readUint8());
+        switch (type) {
+        case CommandType::Invalid:
+            break;
+        case CommandType::DisableSnapshots:
+            mLastSnapshot.enabled = false;
+            handled = true;
+            break;
+        case CommandType::EnableSnapshots:
+            mLastSnapshot.enabled = true;
+            handled = true;
+            break;
+        case CommandType::Snapshot:
+            mLastSnapshot.time = timestamp();
+            mLastSnapshot.pageFaultBytes = mPageFaults.size() * Limits::PageSize;
+            mLastSnapshot.mallocBytes = mMallocSize;
+            emitSnapshot(mLastSnapshot.time - mStart);
+            handled = true;
+            break;
+        }
+        if (!handled) {
+            LOG("INVALID command type {}", static_cast<int>(type));
+            abort();
+        }
+        break; }
     case RecordType::WorkingDirectory:
         mCwd = readString() + '/';
         break;

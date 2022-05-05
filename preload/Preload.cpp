@@ -1,3 +1,4 @@
+#include "Preload.h"
 #include "NoHook.h"
 #include "PipeEmitter.h"
 #include "Spinlock.h"
@@ -54,6 +55,7 @@ typedef void* (*ReallocArraySig)(void*, size_t, size_t);
 typedef int (*Posix_MemalignSig)(void **, size_t, size_t);
 typedef void* (*Aligned_AllocSig)(size_t, size_t);
 
+namespace {
 inline uint64_t alignToPage(uint64_t size)
 {
     return size + (((~size) + 1) & (Limits::PageSize - 1));
@@ -69,6 +71,7 @@ inline uint64_t mmap_ptr_cast(void *ptr)
     const uint64_t ret = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr));
     return ret + (Limits::PageSize - (ret % Limits::PageSize)) - Limits::PageSize;
 }
+} // anonymous namespace
 
 template<size_t Size>
 class Allocator
@@ -997,4 +1000,28 @@ void* aligned_alloc(size_t alignment, size_t size)
     return ret;
 }
 
+
+void mtrack_snapshot()
+{
+    if (data) {
+        PipeEmitter emitter(data->emitPipe[1]);
+        emitter.emit(RecordType::Command, CommandType::Snapshot);
+    }
+}
+
+void mtrack_disable_snapshots()
+{
+    if (data) {
+        PipeEmitter emitter(data->emitPipe[1]);
+        emitter.emit(RecordType::Command, CommandType::DisableSnapshots);
+    }
+}
+
+void mtrack_enable_snapshots()
+{
+    if (data) {
+        PipeEmitter emitter(data->emitPipe[1]);
+        emitter.emit(RecordType::Command, CommandType::EnableSnapshots);
+    }
+}
 } // extern "C"

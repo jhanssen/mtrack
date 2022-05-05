@@ -1,28 +1,39 @@
 #pragma once
 
+
+enum class CommandType : uint8_t {
+    Invalid,
+    DisableSnapshots,
+    EnableSnapshots,
+    Snapshot,
+    Max = Snapshot
+};
+
 enum class RecordType : uint8_t {
-    Invalid          = 0,
-    Executable       = 1,
-    Free             = 2,
-    Library          = 3,
-    LibraryHeader    = 4,
-    MadviseTracked   = 5,
-    MadviseUntracked = 6,
-    Malloc           = 7,
-    MmapTracked      = 8,
-    MmapUntracked    = 9,
-    MunmapTracked    = 10,
-    MunmapUntracked  = 11,
-    PageFault        = 12,
-    ThreadName       = 13,
-    WorkingDirectory = 14,
-    Max              = WorkingDirectory
+    Invalid,
+    Command,
+    Executable,
+    Free,
+    Library,
+    LibraryHeader,
+    MadviseTracked,
+    MadviseUntracked,
+    Malloc,
+    MmapTracked,
+    MmapUntracked,
+    MunmapTracked,
+    MunmapUntracked,
+    PageFault,
+    ThreadName,
+    WorkingDirectory,
+    Max = WorkingDirectory
 };
 
 inline static const char *recordTypeToString(RecordType t)
 {
     switch (t) {
     case RecordType::Invalid: break;
+    case RecordType::Command: return "Command";
     case RecordType::Executable: return "Executable";
     case RecordType::Free: return "Free";
     case RecordType::Library: return "Library";

@@ -163,6 +163,7 @@ private:
     std::vector<std::shared_ptr<Module>> mModules;
 
     struct {
+        bool enabled { true };
         uint64_t pageFaultBytes {};
         uint64_t mallocBytes {};
         uint32_t time {};
@@ -170,6 +171,8 @@ private:
         bool shouldSend(uint32_t now, uint32_t timeThreshold, uint32_t growthTimeThreshold,
                         uint64_t mallocSize, uint64_t pageFaultSize, double growthThreshold)
         {
+            if (!enabled)
+                return false;
             if (now - time >= timeThreshold) {
                 time = now;
                 pageFaultBytes = pageFaultSize;
