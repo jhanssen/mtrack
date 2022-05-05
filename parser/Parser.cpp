@@ -440,9 +440,14 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
             mPendingStacks.insert(stackIdx);
             // resolveStack(stackIdx);
         }
-        auto it = std::upper_bound(mPageFaults.begin(), mPageFaults.end(), place, [](auto place, const auto& item) {
-            return place < item.place;
+        auto it = std::lower_bound(mPageFaults.begin(), mPageFaults.end(), place, [](const auto& item, auto place) {
+            return item.place < place;
         });
+        if (it != mPageFaults.end() && it->place == place) {
+            // already got this fault?
+            break;
+        }
+        assert(it == mPageFaults.end() || it->place > place);
         now = timestamp();
         mPageFaults.insert(it, PageFault { place, ptid, stackIdx, now - mStart });
         //EMIT(mFileEmitter.emit(EmitType::PageFault, static_cast<double>(place), ptid));
