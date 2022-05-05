@@ -131,6 +131,8 @@ template<typename T>
 inline size_t Emitter::emit_helper(T&& str, WriteType type) requires detail::HasDataSize<std::decay_t<T>>
 {
     const size_t ret = emit_helper(str.size(), WriteType::Continuation);
+    if (str.size() == 0)
+        return ret;
     writeBytes(str.data(), str.size(), type);
     return ret + str.size();
 }

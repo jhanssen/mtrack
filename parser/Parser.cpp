@@ -13,6 +13,7 @@
 enum class EmitType : uint8_t {
     Memory,
     Snapshot,
+    SnapshotName,
     Stack,
     StackAddr,
     StackString,
@@ -409,13 +410,15 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
             mLastSnapshot.enabled = true;
             handled = true;
             break;
-        case CommandType::Snapshot:
+        case CommandType::Snapshot: {
             mLastSnapshot.time = timestamp();
             mLastSnapshot.pageFaultBytes = mPageFaults.size() * Limits::PageSize;
             mLastSnapshot.mallocBytes = mMallocSize;
             emitSnapshot(mLastSnapshot.time - mStart);
+            const auto name = readHashableString();
+            EMIT(mFileEmitter.emit(EmitType::SnapshotName, name));
             handled = true;
-            break;
+            break; }
         }
         if (!handled) {
             LOG("INVALID command type {}", static_cast<int>(type));

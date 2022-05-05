@@ -1000,11 +1000,17 @@ void* aligned_alloc(size_t alignment, size_t size)
 }
 
 
-void mtrack_snapshot()
+void mtrack_snapshot(const char* name, size_t nameSize)
 {
     if (data) {
         PipeEmitter emitter(data->emitPipe[1]);
-        emitter.emit(RecordType::Command, CommandType::Snapshot);
+        if (name != nullptr) {
+            if (nameSize == 0)
+                nameSize = strlen(name);
+            emitter.emit(RecordType::Command, CommandType::Snapshot, Emitter::String(name, nameSize));
+        } else {
+            emitter.emit(RecordType::Command, CommandType::Snapshot, static_cast<uint32_t>(0));
+        }
     }
 }
 

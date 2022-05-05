@@ -7,6 +7,7 @@ export const PageSize = 4096;
 const enum EventType {
     Memory,
     Snapshot,
+    SnapshotName,
     Stack,
     StackAddr,
     StackString,
@@ -50,6 +51,7 @@ interface Mmap {
 }
 
 export interface Snapshot {
+    name?: string;
     time: number;
     pageFault: number;
     malloc: number;
@@ -210,6 +212,10 @@ export class Model2 {
                     snapshot.mmaps.push({ start, end, stackIdx });
                 }
                 snapshots.push(snapshot);
+                break; }
+            case EventType.SnapshotName: {
+                const n = this._readString();
+                snapshots[snapshots.length - 1].name = n ? n : undefined;
                 break; }
             case EventType.ThreadName: {
                 const ptid = this._readUint32();

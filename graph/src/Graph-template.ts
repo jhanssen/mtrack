@@ -1,6 +1,6 @@
 import "d3-transition";
 import { FlameGraph, flamegraph } from "d3-flame-graph";
-import { Line, ScaleLinear, axisBottom, axisLeft, easeCubic, extent, line, max, scaleLinear, select } from "d3";
+import { Line, ScaleLinear, axisBottom, axisLeft, easeCubic, event, extent, line, max, scaleLinear, select } from "d3";
 import { Model2, PageSize, Snapshot } from "./Model2";
 import { Stack } from "./Stack";
 
@@ -123,10 +123,17 @@ export class Graph {
         if (this._model === undefined) {
             throw new Error("init called with no model");
         }
+
+        interface StackData {
+            time: number;
+            used: number;
+            name?: string;
+        }
+
         const mdata_t: { time: number, used: number }[] = [];
         const mdata_p: { time: number, used: number }[] = [];
         const mdata_m: { time: number, used: number }[] = [];
-        const sdata_t: { time: number, used: number }[] = [];
+        const sdata_t: StackData[] = [];
         this._model.parse();
         for (const memory of this._model.memories) {
             mdata_t.push({ time: memory.time, used: (memory.pageFault + memory.malloc) / (1024 * 1024) });
@@ -134,7 +141,7 @@ export class Graph {
             mdata_m.push({ time: memory.time, used: memory.malloc / (1024 * 1024) });
         }
         for (const snapshot of this._model.snapshots) {
-            sdata_t.push({ time: snapshot.time, used: (snapshot.pageFault + snapshot.malloc) / (1024 * 1024) });
+            sdata_t.push({ time: snapshot.time, used: (snapshot.pageFault + snapshot.malloc) / (1024 * 1024), name: snapshot.name });
         }
         // @ts-ignore there's probably a nice way to do this
         mdata_t.columns = ["time", "used"];
@@ -160,6 +167,10 @@ export class Graph {
             .attr("stroke-width", 4)
             .attr("d", this._line.valueLine)
 
+        const toolTip = select("body").append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
+
         // @ts-ignore
         this._line.svg.selectAll("circles")
             .data(sdata_t)
@@ -172,16 +183,34 @@ export class Graph {
             // @ts-ignore
             .attr("cy", d => this._line.y(d.used))
             .attr("r", 3)
-            .on("mouseover", function() {
+            .on("mouseover", function(d: StackData) {
                 /* eslint-disable-next-line no-invalid-this */ /* @ts-ignore */
                 select(this).transition()
                     .duration(100)
                     .attr("r", 8);
+                let str = `${d.used}`;
+                let yoff = 28;
+                if (d.name) {
+                    str += `<br/>(${d.name})`;
+                    yoff += 20;
+                }
+                const avent = event;
+                setTimeout(() => {
+                    toolTip.transition()
+                        .duration(200)
+                        .style("opacity", 0.9);
+                    toolTip.html(str)
+                        .style("left", (avent.pageX) + "px")
+                        .style("top", (avent.pageY - yoff) + "px");
+                }, 100);
             }).on("mouseout", function() {
                 /* eslint-disable-next-line no-invalid-this */ /* @ts-ignore */
                 select(this).transition()
                     .duration(50)
                     .attr("r", 3);
+                toolTip.transition()
+                    .duration(500)
+                    .style("opacity", 0);
                 // @ts-ignore
             }).on("click", (d, i) => {
                 this._flameify(d.time);
