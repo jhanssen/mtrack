@@ -1,3 +1,4 @@
+import "d3-transition";
 import { FlameGraph, flamegraph } from "d3-flame-graph";
 import { Line, ScaleLinear, axisBottom, axisLeft, easeCubic, extent, line, max, scaleLinear, select } from "d3";
 import { Model2, PageSize, Snapshot } from "./Model2";
