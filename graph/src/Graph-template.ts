@@ -255,6 +255,9 @@ export class Graph {
         for (const pf of snapshot.pageFaults) {
             byStack.set(pf.stackIdx, (byStack.get(pf.stackIdx) || 0) + PageSize);
         }
+        for (const m of snapshot.mallocs) {
+            byStack.set(m.stackIdx, (byStack.get(m.stackIdx) || 0) + m.size);
+        }
 
         let cur = children;
         for (const [ stackIdx, bytes ] of byStack) {
