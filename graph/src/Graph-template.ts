@@ -188,7 +188,7 @@ export class Graph {
                 select(this).transition()
                     .duration(100)
                     .attr("r", 8);
-                let str = `${d.used}`;
+                let str = `${d.used.toFixed(2)}`;
                 let yoff = 28;
                 if (d.name) {
                     str += `<br/>(${d.name})`;
