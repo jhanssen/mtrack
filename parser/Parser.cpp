@@ -298,7 +298,9 @@ void Parser::parseThread()
         }
     }
 
-    emitSnapshot(timestamp() - mStart);
+    if (mLastSnapshot.enabled) {
+        emitSnapshot(timestamp() - mStart);
+    }
 
     const uint32_t now = timestamp();
     LOG("Finished parsing {} events in {}ms", totalPacketNo, now - started);
