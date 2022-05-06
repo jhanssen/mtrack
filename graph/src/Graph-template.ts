@@ -35,11 +35,29 @@ interface WalkEntry {
     child?: GraphChild;
 }
 
+interface WalkStack {
+    hash: number;
+    entries: WalkEntry[];
+}
+
 declare class DecompressionStream {
     constructor(format: string);
 
     readonly readable: ReadableStream<BufferSource>;
     readonly writable: WritableStream<Uint8Array>;
+}
+
+// lifted from https://stackoverflow.com/questions/7616461/generate-a-hash-from-string-in-javascript
+function cyrb53(str: string, seed: number = 0) {
+    let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+    for (let i = 0, ch; i < str.length; i++) {
+        ch = str.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1>>>16), 2246822507) ^ Math.imul(h2 ^ (h2>>>13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2>>>16), 2246822507) ^ Math.imul(h1 ^ (h1>>>13), 3266489909);
+    return 4294967296 * (2097151 & h2) + (h1>>>0);
 }
 
 export class Graph {
@@ -349,17 +367,39 @@ export class Graph {
     private static _diff(newSnapshot: GraphSnapshot, oldSnapshot: GraphSnapshot) {
         const stackEquals = (a: WalkEntry[], b: WalkEntry[]) => a.length === b.length && a.every((item, index) => b[index].ip === item.ip);
 
-        // walk to each leaf node, building a stack. then find the exact same stack in the other snapshot
-        Graph._walkStack(newSnapshot.children, (newStack: WalkEntry[]) => {
-            Graph._walkStack(oldSnapshot.children, (oldStack: WalkEntry[]) => {
-                if (stackEquals(newStack, oldStack)) {
-                    assert(newStack.length === oldStack.length);
+        // build a list of leaf stacks for new and old snapshots
+        const newStacks: WalkStack[] = [];
+        Graph._walkStack(newSnapshot.children, (entries: WalkEntry[]) => {
+            let h = "";
+            for (const e of entries) {
+                h += e.ip + ":";
+            }
+            newStacks.push({ hash: cyrb53(h), entries: entries.slice(0) });
+            return true;
+        });
+
+        const oldStacks: WalkStack[] = [];
+        Graph._walkStack(oldSnapshot.children, (entries: WalkEntry[]) => {
+            let h = "";
+            for (const e of entries) {
+                h += e.ip + ":";
+            }
+            oldStacks.push({ hash: cyrb53(h), entries: entries.slice(0) });
+            return true;
+        });
+
+        // walk each new leaf node, then find the exact same stack in the other snapshot
+        for (const ns of newStacks) {
+            // find this stack in oldStacks
+            for (const os of oldStacks) {
+                if (os.hash === ns.hash && stackEquals(os.entries, ns.entries)) {
+                    assert(ns.entries.length === os.entries.length);
                     let removed = 0, done = false;
-                    for (let i = newStack.length - 1; i >= 0; --i) {
-                        const newChild = newStack[i].child;
+                    for (let i = ns.entries.length - 1; i >= 0; --i) {
+                        const newChild = ns.entries[i].child;
                         assert(newChild !== undefined);
                         if (!done) {
-                            const oldChild = oldStack[i].child;
+                            const oldChild = os.entries[i].child;
                             assert(oldChild !== undefined);
                             newChild.value -= oldChild.value;
                             if (newChild.value <= 0) {
@@ -377,12 +417,10 @@ export class Graph {
                             }
                         }
                     }
-                    return false;
+                    break;
                 }
-                return true;
-            });
-            return true;
-        });
+            }
+        }
 
         // then finally go and remove any children with a value < 0
         const remove = (children: GraphChild[]) => {
