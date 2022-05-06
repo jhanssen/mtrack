@@ -1,6 +1,6 @@
 import "d3-transition";
 import { FlameGraph, flamegraph } from "d3-flame-graph";
-import { Line, ScaleLinear, axisBottom, axisLeft, easeCubic, event, extent, line, max, scaleLinear, select } from "d3";
+import { Line, ScaleLinear, axisBottom, axisLeft, easeCubic, extent, line, max, scaleLinear, select } from "d3";
 import { Model2, PageSize, Snapshot } from "./Model2";
 import { Stack } from "./Stack";
 
@@ -183,7 +183,7 @@ export class Graph {
             // @ts-ignore
             .attr("cy", d => this._line.y(d.used))
             .attr("r", 3)
-            .on("mouseover", function(d: StackData) {
+            .on("mouseover", function(event: MouseEvent, d: StackData) {
                 /* eslint-disable-next-line no-invalid-this */ /* @ts-ignore */
                 select(this).transition()
                     .duration(100)
@@ -212,7 +212,7 @@ export class Graph {
                     .duration(500)
                     .style("opacity", 0);
                 // @ts-ignore
-            }).on("click", (d, i) => {
+            }).on("click", (e, d, i) => {
                 this._flameify(d.time);
                 console.log("clk", d, i);
             });

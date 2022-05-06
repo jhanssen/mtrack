@@ -22,7 +22,7 @@ endforeach()
 set(BUILD_FILES
     ${CMAKE_CURRENT_LIST_DIR}/rollup.config.ts
     ${CMAKE_CURRENT_LIST_DIR}/package.json
-    ${CMAKE_CURRENT_LIST_DIR}/package-lock.json
+    ${CMAKE_CURRENT_LIST_DIR}/yarn.lock
     ${CMAKE_CURRENT_LIST_DIR}/.eslintrc
     ${CMAKE_CURRENT_LIST_DIR}/index.html
     ${CMAKE_CURRENT_LIST_DIR}/tsconfig.json)
