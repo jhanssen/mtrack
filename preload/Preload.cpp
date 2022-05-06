@@ -279,6 +279,18 @@ static void hookThread()
                     }
                     // printf("  - handled pagefault\n");
                     break; }
+                case UFFD_EVENT_REMAP: {
+                    const auto from = static_cast<uint64_t>(fault_msg.arg.remap.from);
+                    const auto to = static_cast<uint64_t>(fault_msg.arg.remap.to);
+                    const auto len = static_cast<uint64_t>(fault_msg.arg.remap.len);
+                    emitter.emit(RecordType::PageRemap, from, to, len);
+                    break; }
+                case UFFD_EVENT_REMOVE:
+                case UFFD_EVENT_UNMAP: {
+                    const auto start = static_cast<uint64_t>(fault_msg.arg.remove.start);
+                    const auto end = static_cast<uint64_t>(fault_msg.arg.remove.end);
+                    emitter.emit(RecordType::PageRemove, start, end);
+                    break; }
                 }
             } else if (r != -1 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
                 // read error
@@ -498,7 +510,7 @@ void Hooks::hook()
 
     uffdio_api api = {
         .api = UFFD_API,
-        .features = UFFD_FEATURE_THREAD_ID //| UFFD_FEATURE_EVENT_REMAP | UFFD_FEATURE_EVENT_REMOVE | UFFD_FEATURE_EVENT_UNMAP
+        .features = UFFD_FEATURE_THREAD_ID | UFFD_FEATURE_EVENT_REMAP | UFFD_FEATURE_EVENT_REMOVE | UFFD_FEATURE_EVENT_UNMAP
     };
     if (ioctl(data->faultFd, UFFDIO_API, &api)) {
         safePrint("no ioctl api\n");
@@ -696,12 +708,6 @@ int munmap(void* addr, size_t length)
         return callbacks.munmap(addr, length);
 
     NoHook nohook;
-    // if (len > 1000000) {
-    //     printf("3--\n");
-    //     for (const auto& item : data->mmapRanges) {
-    //         printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
-    //     }
-    // }
 
     uint64_t deallocated;
     {
@@ -712,38 +718,8 @@ int munmap(void* addr, size_t length)
     PipeEmitter emitter(data->emitPipe[1]);
     emitter.emit(deallocated > 0 ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
                  mmap_ptr_cast(addr), alignToPage(length));
-    // if (updated) {
-    //     printf("2--\n");
-    //     for (const auto& item : data->mmapRanges) {
-    //         printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
-    //     }
-    // }
 
-    const auto ret = callbacks.munmap(addr, length);
-    // if (len > 1000000) {
-    //     int j, nptrs;
-    //     void *buffer[100];
-    //     char **strings;
-
-    //     nptrs = backtrace(buffer, 100);
-    //     printf("backtrace() returned %d addresses\n", nptrs);
-
-    //     /* The call backtrace_symbols_fd(buffer, nptrs, STDOUT_FILENO)
-    //        would produce similar output to the following: */
-
-    //     strings = backtrace_symbols(buffer, nptrs);
-    //     if (strings == NULL) {
-    //         perror("backtrace_symbols");
-    //         exit(EXIT_FAILURE);
-    //     }
-
-    //     for (j = 0; j < nptrs; j++)
-    //         printf("%s\n", strings[j]);
-
-    //     free(strings);
-    // }
-    // printf("-unmapped %p %d\n", addr, ret);
-    return ret;
+    return callbacks.munmap(addr, length);
 }
 
 int mprotect(void* addr, size_t len, int prot)
@@ -791,17 +767,41 @@ int mprotect(void* addr, size_t len, int prot)
 
 void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
 {
-    // printf("======!~!!!!!!!==== mremap!!!\n");
-    abort();
+    void* ret;
     if (flags & MREMAP_FIXED) {
         va_list ap;
         va_start(ap, flags);
         void* new_address = va_arg(ap, void*);
         va_end(ap);
 
-        return callbacks.mremap(addr, old_size, new_size, flags, new_address);
+        ret = callbacks.mremap(addr, old_size, new_size, flags, new_address);
+        if (ret != MAP_FAILED) {
+            uint64_t deallocated;
+            {
+                ScopedSpinlock lock(data->mmapTrackerLock);
+                deallocated = data->mmapTracker.munmap(new_address, new_size);
+            }
+            PipeEmitter emitter(data->emitPipe[1]);
+            emitter.emit(deallocated > 0 ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
+                         mmap_ptr_cast(new_address), alignToPage(new_size));
+        }
+    } else {
+        ret = callbacks.mremap(addr, old_size, new_size, flags);
     }
-    return callbacks.mremap(addr, old_size, new_size, flags);
+    if (ret == MAP_FAILED) {
+        return ret;
+    }
+
+    {
+        ScopedSpinlock lock(data->mmapTrackerLock);
+        data->mmapTracker.mremap(addr, ret, old_size, new_size, 0);
+    }
+
+    PipeEmitter emitter(data->emitPipe[1]);
+    emitter.emit(RecordType::Mremap, mmap_ptr_cast(addr), alignToPage(old_size),
+                 mmap_ptr_cast(ret), alignToPage(new_size), flags, gettid(), Stack());
+
+    return ret;
 }
 
 int madvise(void* addr, size_t length, int advice)

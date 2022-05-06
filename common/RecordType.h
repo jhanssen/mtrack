@@ -21,9 +21,12 @@ enum class RecordType : uint8_t {
     Malloc,
     MmapTracked,
     MmapUntracked,
+    Mremap,
     MunmapTracked,
     MunmapUntracked,
     PageFault,
+    PageRemap,
+    PageRemove,
     ThreadName,
     WorkingDirectory,
     Max = WorkingDirectory
@@ -43,9 +46,12 @@ inline static const char *recordTypeToString(RecordType t)
     case RecordType::Malloc: return "Malloc";
     case RecordType::MmapTracked: return "MmapTracked";
     case RecordType::MmapUntracked: return "MmapUntracked";
+    case RecordType::Mremap: return "Mremap";
     case RecordType::MunmapTracked: return "MunmapTracked";
     case RecordType::MunmapUntracked: return "MunmapUntracked";
     case RecordType::PageFault: return "PageFault";
+    case RecordType::PageRemap: return "PageRemap";
+    case RecordType::PageRemove: return "PageRemove";
     case RecordType::ThreadName: return "ThreadName";
     case RecordType::WorkingDirectory: return "WorkingDirectory";
     }

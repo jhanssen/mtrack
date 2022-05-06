@@ -28,6 +28,8 @@ public:
     int32_t mprotect(uintptr_t addr, size_t size, int32_t prot);
     uint64_t madvise(void* addr, size_t size);
     uint64_t madvise(uintptr_t addr, size_t size);
+    void mremap(void* oldAddr, void* newAddr, size_t oldSize, size_t newSize, int32_t stack);
+    void mremap(uintptr_t oldAddr, uintptr_t newAddr, size_t oldSize, size_t newSize, int32_t stack);
 
     template<typename Func>
     void forEach(Func&& func) const;
@@ -247,6 +249,24 @@ inline uint64_t MmapTracker::madvise(uintptr_t iaddr, size_t size)
 inline uint64_t MmapTracker::madvise(void* addr, size_t size)
 {
     return madvise(reinterpret_cast<uintptr_t>(addr), size);
+}
+
+inline void MmapTracker::mremap(uintptr_t oldAddr, uintptr_t newAddr, size_t oldSize, size_t newSize, int32_t stack)
+{
+    auto [ it, insertit ] = find(oldAddr);
+    if (it == mMmaps.end())
+        return;
+
+    const auto curprot = it->prot;
+    const auto curflags = it->prot;
+
+    munmap(oldAddr, oldSize);
+    mmap(newAddr, newSize, curprot, curflags, stack);
+}
+
+inline void MmapTracker::mremap(void* oldAddr, void* newAddr, size_t oldSize, size_t newSize, int32_t stack)
+{
+    mremap(reinterpret_cast<uintptr_t>(oldAddr), reinterpret_cast<uintptr_t>(newAddr), oldSize, newSize, stack);
 }
 
 template<typename Func>

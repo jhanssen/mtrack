@@ -308,18 +308,43 @@ void Parser::parseThread()
     LOG("Finished parsing {} events in {}ms", totalPacketNo, now - started);
 }
 
+static bool comparePageFaultItem(const PageFault& item, uint64_t start)
+{
+    return item.place < start;
+}
+
 void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
 {
     ++mPacketNo;
 
     auto removePageFaults = [this](uint64_t start, uint64_t end) {
-        auto item = std::lower_bound(mPageFaults.begin(), mPageFaults.end(), start, [](const auto& item, auto start) {
-            return item.place < start;
-        });
+        auto item = std::lower_bound(mPageFaults.begin(), mPageFaults.end(), start, comparePageFaultItem);
         while (item != mPageFaults.end() && intersects(start, end, item->place, item->place + Limits::PageSize)) {
             item = mPageFaults.erase(item);
-            // assert(mPageFaultSize >= Limits::PageSize);
-            // mPageFaultSize -= Limits::PageSize;
+        }
+    };
+
+    auto remapPageFaults = [this](uint64_t from, uint64_t to, uint64_t len) {
+        const auto fromEnd = from + len;
+        std::vector<PageFault> removed;
+        // is 5 a good number?
+        removed.reserve(5);
+
+        auto item = std::lower_bound(mPageFaults.begin(), mPageFaults.end(), from, comparePageFaultItem);
+        while (item != mPageFaults.end() && intersects(from, fromEnd, item->place, item->place + Limits::PageSize)) {
+            // remove item at 'from'
+            item->place -= from;
+            removed.push_back(*item);
+            item = mPageFaults.erase(item);
+        }
+
+        for (auto& item : removed) {
+            // reinsert item at 'to'
+            item.place += to;
+            auto newit = std::lower_bound(mPageFaults.begin(), mPageFaults.end(), item.place, comparePageFaultItem);
+            if (newit == mPageFaults.end() || newit->place > item.place) {
+                mPageFaults.insert(newit, item);
+            }
         }
     };
 
@@ -456,6 +481,17 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         mPageFaults.insert(it, PageFault { place, ptid, stackIdx, now - mStart });
         //EMIT(mFileEmitter.emit(EmitType::PageFault, static_cast<double>(place), ptid));
         break; }
+    case RecordType::PageRemap: {
+        const auto from = readUint64();
+        const auto to = readUint64();
+        const auto len = readUint64();
+        remapPageFaults(from, to, len);
+        break; }
+    case RecordType::PageRemove: {
+        const auto start = readUint64();
+        const auto end = readUint64();
+        removePageFaults(start, end);
+        break; }
     case RecordType::Malloc: {
         const auto addr = readUint64();
         const auto size = readUint64();
@@ -500,11 +536,25 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         mMmaps.mmap(addr, size, prot, flags, stackIdx);
         //EMIT(mFileEmitter.emit(EmitType::Mmap, static_cast<double>(addr), static_cast<double>(size)));
         break; }
+    case RecordType::Mremap: {
+        const auto oldAddr = readUint64();
+        const auto oldSize = readUint64();
+        const auto newAddr = readUint64();
+        const auto newSize = readUint64();
+        const auto flags = readInt32();
+        const auto ptid = readUint64();
+        static_cast<void>(flags);
+        static_cast<void>(ptid);
+        const auto [ stackIdx, stackInserted ] = readHashable(Hashable::Stack);
+        if (stackInserted) {
+            mPendingStacks.insert(stackIdx);
+        }
+        mMmaps.mremap(oldAddr, newAddr, oldSize, newSize, stackIdx);
+        break; }
     case RecordType::MunmapUntracked:
     case RecordType::MunmapTracked: {
         const auto addr = readUint64();
         const auto size = readUint64();
-        removePageFaults(addr, addr + size);
         // EMIT(mFileEmitter.emit(EmitType::PageFault));
         mMmaps.munmap(addr, size);
         break; }
@@ -513,10 +563,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         const auto addr = readUint64();
         const auto size = readUint64();
         const auto advice = readInt32();
-        if (advice == MADV_DONTNEED) {
-            removePageFaults(addr, addr + size);
-            // EMIT(mFileEmitter.emit(EmitType::PageFault));
-        }
+        static_cast<void>(advice);
         mMmaps.madvise(addr, size);
         break; }
     case RecordType::ThreadName: {
