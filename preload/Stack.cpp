@@ -130,3 +130,8 @@ Stack::Stack(unsigned ptid)
 #endif
     }
 }
+
+void Stack::flushCache()
+{
+    unw_flush_cache(unw_local_addr_space, 0, 0);
+}

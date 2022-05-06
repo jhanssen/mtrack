@@ -836,7 +836,9 @@ void* dlopen(const char* filename, int flags)
         std::call_once(hookOnce, Hooks::hook);
     }
     data->modulesDirty.store(true, std::memory_order_release);
-    return callbacks.dlopen(filename, flags);
+    void* ret = callbacks.dlopen(filename, flags);
+    Stack::flushCache();
+    return ret;
 }
 
 int dlclose(void* handle)
@@ -848,7 +850,9 @@ int dlclose(void* handle)
     if (data) {
         data->modulesDirty.store(true, std::memory_order_release);
     }
-    return callbacks.dlclose(handle);
+    int ret = callbacks.dlclose(handle);
+    Stack::flushCache();
+    return ret;
 }
 
 int pthread_setname_np(pthread_t thread, const char* name)

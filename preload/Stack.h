@@ -15,6 +15,8 @@ public:
     const void* data() const { return mPtrs.data(); }
     uint32_t size() const { return mCount * sizeof(void*); }
 
+    static void flushCache();
+
 private:
     struct StackInitializer
     {
