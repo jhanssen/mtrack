@@ -264,7 +264,7 @@ static void hookThread()
                     emitter.emit(RecordType::PageFault, place, ptid, Stack(ptid));
                     uffdio_zeropage zero = {
                         .range = {
-                            .start = place,
+                            .start = place & ~(Limits::PageSize - 1),
                             .len = Limits::PageSize
                         },
                         .mode = 0
