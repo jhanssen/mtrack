@@ -125,6 +125,7 @@ public:
         size_t fileSize { std::numeric_limits<size_t>::max() };
         size_t maxEventCount { std::numeric_limits<size_t>::max() };
         size_t resolverThreads { 2 };
+        uint32_t timeSkipPerTimeStamp { 0 };
    };
     Parser(const Options& options);
     ~Parser();
@@ -141,6 +142,7 @@ private:
     void emitStack(int32_t idx);
     void emitAddress(Address<std::string> &&addr);
     void emitSnapshot(uint32_t now);
+    uint32_t timestamp();
 
 private:
     const Options mOptions;
@@ -153,6 +155,7 @@ private:
     std::mutex mResolvedAddressesMutex;
     std::vector<Address<std::string>> mResolvedAddresses;
     size_t mStacksResolved {};
+    size_t mTimestampNo {};
 
     std::vector<Library> mLibraries;
     std::vector<PageFault> mPageFaults;

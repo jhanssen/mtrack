@@ -11,7 +11,8 @@ public:
 
     Stack(unsigned ptid = 0);
 
-    const void *data() const { return mPtrs.data(); }
+    void* const* ptrs() const { return mPtrs.data(); }
+    const void* data() const { return mPtrs.data(); }
     uint32_t size() const { return mCount * sizeof(void*); }
 
 private:

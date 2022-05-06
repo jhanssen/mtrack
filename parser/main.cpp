@@ -51,6 +51,10 @@ static void parse(Options &&options)
             options.fileSize = st.st_size;
         }
     }
+
+    if (!options.packetMode && options.timeSkipPerTimeStamp == 0) {
+        options.timeSkipPerTimeStamp = 100;
+    }
     Parser parser(options);
 
     // mFileSize = size;
@@ -160,6 +164,10 @@ int main(int argc, char** argv)
 
     if (args.has<int64_t>("threads")) {
         options.resolverThreads = args.value<int64_t>("threads");
+    }
+
+    if (args.has<uint32_t>("time-skip")) {
+        options.timeSkipPerTimeStamp = args.value<uint32_t>("time-skip");
     }
 
     parse(std::move(options));

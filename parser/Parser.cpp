@@ -25,13 +25,6 @@ bool intersects(uint64_t startA, uint64_t endA, uint64_t startB, uint64_t endB)
 {
     return startA < endB && startB < endA;
 }
-
-uint32_t timestamp()
-{
-    timespec ts;
-    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
-    return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
-}
 } // anonymous namespace
 
 // #define DEBUG_EMITS
@@ -67,6 +60,14 @@ Parser::~Parser()
         printf("%d %lu\n", ref.first, ref.second);
     }
 #endif
+}
+
+uint32_t Parser::timestamp()
+{
+    timespec ts;
+    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+    const uint32_t offset = mOptions.timeSkipPerTimeStamp * (mTimestampNo++);
+    return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000)) + offset;
 }
 
 void Parser::onResolvedAddresses(std::vector<Address<std::string>>&& addresses)
