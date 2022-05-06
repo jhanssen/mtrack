@@ -113,6 +113,7 @@ export class Model2 {
         const stackStrings: string[] = [];
         const threads: Map<number, string> = new Map();
         const ipToStacks: Map<number, Stack[]> = new Map();
+        const ipToFrame: Map<number, FrameOrSingleFrame | undefined> = new Map();
         const memories: Memory[] = [];
         const snapshots: Snapshot[] = [];
 
@@ -128,12 +129,15 @@ export class Model2 {
                 const numFrames = this._readUint32();
                 for (let n = 0; n < numFrames; ++n) {
                     const ip = this._readFloat64();
-                    stacks[idx].push({ ip });
-                    const ipts = ipToStacks.get(ip);
-                    if (ipts === undefined) {
-                        ipToStacks.set(ip, [ stacks[idx] ]);
-                    } else {
-                        ipts.push(stacks[idx]);
+                    const frame = ipToFrame.get(ip);
+                    stacks[idx].push({ ip, frame });
+                    if (frame === undefined) {
+                        const ipts = ipToStacks.get(ip);
+                        if (ipts === undefined) {
+                            ipToStacks.set(ip, [ stacks[idx] ]);
+                        } else {
+                            ipts.push(stacks[idx]);
+                        }
                     }
                 }
                 break; }
@@ -161,6 +165,7 @@ export class Model2 {
                         }
                     }
                 }
+                ipToFrame.set(ip, frame);
                 if (frame !== undefined) {
                     const ipts = ipToStacks.get(ip);
                     if (ipts !== undefined) {

@@ -265,8 +265,8 @@ export class Graph {
             const stack = this._model.stacks[stackIdx];
             //console.log(Stack.print(stack, this._data.strings));
 
-            for (let stackIdx = stack.length - 1; stackIdx >= 0; --stackIdx) {
-                const stackFrame = stack[stackIdx];
+            for (let stackNo = stack.length - 1; stackNo >= 0; --stackNo) {
+                const stackFrame = stack[stackNo];
                 if (!stackFrame) {
                     continue;
                 }
