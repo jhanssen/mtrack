@@ -3,6 +3,7 @@ import { FlameGraph, flamegraph } from "d3-flame-graph";
 import { Line, ScaleLinear, axisBottom, axisLeft, easeCubic, extent, line, max, scaleLinear, select } from "d3";
 import { Model2, PageSize, Snapshot } from "./Model2";
 import { Stack } from "./Stack";
+import { assert } from "./Assert";
 
 type Margin = {
     top: number;
@@ -26,6 +27,14 @@ type Ready = {
     reject: (reason?: unknown) => void;
 };
 
+type GraphChild = { name: string, value: number, ip: number, children: GraphChild[] };
+type GraphSnapshot = { name: string, value: number, children: GraphChild[] };
+
+interface WalkEntry {
+    ip: number;
+    child?: GraphChild;
+}
+
 declare class DecompressionStream {
     constructor(format: string);
 
@@ -39,6 +48,7 @@ export class Graph {
     private _model: Model2 | undefined;
     private _nomodel: unknown | undefined;
     private _readies: Ready[] = [];
+    private _prevSnapshot: number | undefined;
 
     constructor() {
         const margin = {top: 20, right: 20, bottom: 50, left: 70};
@@ -213,7 +223,7 @@ export class Graph {
                     .style("opacity", 0);
                 // @ts-ignore
             }).on("click", (e, d, i) => {
-                this._flameify(d.time);
+                this._flameify(d.time, e.shiftKey);
                 console.log("clk", d, i);
             });
 
@@ -229,13 +239,26 @@ export class Graph {
         console.log("inited");
     }
 
-    _flameify(time: number) {
-        if (this._model === undefined) {
-            throw new Error("_flameify called with no model");
+    private _flameify(time: number, delta: boolean) {
+        const deltaFrom = delta ? this._prevSnapshot : undefined;
+        this._prevSnapshot = time;
+
+        const data = this._buildSnapshot(time);
+        if (deltaFrom !== undefined) {
+            const prev = this._buildSnapshot(deltaFrom);
+            // diff data and prev
+            Graph._diff(data, prev);
         }
-        type Child = { name: string, value: number, key: string, children: Child[] };
-        const children: Child[] = [];
-        const data = { name: "nrdp", value: 0, children };
+
+        select("#flamechart")
+            .datum(data)
+            .call(this._flame);
+    }
+
+    private _buildSnapshot(time: number): GraphSnapshot {
+        if (this._model === undefined) {
+            throw new Error("_buildSnapshot called with no model");
+        }
 
         // find this snapshot
         let snapshot: Snapshot | undefined;
@@ -245,6 +268,9 @@ export class Graph {
                 break;
             }
         }
+
+        const children: GraphChild[] = [];
+        const data: GraphSnapshot = { name: "nrdp", value: 0, children };
 
         if (snapshot === undefined) {
             throw new Error(`no such snapshot ${time}`);
@@ -274,13 +300,12 @@ export class Graph {
                 if (!frame) {
                     frame = [-1, -1, 0];
                 }
-                const key = `${frame[0]}:${frame[1]}:${frame[2]}`;
                 let curIdx = cur.findIndex(e => {
-                    return e.key === key;
+                    return e.ip === stackFrame.ip;
                 });
                 if (curIdx === -1) {
                     curIdx = cur.length;
-                    cur.push({ name: Stack.stringifyFrame(frame, this._model.stackStrings), value: bytes, key, children: [] });
+                    cur.push({ name: Stack.stringifyFrame(frame, this._model.stackStrings), value: bytes, ip: stackFrame.ip, children: [] });
                 } else {
                     cur[curIdx].value += bytes;
                 }
@@ -291,9 +316,89 @@ export class Graph {
             cur = children;
         }
 
-        select("#flamechart")
-            .datum(data)
-            .call(this._flame);
+        return data;
+    }
+
+    private static _walkStack(children: GraphChild[], cb: (stack: WalkEntry[]) => boolean) {
+        const stack: WalkEntry[] = [];
+
+        const walk = (children: GraphChild[], cb: (stack: WalkEntry[]) => boolean) => {
+            for (const c of children) {
+                if (c.value < 0) {
+                    return true;
+                }
+                stack.push({ ip: c.ip, child: c });
+                if (c.children.length > 0) {
+                    if (!walk(c.children, cb)) {
+                        return false;
+                    }
+                } else {
+                    if (!cb(stack)) {
+                        return false;
+                    }
+                }
+                stack.pop();
+            }
+            return true;
+        };
+
+        walk(children, cb);
+    }
+
+    // modifies newSnapshot in-place
+    private static _diff(newSnapshot: GraphSnapshot, oldSnapshot: GraphSnapshot) {
+        const stackEquals = (a: WalkEntry[], b: WalkEntry[]) => a.length === b.length && a.every((item, index) => b[index].ip === item.ip);
+
+        // walk to each leaf node, building a stack. then find the exact same stack in the other snapshot
+        Graph._walkStack(newSnapshot.children, (newStack: WalkEntry[]) => {
+            Graph._walkStack(oldSnapshot.children, (oldStack: WalkEntry[]) => {
+                if (stackEquals(newStack, oldStack)) {
+                    assert(newStack.length === oldStack.length);
+                    let removed = 0, done = false;
+                    for (let i = newStack.length - 1; i >= 0; --i) {
+                        const newChild = newStack[i].child;
+                        assert(newChild !== undefined);
+                        if (!done) {
+                            const oldChild = oldStack[i].child;
+                            assert(oldChild !== undefined);
+                            newChild.value -= oldChild.value;
+                            if (newChild.value <= 0) {
+                                removed = oldChild.value + newChild.value;
+                                newChild.value = -1;
+                                done = true;
+                            }
+                            if (removed === 0) {
+                                break;
+                            }
+                        } else {
+                            newChild.value -= removed;
+                            if (newChild.value === 0) {
+                                newChild.value = -1;
+                            }
+                        }
+                    }
+                    return false;
+                }
+                return true;
+            });
+            return true;
+        });
+
+        // then finally go and remove any children with a value < 0
+        const remove = (children: GraphChild[]) => {
+            let i = 0;
+            while (i < children.length) {
+                if (children[i].value >= 0) {
+                    remove(children[i].children);
+                    ++i;
+                } else {
+                    // splice it out
+                    children.splice(i, 1);
+                }
+            }
+        }
+
+        remove(newSnapshot.children);
     }
 }
 
