@@ -572,7 +572,7 @@ void trackMmap(void* addr, size_t length, int prot, int flags)
     //     printf(" - %p(%p) %zu\n", std::get<0>(item), reinterpret_cast<uint8_t*>(std::get<0>(item)) + std::get<1>(item), std::get<1>(item));
     // }
 
-    if ((prot & (PROT_READ | PROT_WRITE)) && !(prot & PROT_EXEC)) {
+    if ((prot & (PROT_READ | PROT_WRITE)) == (PROT_READ | PROT_WRITE)) {
         // printf("ball %zu 0x%x 0x%x\n", length, prot, flags);
         uffdio_register reg = {
             .range = {
@@ -743,7 +743,7 @@ int mprotect(void* addr, size_t len, int prot)
     }
 
     // printf("mprotect %p %zu %d %d\n", addr, len, prot, flags);
-    if ((prot & (PROT_READ | PROT_WRITE)) && !(prot & PROT_EXEC) && (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)) {
+    if (((prot & (PROT_READ | PROT_WRITE)) == (PROT_READ | PROT_WRITE)) && (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)) {
         uffdio_register reg = {
             .range = {
                 .start = reinterpret_cast<__u64>(addr),
