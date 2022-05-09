@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -25,7 +26,15 @@ struct Options : public Parser::Options {
     bool packetMode {};
 };
 
-static void parse(Options &&options)
+namespace {
+uint32_t timestamp()
+{
+    timespec ts;
+    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+    return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
+}
+
+void parse(Options &&options)
 {
     int infd = 0;
     if (!options.input.empty()) {
@@ -50,6 +59,18 @@ static void parse(Options &&options)
         if (!fstat(infd, &st)) {
             options.fileSize = st.st_size;
         }
+    }
+
+    uint32_t curTimestamp = 0;
+    if (options.packetMode) {
+        curTimestamp = timestamp();
+        options.timeStamp = [curTimestamp]() {
+            return timestamp() - curTimestamp;
+        };
+    } else {
+        options.timeStamp = [&curTimestamp]() {
+            return curTimestamp;
+        };
     }
 
     if (!options.packetMode && options.timeSkipPerTimeStamp == 0) {
@@ -78,18 +99,25 @@ static void parse(Options &&options)
             totalRead += packetSize;
 
             if (outfile) {
+                const uint32_t ts = timestamp() - curTimestamp;
+                ::fwrite(&ts, sizeof(ts), 1, outfile);
                 ::fwrite(&packetSize, sizeof(packetSize), 1, outfile);
                 ::fwrite(packet, packetSize, 1, outfile);
                 continue;
             }
         } else {
             ssize_t r;
+            EINTRWRAP(r, ::read(infd, &curTimestamp, sizeof(curTimestamp)));
+            if (r != sizeof(curTimestamp)) {
+                LOG("read ts size != than {}, {}\n", sizeof(curTimestamp), r);
+                abort();
+            }
             EINTRWRAP(r, ::read(infd, &packetSize, sizeof(packetSize)));
             if (r == 0) {
                 break;
             }
             if (r != sizeof(packetSize)) {
-                LOG("read size != than {}, {}\n", sizeof(packetSize), r);
+                LOG("read ps size != than {}, {}\n", sizeof(packetSize), r);
                 abort();
             }
             if (packetSize > PIPE_BUF) {
@@ -127,6 +155,7 @@ static void parse(Options &&options)
     //         parser.stringCount(), parser.stringHits(), parser.stringMisses(),
     //         parser.stackCount(), parser.stackHits(), parser.stackMisses());
 }
+} // anonymous namespace
 
 int main(int argc, char** argv)
 {

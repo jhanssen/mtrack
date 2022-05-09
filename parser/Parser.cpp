@@ -47,8 +47,9 @@ Parser::Parser(const Options& options)
 
     mLastMemory.growthThreshold = 0.1;
     mLastMemory.timeThreshold = 250;
-    mLastMemory.maxTimeThreshold = 5000;
     mLastMemory.peakThreshold = 1000;
+    mLastMemory.peakTimeThreshold = 500;
+    mLastMemory.maxTimeThreshold = 5000;
 }
 
 Parser::~Parser()
@@ -65,14 +66,6 @@ Parser::~Parser()
         printf("%d %lu\n", ref.first, ref.second);
     }
 #endif
-}
-
-uint32_t Parser::timestamp()
-{
-    timespec ts;
-    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
-    const uint32_t offset = mOptions.timeSkipPerTimeStamp * (mTimestampNo++);
-    return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000)) + offset;
 }
 
 void Parser::onResolvedAddresses(std::vector<Address<std::string>>&& addresses)
@@ -196,7 +189,7 @@ inline void Parser::emitAddress(Address<std::string> &&strAddr)
 
 inline void Parser::emitSnapshot(uint32_t now)
 {
-    LOG("emitting snapshot");
+    // LOG("emitting snapshot");
     // send snapshot
 
     std::vector<int32_t> newStacks;
@@ -234,15 +227,13 @@ inline void Parser::emitSnapshot(uint32_t now)
 
 void Parser::parseThread()
 {
-    const uint32_t started = timestamp();
     size_t packetSizeCount = 0;
     std::vector<uint8_t> data;
     std::vector<uint32_t> packetSizes;
 
     size_t totalPacketNo = 0;
     size_t bytesConsumed = 0;
-    mStart = timestamp();
-    mLastSnapshot.time = mStart;
+    mLastMemory.time = mLastSnapshot.time = mOptions.timeStamp();
 
     bool done = false;
     while (!done) {
@@ -306,11 +297,10 @@ void Parser::parseThread()
     }
 
     if (mLastSnapshot.enabled) {
-        emitSnapshot(timestamp() - mStart);
+        emitSnapshot(mOptions.timeStamp());
     }
 
-    const uint32_t now = timestamp();
-    LOG("Finished parsing {} events in {}ms", totalPacketNo, now - started);
+    LOG("Finished parsing {} events in {}ms", totalPacketNo, mOptions.timeStamp());
 }
 
 static bool comparePageFaultItem(const PageFault& item, uint64_t start)
@@ -442,10 +432,10 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
             handled = true;
             break;
         case CommandType::Snapshot: {
-            mLastSnapshot.time = timestamp();
+            mLastSnapshot.time = mOptions.timeStamp();
             mLastSnapshot.pageFaultBytes = mPageFaults.size() * Limits::PageSize;
             mLastSnapshot.mallocBytes = mMallocSize;
-            emitSnapshot(mLastSnapshot.time - mStart);
+            emitSnapshot(mLastSnapshot.time);
             const auto name = readHashableString();
             EMIT(mFileEmitter.emit(EmitType::SnapshotName, name));
             handled = true;
@@ -482,8 +472,8 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
             break;
         }
         assert(it == mPageFaults.end() || it->place > place);
-        now = timestamp();
-        mPageFaults.insert(it, PageFault { place, ptid, stackIdx, now - mStart });
+        now = mOptions.timeStamp();
+        mPageFaults.insert(it, PageFault { place, ptid, stackIdx, now });
         //EMIT(mFileEmitter.emit(EmitType::PageFault, static_cast<double>(place), ptid));
         break; }
     case RecordType::PageRemap: {
@@ -509,8 +499,8 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         } else {
             // LOG("not inserted");
         }
-        now = timestamp();
-        mMallocs.insert(Malloc { addr, size, ptid, stackIdx, now - mStart });
+        now = mOptions.timeStamp();
+        mMallocs.insert(Malloc { addr, size, ptid, stackIdx, now });
         mMallocSize += size;
         //EMIT(mFileEmitter.emit(EmitType::Malloc, ptid));
         break; }
@@ -589,13 +579,13 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
     if (now != std::numeric_limits<uint32_t>::max()) {
         const uint64_t pageFaultSize = mPageFaults.size() * Limits::PageSize;
         if (mLastMemory.shouldSend(now, mMallocSize, pageFaultSize)) {
-            LOG("emitting memory");
-            EMIT(mFileEmitter.emit(EmitType::Memory, now - mStart, static_cast<double>(mLastMemory.pageFaultBytes),
+            // LOG("emitting memory");
+            EMIT(mFileEmitter.emit(EmitType::Memory, now, static_cast<double>(mLastMemory.pageFaultBytes),
                                    static_cast<double>(mLastMemory.mallocBytes)));
         }
 
         if (mLastSnapshot.shouldSend(now, mMallocSize, pageFaultSize)) {
-            emitSnapshot(now - mStart);
+            emitSnapshot(now);
         }
     }
 }

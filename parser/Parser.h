@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -126,6 +127,7 @@ public:
         size_t maxEventCount { std::numeric_limits<size_t>::max() };
         size_t resolverThreads { 2 };
         uint32_t timeSkipPerTimeStamp { 0 };
+        std::function<uint32_t()> timeStamp;
    };
     Parser(const Options& options);
     ~Parser();
@@ -142,7 +144,6 @@ private:
     void emitStack(int32_t idx);
     void emitAddress(Address<std::string> &&addr);
     void emitSnapshot(uint32_t now);
-    uint32_t timestamp();
 
 private:
     const Options mOptions;
@@ -155,7 +156,6 @@ private:
     std::mutex mResolvedAddressesMutex;
     std::vector<Address<std::string>> mResolvedAddresses;
     size_t mStacksResolved {};
-    size_t mTimestampNo {};
 
     std::vector<Library> mLibraries;
     std::vector<PageFault> mPageFaults;
@@ -170,6 +170,7 @@ private:
         uint64_t pageFaultBytes {};
         uint64_t mallocBytes {};
         uint32_t timeThreshold { 10000 };
+        uint32_t peakTimeThreshold { 1000 };
         uint32_t maxTimeThreshold { 60000 };
         uint32_t peakThreshold { 2500 };
         double growthThreshold { 0.2 };
@@ -190,9 +191,10 @@ private:
             }
             const auto combined = mallocSize + pageFaultSize;
             const auto delta = std::fabs((combined - combinedBytes()) / static_cast<double>(combined));
-            if (delta >= growthThreshold && combined > peakBytes) {
+            if (now - time >= peakTimeThreshold && delta >= growthThreshold && combined > peakBytes) {
                 peakTime = time;
                 peakBytes = combined;
+                peakTimeThreshold = std::min(peakTimeThreshold * 2, maxTimeThreshold);
             } else if (peakTime > 0 && time - peakTime >= peakThreshold) {
                 time = now;
                 pageFaultBytes = pageFaultSize;
@@ -220,7 +222,6 @@ private:
     std::vector<uint32_t> mPacketSizes;
     size_t mDataOffset {};
     size_t mPacketSizeCount {};
-    uint32_t mStart {};
     std::unique_ptr<ResolverThread> mResolverThread;
 
     bool mShutdown {};
