@@ -32,7 +32,7 @@ foreach(BUILD_FILE ${BUILD_FILES})
     file(CREATE_LINK ${BUILD_FILE} ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME})
 endforeach()
 
-execute_process(COMMAND npm install WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+execute_process(COMMAND yarn install --registry https://registry.npmjs.org WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/index.js ${CMAKE_CURRENT_BINARY_DIR}/index.js.map
