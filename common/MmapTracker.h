@@ -86,11 +86,11 @@ inline void MmapTracker::mmap(uintptr_t iaddr, size_t size, int32_t prot, int32_
     if (intersects(it, iaddr, iaddrend)) {
         // got a hit
         do {
-            if (it->prot != prot || it->prot != flags || it->stack != stack) {
+            if (it->prot != prot || it->flags != flags || it->stack != stack) {
                 const auto curstart = it->start;
                 const auto curend = it->end;
                 const auto curprot = it->prot;
-                const auto curflags = it->prot;
+                const auto curflags = it->flags;
                 const auto curstack = it->stack;
 
                 if (curstart < iaddr) {
@@ -106,14 +106,14 @@ inline void MmapTracker::mmap(uintptr_t iaddr, size_t size, int32_t prot, int32_
                 } else if (iaddr <= curstart && iaddrend >= curend) {
                     // item is fully contained in input addr, just update prot and flags
                     it->prot = prot;
-                    it->prot = flags;
+                    it->flags = flags;
                     it->stack = stack;
                     ++it;
                 } else if (iaddrend < curend) {
                     // item end is past input end, update and add new item
                     it->end = iaddrend;
                     it->prot = prot;
-                    it->prot = flags;
+                    it->flags = flags;
                     it->stack = stack;
 
                     it = mMmaps.insert(it + 1, { iaddrend, curend, curprot, curflags, curstack });
@@ -142,7 +142,7 @@ inline uint64_t MmapTracker::munmap(uintptr_t iaddr, size_t size)
         const auto curstart = it->start;
         const auto curend = it->end;
         const auto curprot = it->prot;
-        const auto curflags = it->prot;
+        const auto curflags = it->flags;
         const auto curstack = it->stack;
 
         if (curstart < iaddr) {
@@ -181,13 +181,13 @@ inline int32_t MmapTracker::mprotect(uintptr_t iaddr, size_t size, int32_t prot)
     auto [ it, insertit ] = find(iaddr);
     while (intersects(it, iaddr, iaddrend)) {
         if (flags == 0) {
-            flags = it->prot;
+            flags = it->flags;
         }
         if (it->prot != prot) {
             const auto curstart = it->start;
             const auto curend = it->end;
             const auto curprot = it->prot;
-            const auto curflags = it->prot;
+            const auto curflags = it->flags;
             const auto curstack = it->stack;
 
             if (curstart < iaddr) {
@@ -258,7 +258,7 @@ inline void MmapTracker::mremap(uintptr_t oldAddr, uintptr_t newAddr, size_t old
         return;
 
     const auto curprot = it->prot;
-    const auto curflags = it->prot;
+    const auto curflags = it->flags;
 
     munmap(oldAddr, oldSize);
     mmap(newAddr, newSize, curprot, curflags, stack);
