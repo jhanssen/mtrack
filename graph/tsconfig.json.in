@@ -15,5 +15,6 @@
         "incremental": true,
         "lib": ["es6","dom"],
         "baseUrl": "."
-    }
+    },
+    "include": ["@MTRACK_GRAPH@/src/*.ts"]
 }

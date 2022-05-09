@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.13)
 
+set(MTRACK_GRAPH ${CMAKE_CURRENT_LIST_DIR})
 set(SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/Assert.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/Frame.ts
@@ -19,26 +20,33 @@ foreach(SOURCE_FILE ${SOURCES})
     file(CREATE_LINK ${SOURCE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/src/${FILENAME})
 endforeach()
 
+configure_file(rollup.config.ts.in ${CMAKE_CURRENT_BINARY_DIR}/rollup.config.ts)
+configure_file(package.json.in ${CMAKE_CURRENT_BINARY_DIR}/package.json)
+configure_file(yarn.lock.in ${CMAKE_CURRENT_BINARY_DIR}/yarn.lock)
+configure_file(.eslintrc.in ${CMAKE_CURRENT_BINARY_DIR}/.eslintrc)
+configure_file(tsconfig.json.in ${CMAKE_CURRENT_BINARY_DIR}/tsconfig.json)
+
 set(BUILD_FILES
-    ${CMAKE_CURRENT_LIST_DIR}/rollup.config.ts
-    ${CMAKE_CURRENT_LIST_DIR}/package.json
-    ${CMAKE_CURRENT_LIST_DIR}/yarn.lock
-    ${CMAKE_CURRENT_LIST_DIR}/.eslintrc
-    ${CMAKE_CURRENT_LIST_DIR}/index.html
-    ${CMAKE_CURRENT_LIST_DIR}/tsconfig.json)
+    ${CMAKE_CURRENT_LIST_DIR}/rollup.config.ts.in
+    ${CMAKE_CURRENT_LIST_DIR}/package.json.in
+    ${CMAKE_CURRENT_LIST_DIR}/yarn.lock.in
+    ${CMAKE_CURRENT_LIST_DIR}/.eslintrc.in
+    ${CMAKE_CURRENT_LIST_DIR}/index.html.in
+    ${CMAKE_CURRENT_LIST_DIR}/tsconfig.json.in)
 
-foreach(BUILD_FILE ${BUILD_FILES})
-    get_filename_component(FILENAME ${BUILD_FILE} NAME)
-    file(CREATE_LINK ${BUILD_FILE} ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME})
-endforeach()
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/node_modules
+    COMMAND yarn install
+    COMMENT "yarn install"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+add_custom_target(yarn_install DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/node_modules ${CMAKE_CURRENT_LIST_DIR}/package.json.in)
 
-execute_process(COMMAND yarn install WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+# execute_process(COMMAND yarn install --modules-folder ${CMAKE_CURRENT_BINARY_DIR}/node_modules)
 
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/index.js ${CMAKE_CURRENT_BINARY_DIR}/index.js.map
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS ${SOURCES}
+    DEPENDS ${SOURCES} yarn_install
     COMMENT "Building webpage"
-    COMMAND npm run build)
+    COMMAND yarn build)
 
 add_custom_target(graph ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/index.js ${CMAKE_CURRENT_BINARY_DIR}/index.js.map)

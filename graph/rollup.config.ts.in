@@ -3,14 +3,9 @@ import resolve from "@rollup/plugin-node-resolve";
 import typescript from "rollup-plugin-typescript2";
 
 const plugins = [
-    resolve({
-        preferBuiltins: true
-    }),
+    resolve({ preferBuiltins: true }),
     commonjs(),
-    typescript({
-        tsconfig: `tsconfig.json`,
-        cacheRoot: ".cache"
-    })
+    typescript({ tsconfig: `tsconfig.json`, cacheRoot: ".cache" })
 ];
 
 // Define forms
