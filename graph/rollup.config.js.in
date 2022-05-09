@@ -13,14 +13,16 @@ const format = "cjs";
 const external = ["fs", "assert"];
 
 function onwarn(warning) {
-    switch (warning.pluginCode || warning.code) {
-    case "CIRCULAR_DEPENDENCY":
-    case "TS2688":
-        break;
-    default:
-        console.warn(warning);
-        break;
+    if (warning.pluginCode === "TS2688") {
+        return;
     }
+    if (warning.code === "CIRCULAR_DEPENDENCY") {
+        return;
+    }
+    if (warning.message === "@rollup/plugin-typescript: outputToFilesystem option is defaulting to true.") {
+        return;
+    }
+    console.warn(warning.message);
 }
 
 export default [
