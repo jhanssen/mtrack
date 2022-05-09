@@ -44,6 +44,11 @@ Parser::Parser(const Options& options)
     } else if (options.fileSize != std::numeric_limits<size_t>::max() && options.fileSize > 0) {
         mData.resize(options.fileSize);
     }
+
+    mLastMemory.growthThreshold = 0.1;
+    mLastMemory.timeThreshold = 250;
+    mLastMemory.maxTimeThreshold = 5000;
+    mLastMemory.peakThreshold = 1000;
 }
 
 Parser::~Parser()
@@ -583,16 +588,15 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
 
     if (now != std::numeric_limits<uint32_t>::max()) {
         const uint64_t pageFaultSize = mPageFaults.size() * Limits::PageSize;
-        if (mLastMemory.shouldSend(now, 250, 50, mMallocSize, pageFaultSize, .1)) {
+        if (mLastMemory.shouldSend(now, mMallocSize, pageFaultSize)) {
             LOG("emitting memory");
             EMIT(mFileEmitter.emit(EmitType::Memory, now - mStart, static_cast<double>(mLastMemory.pageFaultBytes),
                                    static_cast<double>(mLastMemory.mallocBytes)));
         }
 
-        if (mLastSnapshot.shouldSend(now, 10000, 500, mMallocSize, pageFaultSize, .2)) {
+        if (mLastSnapshot.shouldSend(now, mMallocSize, pageFaultSize)) {
             emitSnapshot(now - mStart);
         }
     }
-    // if (mLastMemoryTime
 }
 
