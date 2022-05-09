@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 
 set(MTRACK_GRAPH ${CMAKE_CURRENT_LIST_DIR})
+set(MTRACK_GRAPH_BUILD ${CMAKE_CURRENT_BINARY_DIR})
 set(SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/Assert.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/Frame.ts
@@ -14,17 +15,12 @@ set(SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/Until.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/webpage.ts)
 
-file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/src)
-foreach(SOURCE_FILE ${SOURCES})
-    get_filename_component(FILENAME ${SOURCE_FILE} NAME)
-    file(CREATE_LINK ${SOURCE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/src/${FILENAME})
-endforeach()
-
-configure_file(rollup.config.ts.in ${CMAKE_CURRENT_BINARY_DIR}/rollup.config.ts)
+configure_file(rollup.config.js.in ${CMAKE_CURRENT_BINARY_DIR}/rollup.config.js)
 configure_file(package.json.in ${CMAKE_CURRENT_BINARY_DIR}/package.json)
 configure_file(yarn.lock.in ${CMAKE_CURRENT_BINARY_DIR}/yarn.lock)
 configure_file(.eslintrc.in ${CMAKE_CURRENT_BINARY_DIR}/.eslintrc)
 configure_file(tsconfig.json.in ${CMAKE_CURRENT_BINARY_DIR}/tsconfig.json)
+configure_file(index.html.in ${CMAKE_CURRENT_BINARY_DIR}/index.html)
 
 set(BUILD_FILES
     ${CMAKE_CURRENT_LIST_DIR}/rollup.config.ts.in

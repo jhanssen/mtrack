@@ -1,0 +1,40 @@
+import commonjs from "@rollup/plugin-commonjs";
+import resolve from "@rollup/plugin-node-resolve";
+import typescript from "@rollup/plugin-typescript";
+
+const plugins = [
+    resolve({ preferBuiltins: true, moduleDirectories: [ "@MTRACK_GRAPH_BUILD@/node_modules" ] }),
+    commonjs(),
+    typescript({ tsconfig: "tsconfig.json" })
+];
+
+// Define forms
+const format = "cjs";
+const external = ["fs", "assert"];
+
+function onwarn(warning) {
+    switch (warning.pluginCode || warning.code) {
+    case "CIRCULAR_DEPENDENCY":
+    case "TS2688":
+        break;
+    default:
+        console.warn(warning);
+        break;
+    }
+}
+
+export default [
+    {
+        input: "@MTRACK_GRAPH@/src/webpage.ts",
+        plugins,
+        external,
+        onwarn,
+        output: {
+            file: "index.js",
+            format,
+            name: "webpage",
+            exports: "named",
+            sourcemap: true
+        }
+    }
+];
