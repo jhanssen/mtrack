@@ -33,35 +33,9 @@ target_include_directories(unwind_static INTERFACE ${UNWIND_BINARY_DIR}/include)
 set_target_properties(unwind_static PROPERTIES IMPORTED_LOCATION ${UNWIND_EXTERNAL_LIB})
 add_library(unwind::static ALIAS unwind_static)
 
-
-# patch libbacktrace
-find_program(PATCH
-    NAMES patch
-    PATH_SUFFIXES usr/bin
-    )
-if (NOT PATCH)
-    message(FATAL_ERROR "No patch program")
-endif()
-find_program(SHELL
-    NAMES sh
-    PATH_SUFFIXES bin
-    )
-if (NOT SHELL)
-    message(FATAL_ERROR "No shell program")
-endif()
-
 # set(LIBBACKTRACE_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR})
 set(LIBBACKTRACE_DIR ${CMAKE_CURRENT_LIST_DIR}/libbacktrace)
 # set(LIBBACKTRACE_GEN_DIR ${CMAKE_CURRENT_LIST_DIR}/libbacktrace_gen)
-
-# this needs a revisit
-file(MD5 ${LIBBACKTRACE_DIR}/internal.h INTERNAL_MD5)
-if (NOT ${INTERNAL_MD5} STREQUAL "d9df3726dddb9356f78b10af5d1942c5")
-    execute_process(
-        COMMAND ${SHELL} -c "${PATCH} -p1 < ../libbacktrace-patch.diff"
-        WORKING_DIRECTORY ${LIBBACKTRACE_DIR}
-        )
-endif()
 
 set(BACKTRACE_DIR ${CMAKE_CURRENT_LIST_DIR}/libbacktrace)
 set(BACKTRACE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/libbacktrace)
