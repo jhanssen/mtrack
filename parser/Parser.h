@@ -188,7 +188,7 @@ private:
                 timeThreshold = std::min(timeThreshold * 2, maxTimeThreshold);
                 return true;
             }
-            const int64_t combined = mallocSize + pageFaultSize;
+            const auto combined = mallocSize + pageFaultSize;
             const auto delta = std::fabs((combined - combinedBytes()) / static_cast<double>(combined));
             if (delta >= growthThreshold && combined > peakBytes) {
                 peakTime = time;
