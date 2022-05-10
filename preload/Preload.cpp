@@ -588,10 +588,10 @@ void trackMmap(void* addr, size_t length, int prot, int flags)
             return;
         }
 
-        if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
-            printf("no range (1) 0x%llx\n", reg.ioctls);
-            return;
-        }
+        // if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
+        //     printf("no range (1) 0x%llx\n", reg.ioctls);
+        //     return;
+        // }
     }
 }
 
@@ -761,10 +761,11 @@ int mprotect(void* addr, size_t len, int prot)
         if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) == -1)
             return callbacks.mprotect(addr, len, prot);
 
-        if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
-            printf("no range (2) 0x%llx\n", reg.ioctls);
-            return callbacks.mprotect(addr, len, prot);
-        }
+        // ### don't forget me
+        // if (reg.ioctls != UFFD_API_RANGE_IOCTLS) {
+        //     printf("no range (2) 0x%llx\n", reg.ioctls);
+        //     return callbacks.mprotect(addr, len, prot);
+        // }
     }
 
     return callbacks.mprotect(addr, len, prot);
