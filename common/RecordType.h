@@ -16,14 +16,10 @@ enum class RecordType : uint8_t {
     Free,
     Library,
     LibraryHeader,
-    MadviseTracked,
-    MadviseUntracked,
     Malloc,
-    MmapTracked,
-    MmapUntracked,
+    Mmap,
     Mremap,
-    MunmapTracked,
-    MunmapUntracked,
+    Munmap,
     PageFault,
     PageRemap,
     PageRemove,
@@ -41,14 +37,10 @@ inline static const char *recordTypeToString(RecordType t)
     case RecordType::Free: return "Free";
     case RecordType::Library: return "Library";
     case RecordType::LibraryHeader: return "LibraryHeader";
-    case RecordType::MadviseTracked: return "MadviseTracked";
-    case RecordType::MadviseUntracked: return "MadviseUntracked";
     case RecordType::Malloc: return "Malloc";
-    case RecordType::MmapTracked: return "MmapTracked";
-    case RecordType::MmapUntracked: return "MmapUntracked";
+    case RecordType::Mmap: return "Mmap";
     case RecordType::Mremap: return "Mremap";
-    case RecordType::MunmapTracked: return "MunmapTracked";
-    case RecordType::MunmapUntracked: return "MunmapUntracked";
+    case RecordType::Munmap: return "Munmap";
     case RecordType::PageFault: return "PageFault";
     case RecordType::PageRemap: return "PageRemap";
     case RecordType::PageRemove: return "PageRemove";

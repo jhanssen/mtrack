@@ -510,7 +510,7 @@ void Hooks::hook()
 
     uffdio_api api = {
         .api = UFFD_API,
-        .features = UFFD_FEATURE_THREAD_ID | UFFD_FEATURE_EVENT_REMAP | UFFD_FEATURE_EVENT_REMOVE | UFFD_FEATURE_EVENT_UNMAP
+        .features = UFFD_FEATURE_THREAD_ID
     };
     if (ioctl(data->faultFd, UFFDIO_API, &api)) {
         safePrint("no ioctl api\n");
@@ -642,12 +642,15 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 
     NoHook nohook;
 
-    bool tracked = false;
     if (!mallocFree.wasInMallocFree()
         && (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)
         && fd == -1) {
         trackMmap(ret, length, prot, flags);
-        tracked = true;
+
+        if (flags & MAP_FIXED) {
+            PipeEmitter emitter(data->emitPipe[1]);
+            emitter.emit(RecordType::PageRemove, mmap_ptr_cast(addr), mmap_ptr_cast(addr) + alignToPage(length));
+        }
     }
 
     if (data->modulesDirty.load(std::memory_order_acquire)) {
@@ -655,7 +658,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
         data->modulesDirty.store(false, std::memory_order_release);
     }
     PipeEmitter emitter(data->emitPipe[1]);
-    emitter.emit(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
+    emitter.emit(RecordType::Mmap,
                  mmap_ptr_cast(ret), alignToPage(length), prot, flags,
                  static_cast<uint32_t>(gettid()), Stack());
     return ret;
@@ -677,12 +680,15 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
 
     NoHook nohook;
 
-    bool tracked = false;
     if (!mallocFree.wasInMallocFree()
         && (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS)
         && fd == -1) {
         trackMmap(ret, length, prot, flags);
-        tracked = true;
+
+        if (flags & MAP_FIXED) {
+            PipeEmitter emitter(data->emitPipe[1]);
+            emitter.emit(RecordType::PageRemove, mmap_ptr_cast(addr), mmap_ptr_cast(addr) + alignToPage(length));
+        }
     }
 
     if (data->modulesDirty.load(std::memory_order_acquire)) {
@@ -690,7 +696,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
         data->modulesDirty.store(false, std::memory_order_release);
     }
     PipeEmitter emitter(data->emitPipe[1]);
-    emitter.emit(tracked ? RecordType::MmapTracked : RecordType::MmapUntracked,
+    emitter.emit(RecordType::Mmap,
                  mmap_ptr_cast(ret), alignToPage(length), prot, flags,
                  static_cast<uint32_t>(gettid()), Stack());
 
@@ -709,14 +715,13 @@ int munmap(void* addr, size_t length)
 
     NoHook nohook;
 
-    uint64_t deallocated;
     {
         ScopedSpinlock lock(data->mmapTrackerLock);
-        deallocated = data->mmapTracker.munmap(addr, length);
+        data->mmapTracker.munmap(addr, length);
     }
 
     PipeEmitter emitter(data->emitPipe[1]);
-    emitter.emit(deallocated > 0 ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
+    emitter.emit(RecordType::Munmap,
                  mmap_ptr_cast(addr), alignToPage(length));
 
     return callbacks.munmap(addr, length);
@@ -767,6 +772,7 @@ int mprotect(void* addr, size_t len, int prot)
 
 void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
 {
+    abort();
     void* ret;
     if (flags & MREMAP_FIXED) {
         va_list ap;
@@ -776,13 +782,12 @@ void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
 
         ret = callbacks.mremap(addr, old_size, new_size, flags, new_address);
         if (ret != MAP_FAILED) {
-            uint64_t deallocated;
             {
                 ScopedSpinlock lock(data->mmapTrackerLock);
-                deallocated = data->mmapTracker.munmap(new_address, new_size);
+                data->mmapTracker.munmap(new_address, new_size);
             }
             PipeEmitter emitter(data->emitPipe[1]);
-            emitter.emit(deallocated > 0 ? RecordType::MunmapTracked : RecordType::MunmapUntracked,
+            emitter.emit(RecordType::Munmap,
                          mmap_ptr_cast(new_address), alignToPage(new_size));
         }
     } else {
@@ -816,15 +821,17 @@ int madvise(void* addr, size_t length, int advice)
 
     NoHook nohook;
 
-    uint64_t deallocated = 0;
-    if (advice == MADV_DONTNEED) {
-        ScopedSpinlock lock(data->mmapTrackerLock);
-        deallocated = data->mmapTracker.madvise(addr, length);
-    }
+    if (advice == MADV_DONTNEED || advice == MADV_REMOVE) {
+        {
+            ScopedSpinlock lock(data->mmapTrackerLock);
+            data->mmapTracker.madvise(addr, length);
+        }
 
-    PipeEmitter emitter(data->emitPipe[1]);
-    emitter.emit(deallocated > 0 ? RecordType::MadviseTracked : RecordType::MadviseUntracked,
-                 mmap_ptr_cast(addr), alignToPage(length), advice);
+        {
+            PipeEmitter emitter(data->emitPipe[1]);
+            emitter.emit(RecordType::PageRemove, mmap_ptr_cast(addr), mmap_ptr_cast(addr) + alignToPage(length));
+        }
+    }
 
     return callbacks.madvise(addr, length, advice);
 }

@@ -514,8 +514,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
             mMallocs.erase(it);
         }
         break; }
-    case RecordType::MmapUntracked:
-    case RecordType::MmapTracked: {
+    case RecordType::Mmap: {
         const auto addr = readUint64();
         const auto size = readUint64();
         const auto prot = readInt32();
@@ -546,20 +545,12 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         }
         mMmaps.mremap(oldAddr, newAddr, oldSize, newSize, stackIdx);
         break; }
-    case RecordType::MunmapUntracked:
-    case RecordType::MunmapTracked: {
+    case RecordType::Munmap: {
         const auto addr = readUint64();
         const auto size = readUint64();
         // EMIT(mFileEmitter.emit(EmitType::PageFault));
         mMmaps.munmap(addr, size);
-        break; }
-    case RecordType::MadviseUntracked:
-    case RecordType::MadviseTracked: {
-        const auto addr = readUint64();
-        const auto size = readUint64();
-        const auto advice = readInt32();
-        static_cast<void>(advice);
-        mMmaps.madvise(addr, size);
+        removePageFaults(addr, addr + size);
         break; }
     case RecordType::ThreadName: {
         const auto ptid = readUint32();
