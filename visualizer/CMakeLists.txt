@@ -2,10 +2,10 @@ cmake_minimum_required(VERSION 3.13)
 
 set(MTRACK_GRAPH ${CMAKE_CURRENT_LIST_DIR})
 set(MTRACK_GRAPH_BUILD ${CMAKE_CURRENT_BINARY_DIR})
-set(SOURCES
+set(GRAPH_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/Assert.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/Frame.ts
-    ${CMAKE_CURRENT_LIST_DIR}/src/Graph-template.ts
+    ${CMAKE_CURRENT_LIST_DIR}/src/Graph.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/Model2.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/PageFault2.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/ParseResult.ts
@@ -39,10 +39,10 @@ add_custom_target(yarn_install DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/node_modules 
 # execute_process(COMMAND yarn install --modules-folder ${CMAKE_CURRENT_BINARY_DIR}/node_modules)
 
 add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/index.js ${CMAKE_CURRENT_BINARY_DIR}/index.js.map
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/graph.js ${CMAKE_CURRENT_BINARY_DIR}/graph.js.map
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS ${SOURCES} yarn_install
+    DEPENDS ${GRAPH_SOURCES} yarn_install
     COMMENT "Building webpage"
     COMMAND yarn build)
 
-add_custom_target(graph ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/index.js ${CMAKE_CURRENT_BINARY_DIR}/index.js.map)
+add_custom_target(graph ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/graph.js ${CMAKE_CURRENT_BINARY_DIR}/graph.js.map)

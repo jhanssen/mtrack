@@ -159,7 +159,7 @@
     }
     */
   </script>
-  <script type="module" src="./index-bundle.js"></script>
+  <script type="module" src="./graph-bundle.js"></script>
 
 </body>
 </html>

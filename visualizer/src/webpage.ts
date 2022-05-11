@@ -1,4 +1,4 @@
-import { Graph } from "./Graph-template";
+import { Graph } from "./Graph";
 
 const graph = new Graph();
 graph.ready().then(() => {
