@@ -101,6 +101,8 @@ export class Graph {
         //this._model = new Model(this._data);
 
         window.addEventListener("resize", () => {
+            select("#linechart").selectAll("*").remove();
+            select("#flamechart").selectAll("*").remove();
             this._createGraphs(window.innerWidth - 100);
             this.ready().then(() => {
                 if (this._initTimeout !== undefined) {
@@ -249,8 +251,6 @@ export class Graph {
             .x(d => x(d.time))
         // @ts-ignore
             .y(d => y(d.used));
-
-        select("#linechart").selectAll("*").remove();
 
         const svg = select("#linechart")
             .append("svg")
