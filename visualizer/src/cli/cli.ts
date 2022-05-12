@@ -27,17 +27,16 @@ console.log("loading", input);
     console.log("parsed, processing data");
 
     const mb = 1024 * 1024;
-    const peak = [0, 0];
+    const peak = [0, 0, 0];
     for (const memory of model.memories) {
-        if (memory.pageFault > peak[0]) {
-            peak[0] = memory.pageFault;
-        }
-        if (memory.malloc > peak[1]) {
-            peak[1] = memory.malloc;
+        if (memory.pageFault + memory.malloc > peak[0]) {
+            peak[0] = memory.pageFault + memory.malloc;
+            peak[1] = memory.pageFault;
+            peak[2] = memory.malloc;
         }
     }
 
-    console.log(`peaked at ${((peak[0] + peak[1]) / mb).toFixed(2)}Mb, pf ${(peak[0] / mb).toFixed(2)}Mb, malloc ${(peak[1] / mb).toFixed(2)}Mb`);
+    console.log(`peaked at ${(peak[0] / mb).toFixed(2)}Mb, pf ${(peak[1] / mb).toFixed(2)}Mb, malloc ${(peak[2] / mb).toFixed(2)}Mb`);
 
 })().then(() => {
     process.exit(0);
