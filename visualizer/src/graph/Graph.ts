@@ -1,9 +1,9 @@
 import "d3-transition";
 import { FlameGraph, flamegraph } from "d3-flame-graph";
 import { Line, ScaleLinear, axisBottom, axisLeft, easeCubic, extent, line, max, scaleLinear, select } from "d3";
-import { Model, PageSize } from "./Model";
-import { assert } from "./Assert";
-import { stringifyFrame } from "./Frame";
+import { Model, PageSize } from "../model/Model";
+import { assert } from "../Assert";
+import { stringifyFrame } from "../model/Frame";
 
 type Margin = {
     top: number;

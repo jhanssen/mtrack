@@ -27,12 +27,12 @@ function onwarn(warning) {
 
 export default [
     {
-        input: "@MTRACK_GRAPH@/src/webpage.ts",
+        input: "@MTRACK_GRAPH@/src/graph/webpage.ts",
         plugins,
         external,
         onwarn,
         output: {
-            file: "index.js",
+            file: "graph.js",
             format,
             name: "webpage",
             exports: "named",

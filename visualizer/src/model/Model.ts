@@ -1,5 +1,5 @@
 import { Frame, SingleFrame } from "./Frame";
-import { assert } from "./Assert";
+import { assert } from "../Assert";
 
 export const PageSize = 4096;
 

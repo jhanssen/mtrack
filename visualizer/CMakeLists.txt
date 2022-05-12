@@ -4,11 +4,11 @@ set(MTRACK_GRAPH ${CMAKE_CURRENT_LIST_DIR})
 set(MTRACK_GRAPH_BUILD ${CMAKE_CURRENT_BINARY_DIR})
 set(GRAPH_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/Assert.ts
-    ${CMAKE_CURRENT_LIST_DIR}/src/Frame.ts
-    ${CMAKE_CURRENT_LIST_DIR}/src/Graph.ts
-    ${CMAKE_CURRENT_LIST_DIR}/src/Model.ts
-    ${CMAKE_CURRENT_LIST_DIR}/src/RecordType.ts
-    ${CMAKE_CURRENT_LIST_DIR}/src/webpage.ts)
+    ${CMAKE_CURRENT_LIST_DIR}/src/graph/Graph.ts
+    ${CMAKE_CURRENT_LIST_DIR}/src/graph/webpage.ts
+    ${CMAKE_CURRENT_LIST_DIR}/src/model/Frame.ts
+    ${CMAKE_CURRENT_LIST_DIR}/src/model/Model.ts
+    ${CMAKE_CURRENT_LIST_DIR}/src/model/RecordType.ts)
 
 configure_file(rollup.config.js.in ${CMAKE_CURRENT_BINARY_DIR}/rollup.config.js)
 configure_file(package.json.in ${CMAKE_CURRENT_BINARY_DIR}/package.json)
