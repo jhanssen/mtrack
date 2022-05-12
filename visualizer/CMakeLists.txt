@@ -2,8 +2,9 @@ cmake_minimum_required(VERSION 3.13)
 
 set(MTRACK_GRAPH ${CMAKE_CURRENT_LIST_DIR})
 set(MTRACK_GRAPH_BUILD ${CMAKE_CURRENT_BINARY_DIR})
-set(GRAPH_SOURCES
+set(VISUALIZER_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/Assert.ts
+    ${CMAKE_CURRENT_LIST_DIR}/src/cli/cli.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/graph/Graph.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/graph/webpage.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/model/Frame.ts
@@ -34,10 +35,10 @@ add_custom_target(yarn_install DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/node_modules 
 # execute_process(COMMAND yarn install --modules-folder ${CMAKE_CURRENT_BINARY_DIR}/node_modules)
 
 add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/graph.js ${CMAKE_CURRENT_BINARY_DIR}/graph.js.map
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/graph.js ${CMAKE_CURRENT_BINARY_DIR}/graph.js.map ${CMAKE_CURRENT_BINARY_DIR}/cli.js ${CMAKE_CURRENT_BINARY_DIR}/cli.js.map
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS ${GRAPH_SOURCES} yarn_install
-    COMMENT "Building webpage"
+    DEPENDS ${VISUALIZER_SOURCES} yarn_install
+    COMMENT "Building visualizer"
     COMMAND yarn build)
 
-add_custom_target(graph ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/graph.js ${CMAKE_CURRENT_BINARY_DIR}/graph.js.map)
+add_custom_target(graph ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/graph.js ${CMAKE_CURRENT_BINARY_DIR}/graph.js.map ${CMAKE_CURRENT_BINARY_DIR}/cli.js ${CMAKE_CURRENT_BINARY_DIR}/cli.js.map)

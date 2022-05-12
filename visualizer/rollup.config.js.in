@@ -10,7 +10,7 @@ const plugins = [
 
 // Define forms
 const format = "cjs";
-const external = ["fs", "assert"];
+const external = ["fs", "fs/promises", "assert", "process"];
 
 function onwarn(warning) {
     if (warning.pluginCode === "TS2688") {
@@ -35,6 +35,19 @@ export default [
             file: "graph.js",
             format,
             name: "webpage",
+            exports: "named",
+            sourcemap: true
+        }
+    },
+    {
+        input: "@MTRACK_GRAPH@/src/cli/cli.ts",
+        plugins,
+        external,
+        onwarn,
+        output: {
+            file: "cli.js",
+            format,
+            name: "cli",
             exports: "named",
             sourcemap: true
         }

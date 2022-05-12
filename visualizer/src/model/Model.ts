@@ -236,7 +236,7 @@ export class Model {
         this._memories = memories.sort((m1, m2) => {
             return m1.time - m2.time;
         });
-        console.log(this._memories);
+        // console.log(this._memories);
         this._stacks = stacks;
         this._stackStrings = stackStrings;
     }
