@@ -67,44 +67,10 @@ export class Graph {
     private _nomodel: unknown | undefined;
     private _readies: Ready[] = [];
     private _prevSnapshot: number | undefined;
+    private _initTimeout: number | undefined;
 
     constructor() {
-        const margin = {top: 20, right: 20, bottom: 50, left: 70};
-        const width = 750 - margin.left - margin.right;
-        const height = 400 - margin.top - margin.bottom;
-
-        const x = scaleLinear().range([0, width]);
-        const y = scaleLinear().range([height, 0]);
-
-        const valueLine = line()
-            // @ts-ignore
-            .x(d => x(d.time))
-            // @ts-ignore
-            .y(d => y(d.used));
-
-        const svg = select("#linechart")
-              .append("svg")
-              .attr("width", width + margin.left + margin.top)
-              .attr("height", height + margin.top + margin.bottom)
-              .append("g")
-              .attr("transform", `translate(${margin.left},${margin.top})`);
-
-        this._line = {
-            margin, width, height, x, y, svg, valueLine
-        };
-
-        this._flame = flamegraph()
-            .width(1920)
-            .cellHeight(18)
-            .transitionDuration(750)
-            .minFrameSize(5)
-            // flamegraph types are wrong
-            .transitionEase(easeCubic as unknown as string)
-            .sort(true)
-            .title("")
-            //.onClick(onClick)
-            .selfValue(false);
-
+        this._createGraphs(window.innerWidth - 100);
         const data = "data:application/octet-binary;base64,$DATA_GOES_HERE$";
         try {
             window.fetch(data)
@@ -133,6 +99,19 @@ export class Graph {
             console.error("fetch??", e);
         }
         //this._model = new Model(this._data);
+
+        window.addEventListener("resize", () => {
+            this._createGraphs(window.innerWidth - 100);
+            this.ready().then(() => {
+                if (this._initTimeout !== undefined) {
+                    window.clearTimeout(this._initTimeout);
+                }
+                this._initTimeout = window.setTimeout(() => {
+                    this._initTimeout = undefined;
+                    this.init();
+                }, 500);
+            });
+        });
     }
 
     ready() {
@@ -255,6 +234,47 @@ export class Graph {
             .call(axisLeft(this._line.y));
 
         console.log("inited");
+    }
+
+    private _createGraphs(windowWidth: number) {
+        const margin = {top: 20, right: 20, bottom: 50, left: 70};
+        const width = windowWidth - margin.left - margin.right;
+        const height = 400 - margin.top - margin.bottom;
+
+        const x = scaleLinear().range([0, width]);
+        const y = scaleLinear().range([height, 0]);
+
+        const valueLine = line()
+        // @ts-ignore
+            .x(d => x(d.time))
+        // @ts-ignore
+            .y(d => y(d.used));
+
+        select("#linechart").selectAll("*").remove();
+
+        const svg = select("#linechart")
+            .append("svg")
+            .attr("width", width + margin.left + margin.top)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        this._line = {
+            margin, width, height, x, y, svg, valueLine
+        };
+
+        this._flame = flamegraph()
+            .width(width)
+            .cellHeight(18)
+            .transitionDuration(750)
+            .minFrameSize(5)
+        // flamegraph types are wrong
+            .transitionEase(easeCubic as unknown as string)
+            .sort(true)
+            .title("")
+        //.onClick(onClick)
+            .selfValue(false);
+
     }
 
     private _flameify(time: number, delta: boolean) {

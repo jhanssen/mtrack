@@ -75,12 +75,14 @@ export class Model {
     private _stacks: Stack[] | undefined;
     private _memories: Memory[] | undefined;
     private _snapshots: Snapshot[] | undefined;
+    private _parsed: boolean;
 
     constructor(data: ArrayBuffer) {
         this._decoder = new TextDecoder;
         this._data = data;
         this._view = new DataView(this._data);
         this._offset = 0;
+        this._parsed = false;
     }
 
     private _readFloat64() {
@@ -109,6 +111,10 @@ export class Model {
     }
 
     public parse() {
+        if (this._parsed) {
+            return;
+        }
+        this._parsed = true;
         const stacks: Stack[] = [];
         const stackStrings: string[] = [];
         const threads: Map<number, string> = new Map();
