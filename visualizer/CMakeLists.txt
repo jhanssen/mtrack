@@ -6,7 +6,7 @@ set(GRAPH_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/Assert.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/Frame.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/Graph.ts
-    ${CMAKE_CURRENT_LIST_DIR}/src/Model2.ts
+    ${CMAKE_CURRENT_LIST_DIR}/src/Model.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/RecordType.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/webpage.ts)
 

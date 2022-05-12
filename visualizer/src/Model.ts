@@ -66,7 +66,7 @@ export const enum CallbackType {
     Snapshot
 }
 
-export class Model2 {
+export class Model {
     private _decoder: TextDecoder;
     private _data: ArrayBuffer;
     private _view: DataView;

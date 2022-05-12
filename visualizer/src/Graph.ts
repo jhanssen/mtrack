@@ -1,7 +1,7 @@
 import "d3-transition";
 import { FlameGraph, flamegraph } from "d3-flame-graph";
 import { Line, ScaleLinear, axisBottom, axisLeft, easeCubic, extent, line, max, scaleLinear, select } from "d3";
-import { Model2, PageSize } from "./Model2";
+import { Model, PageSize } from "./Model";
 import { assert } from "./Assert";
 import { stringifyFrame } from "./Frame";
 
@@ -63,7 +63,7 @@ function cyrb53(str: string, seed: number = 0) {
 export class Graph {
     private _line: LineData;
     private _flame: FlameGraph;
-    private _model: Model2 | undefined;
+    private _model: Model | undefined;
     private _nomodel: unknown | undefined;
     private _readies: Ready[] = [];
     private _prevSnapshot: number | undefined;
@@ -117,7 +117,7 @@ export class Graph {
                 .then(blob => blob.arrayBuffer())
                 .then(buffer => {
                     console.log("got decompressed", buffer.byteLength);
-                    this._model = new Model2(buffer);
+                    this._model = new Model(buffer);
                     for (const r of this._readies) {
                         r.resolve();
                     }
