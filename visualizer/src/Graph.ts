@@ -1,9 +1,9 @@
 import "d3-transition";
 import { FlameGraph, flamegraph } from "d3-flame-graph";
 import { Line, ScaleLinear, axisBottom, axisLeft, easeCubic, extent, line, max, scaleLinear, select } from "d3";
-import { Model2, PageSize, Snapshot } from "./Model2";
-import { Stack } from "./Stack";
+import { Model2, PageSize } from "./Model2";
 import { assert } from "./Assert";
+import { stringifyFrame } from "./Frame";
 
 type Margin = {
     top: number;
@@ -323,7 +323,7 @@ export class Graph {
                 });
                 if (curIdx === -1) {
                     curIdx = cur.length;
-                    cur.push({ name: Stack.stringifyFrame(frame, this._model.stackStrings), value: bytes, ip: stackFrame.ip, children: [] });
+                    cur.push({ name: stringifyFrame(frame, this._model.stackStrings), value: bytes, ip: stackFrame.ip, children: [] });
                 } else {
                     cur[curIdx].value += bytes;
                 }

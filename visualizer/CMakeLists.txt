@@ -7,12 +7,7 @@ set(GRAPH_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/Frame.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/Graph.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/Model2.ts
-    ${CMAKE_CURRENT_LIST_DIR}/src/PageFault2.ts
-    ${CMAKE_CURRENT_LIST_DIR}/src/ParseResult.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/RecordType.ts
-    ${CMAKE_CURRENT_LIST_DIR}/src/Snapshot.ts
-    ${CMAKE_CURRENT_LIST_DIR}/src/Stack.ts
-    ${CMAKE_CURRENT_LIST_DIR}/src/Until.ts
     ${CMAKE_CURRENT_LIST_DIR}/src/webpage.ts)
 
 configure_file(rollup.config.js.in ${CMAKE_CURRENT_BINARY_DIR}/rollup.config.js)
