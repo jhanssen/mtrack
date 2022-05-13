@@ -438,6 +438,10 @@ void Hooks::hook()
     pid_t pid = fork();
     if (pid == 0) {
         // child
+
+        // ignore sigint, the parent will tell the child when it's time to quit
+        signal(SIGINT, SIG_IGN);
+
         NoHook nohook;
 
         EINTRWRAP(e, ::close(data->emitPipe[1]));
