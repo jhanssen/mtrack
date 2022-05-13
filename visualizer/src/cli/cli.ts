@@ -25,6 +25,10 @@ console.log("loading", input);
     console.log("parsing data");
     model.parse();
     console.log("parsed, processing data");
+    console.log(model.snapshots.length, "snapshots");
+    console.log(model.memories.length, "memories");
+    console.log((model.stackStrings.reduce((prev, cur) => prev + cur.length, 0) / (1024 * 1024)).toFixed(2), "MB strings");
+    console.log((model.stacks.reduce((prev, cur) => prev + (cur.length * 8), 0)).toFixed(2), "MB stacks");
 
     const mb = 1024 * 1024;
     const peak = [0, 0, 0];
