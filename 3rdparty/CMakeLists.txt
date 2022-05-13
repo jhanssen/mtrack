@@ -1,13 +1,14 @@
 cmake_minimum_required(VERSION 3.13)
 include(ExternalProject)
 
+set(UNWIND_DIR ${CMAKE_CURRENT_LIST_DIR}/libunwind)
 set(UNWIND_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/libunwind)
 if (${CMAKE_CURRENT_BINARY_DIR} STREQUAL ${CMAKE_CURRENT_LIST_DIR})
     set(UNWIND_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/install/libunwind)
 endif ()
 
 set(UNWIND_EXTERNAL_LIB ${UNWIND_BINARY_DIR}/prefix/lib/libunwind.a)
-set(UNWIND_CONFIGURE ${UNWIND_BINARY_DIR}/configure --prefix ${UNWIND_BINARY_DIR}/prefix --disable-tests --disable-documentation --disable-coredump --disable-ptrace --disable-setjmp --disable-debug-frame --disable-minidebuginfo --disable-per-thread-cache --disable-cxx-exceptions --disable-debug --disable-weak-backtrace --disable-unwind-header --disable-shared)
+set(UNWIND_CONFIGURE ${UNWIND_DIR}/configure --prefix ${UNWIND_BINARY_DIR}/prefix --disable-tests --disable-documentation --disable-coredump --disable-ptrace --disable-setjmp --disable-debug-frame --disable-minidebuginfo --disable-per-thread-cache --disable-cxx-exceptions --disable-debug --disable-weak-backtrace --disable-unwind-header --disable-shared)
 if (${MTRACK_32})
     set(UNWIND_CONFIGURE ${UNWIND_CONFIGURE} --host=i686-pc-linux-gnu "CFLAGS=-m32 -fPIC" LDFLAGS=-m32)
 else ()
@@ -15,11 +16,8 @@ else ()
 endif ()
 
 ExternalProject_Add(unwind_external
-    URL https://download.savannah.nongnu.org/releases/libunwind/libunwind-1.6.2.tar.gz
-    URL_HASH SHA256=4a6aec666991fb45d0889c44aede8ad6eb108071c3554fcdff671f9c94794976
     CONFIGURE_COMMAND ${UNWIND_CONFIGURE}
-    DOWNLOAD_DIR ${UNWIND_BINARY_DIR}
-    SOURCE_DIR ${UNWIND_BINARY_DIR}
+    SOURCE_DIR ${UNWIND_DIR}
     BINARY_DIR ${UNWIND_BINARY_DIR}
     INSTALL_DIR ${UNWIND_BINARY_DIR}
     BUILD_BYPRODUCTS ${UNWIND_EXTERNAL_LIB}
@@ -29,7 +27,7 @@ file(MAKE_DIRECTORY ${UNWIND_BINARY_DIR}/include)
 
 add_library(unwind_static STATIC IMPORTED GLOBAL)
 add_dependencies(unwind_static unwind_external)
-target_include_directories(unwind_static INTERFACE ${UNWIND_BINARY_DIR}/include)
+target_include_directories(unwind_static INTERFACE ${UNWIND_BINARY_DIR}/include ${UNWIND_DIR}/include)
 set_target_properties(unwind_static PROPERTIES IMPORTED_LOCATION ${UNWIND_EXTERNAL_LIB})
 add_library(unwind::static ALIAS unwind_static)
 

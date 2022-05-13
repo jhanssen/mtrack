@@ -5,6 +5,11 @@ set(SOURCES
     Stack.cpp
     )
 
+if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64")
+    list(APPEND SOURCES Stack_x86_64.S)
+    enable_language(ASM)
+endif()
+
 set_source_files_properties(${SOURCES} PROPERTIES COMPILE_FLAGS "-fno-omit-frame-pointer -Wall")
 
 add_library(mtrack_preload SHARED ${SOURCES})
