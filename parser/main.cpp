@@ -199,6 +199,10 @@ int main(int argc, char** argv)
         options.timeSkipPerTimeStamp = args.value<uint32_t>("time-skip");
     }
 
+    if (args.has<bool>("uncompressed")) {
+        options.gzip = !args.value<bool>("uncompressed");
+    }
+
     parse(std::move(options));
 
     return 0;

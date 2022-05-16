@@ -82,6 +82,8 @@ ExternalProject_Add(zlib_external
     BUILD_BYPRODUCTS ${ZLIB_EXTERNAL_LIB}
     )
 
+file(MAKE_DIRECTORY ${ZLIB_BINARY_DIR}/prefix/include)
+
 add_library(zlib_static STATIC IMPORTED GLOBAL)
 add_dependencies(zlib_static zlib_external)
 target_include_directories(zlib_static INTERFACE ${ZLIB_BINARY_DIR}/prefix/include)

@@ -128,6 +128,7 @@ public:
         size_t resolverThreads { 2 };
         uint32_t timeSkipPerTimeStamp { 0 };
         std::function<uint32_t()> timeStamp;
+        bool gzip { true };
    };
     Parser(const Options& options);
     ~Parser();

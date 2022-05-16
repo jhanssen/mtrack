@@ -36,7 +36,8 @@ static std::map<int, size_t> emitted;
 #endif
 
 Parser::Parser(const Options& options)
-    : mOptions(options), mFileEmitter(options.output), mResolverThread(std::make_unique<ResolverThread>(this))
+    : mOptions(options), mFileEmitter(options.output, options.gzip ? FileEmitter::WriteMode::GZip : FileEmitter::WriteMode::Uncompressed),
+      mResolverThread(std::make_unique<ResolverThread>(this))
 {
     mThread = std::thread(std::bind(&Parser::parseThread, this));
     if (options.maxEventCount != std::numeric_limits<size_t>::max() && options.maxEventCount > 0) {
