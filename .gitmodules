@@ -7,3 +7,6 @@
 [submodule "3rdparty/libunwind"]
 	path = 3rdparty/libunwind
 	url = https://github.com/jhanssen/libunwind.git
+[submodule "3rdparty/zlib"]
+	path = 3rdparty/zlib
+	url = https://github.com/madler/zlib.git

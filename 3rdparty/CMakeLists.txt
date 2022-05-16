@@ -65,4 +65,27 @@ target_include_directories(backtrace_static INTERFACE ${BACKTRACE_DIR})
 set_target_properties(backtrace_static PROPERTIES IMPORTED_LOCATION ${BACKTRACE_EXTERNAL_LIB})
 add_library(backtrace::static ALIAS backtrace_static)
 
+# why do these libraries still have a cmake file from the 70s
+set(ZLIB_DIR ${CMAKE_CURRENT_LIST_DIR}/zlib)
+set(ZLIB_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/zlib)
+set(ZLIB_CONFIGURE ${ZLIB_DIR}/configure --prefix=${ZLIB_BINARY_DIR}/prefix --static)
+set(ZLIB_EXTERNAL_LIB ${ZLIB_BINARY_DIR}/prefix/lib/libz.a)
+if (NOT ${MTRACK_32})
+    set(ZLIB_CONFIGURE ${ZLIB_CONFIGURE} --64)
+endif()
+
+ExternalProject_Add(zlib_external
+    CONFIGURE_COMMAND ${ZLIB_CONFIGURE}
+    SOURCE_DIR ${ZLIB_DIR}
+    BINARY_DIR ${ZLIB_BINARY_DIR}
+    INSTALL_DIR ${ZLIB_BINARY_DIR}
+    BUILD_BYPRODUCTS ${ZLIB_EXTERNAL_LIB}
+    )
+
+add_library(zlib_static STATIC IMPORTED GLOBAL)
+add_dependencies(zlib_static zlib_external)
+target_include_directories(zlib_static INTERFACE ${ZLIB_BINARY_DIR}/prefix/include)
+set_target_properties(zlib_static PROPERTIES IMPORTED_LOCATION ${ZLIB_EXTERNAL_LIB})
+add_library(zlib::static ALIAS zlib_static)
+
 add_subdirectory(fmt)
