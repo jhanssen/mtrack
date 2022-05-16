@@ -12,6 +12,9 @@
           pointer-events: none;
       }
     </style>
+    <script>
+      // inline js goes here
+    </script>
   </head>
 <body>
   <div id="linechart"></div>
