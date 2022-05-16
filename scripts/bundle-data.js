@@ -2,6 +2,7 @@ import { readFile, open } from "fs/promises";
 import { gzip } from "zlib";
 
 let input, data, output;
+let compress = false;
 
 for (let a = 0; a < process.argv.length; ++a) {
     const arg = process.argv[a];
@@ -14,6 +15,9 @@ for (let a = 0; a < process.argv.length; ++a) {
         break;
     case "--output":
         output = process.argv[++a];
+        break;
+    case "--compress":
+        compress = true;
         break;
     }
 }
@@ -35,13 +39,17 @@ if (output === undefined) {
 
 function gzipify(data) {
     return new Promise((resolve, reject) => {
-        gzip(data, (err, chunk) => {
-            if (err === null) {
-                resolve(chunk);
-            } else {
-                reject(err);
-            }
-        });
+        if (compress) {
+            gzip(data, (err, chunk) => {
+                if (err === null) {
+                    resolve(chunk);
+                } else {
+                    reject(err);
+                }
+            });
+        } else {
+            resolve(data);
+        }
     });
 }
 
