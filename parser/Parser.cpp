@@ -36,7 +36,7 @@ static std::map<int, size_t> emitted;
 #endif
 
 Parser::Parser(const Options& options)
-    : mOptions(options), mFileEmitter(options.output, options.gzip ? FileEmitter::WriteMode::GZip : FileEmitter::WriteMode::Uncompressed),
+    : mOptions(options), mFileEmitter(options.output, options.html ? FileEmitter::WriteMode::Html : (options.gzip ? FileEmitter::WriteMode::GZip : FileEmitter::WriteMode::Uncompressed)),
       mResolverThread(std::make_unique<ResolverThread>(this))
 {
     mThread = std::thread(std::bind(&Parser::parseThread, this));

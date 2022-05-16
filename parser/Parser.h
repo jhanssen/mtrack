@@ -129,6 +129,7 @@ public:
         uint32_t timeSkipPerTimeStamp { 0 };
         std::function<uint32_t()> timeStamp;
         bool gzip { true };
+        bool html { true };
    };
     Parser(const Options& options);
     ~Parser();

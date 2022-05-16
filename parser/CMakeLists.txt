@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 set(SOURCES
     main.cpp
+    base64.c
     FileEmitter.cpp
     Logger.cpp
     Module.cpp

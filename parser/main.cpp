@@ -203,6 +203,10 @@ int main(int argc, char** argv)
         options.gzip = !args.value<bool>("uncompressed");
     }
 
+    if (args.has<bool>("no-bundle")) {
+        options.html = !args.value<bool>("no-bundle");
+    }
+
     parse(std::move(options));
 
     return 0;
