@@ -7,8 +7,10 @@
 #include <cassert>
 #include <climits>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <functional>
+#include <unistd.h>
 
 enum class EmitType : uint8_t {
     Memory,
@@ -36,8 +38,7 @@ static std::map<int, size_t> emitted;
 #endif
 
 Parser::Parser(const Options& options)
-    : mOptions(options), mFileEmitter(options.output, options.html ? FileEmitter::WriteMode::Html : (options.gzip ? FileEmitter::WriteMode::GZip : FileEmitter::WriteMode::Uncompressed)),
-      mResolverThread(std::make_unique<ResolverThread>(this))
+    : mOptions(options), mResolverThread(std::make_unique<ResolverThread>(this))
 {
     mThread = std::thread(std::bind(&Parser::parseThread, this));
     if (options.maxEventCount != std::numeric_limits<size_t>::max() && options.maxEventCount > 0) {
@@ -45,6 +46,18 @@ Parser::Parser(const Options& options)
     } else if (options.fileSize != std::numeric_limits<size_t>::max() && options.fileSize > 0) {
         mData.resize(options.fileSize);
     }
+
+    mFile = fopen(options.output.c_str(), "w");
+
+    uint8_t fileEmitterFlags = FileEmitter::WriteMode::None;
+    if (mOptions.html) {
+        fileEmitterFlags |= FileEmitter::WriteMode::GZip | FileEmitter::WriteMode::Base64;
+        writeHtmlHeader();
+    } else if (mOptions.gzip) {
+        fileEmitterFlags |= FileEmitter::WriteMode::GZip;
+    }
+
+    mFileEmitter.setFile(mFile, fileEmitterFlags);
 
     mLastMemory.growthThreshold = 0.1;
     mLastMemory.timeThreshold = 250;
@@ -55,8 +68,15 @@ Parser::Parser(const Options& options)
 
 Parser::~Parser()
 {
+    cleanup();
+}
+
+void Parser::cleanup()
+{
     {
         std::lock_guard<std::mutex> lock(mMutex);
+        if (mShutdown)
+            return;
         mShutdown = true;
         mCond.notify_one();
     }
@@ -67,6 +87,14 @@ Parser::~Parser()
         printf("%d %lu\n", ref.first, ref.second);
     }
 #endif
+
+    mFileEmitter.cleanup();
+    if (mFile) {
+        if (mOptions.html) {
+            writeHtmlTrailer();
+        }
+        fclose(mFile);
+    }
 }
 
 void Parser::onResolvedAddresses(std::vector<Address<std::string>>&& addresses)
@@ -582,3 +610,87 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
     }
 }
 
+std::string Parser::visualizerDirectory()
+{
+    char buf[4096];
+    ssize_t l = readlink("/proc/self/exe", buf, sizeof(buf));
+    if (l == sizeof(buf))
+        return {};
+
+    // find the previous slash
+    while (l - 1 >= 0 && buf[l - 1] != '/')
+        --l;
+
+    if (l < 0)
+        return {};
+
+    return std::string(buf, l) + "../visualizer/";
+}
+
+std::string Parser::readFile(const std::string& fn)
+{
+    FILE* f = fopen(fn.c_str(), "r");
+    if (!f)
+        return {};
+
+    fseek(f, 0, SEEK_END);
+    const size_t sz = static_cast<size_t>(ftell(f));
+    fseek(f, 0, SEEK_SET);
+
+    std::string data;
+    data.resize(sz);
+    if (fread(&data[0], sz, 1, f) != 1)
+        return {};
+
+    return data;
+}
+
+void Parser::writeHtmlHeader()
+{
+    if (!mFile)
+        return;
+
+    const auto dir = visualizerDirectory();
+
+    const auto htmlData = readFile(dir + "index.html");
+    const auto jsData = readFile(dir + "graph.js");
+    if (htmlData.empty() || jsData.empty())
+        return;
+
+    // write html header
+    auto hidx = htmlData.find("// inline js goes here");
+    if (hidx == std::string::npos)
+        return;
+
+    auto jidx = jsData.find("$DATA_GOES_HERE$");
+    if (jidx == std::string::npos)
+        return;
+
+    fwrite(htmlData.c_str(), hidx, 1, mFile);
+    fwrite(jsData.c_str(), jidx, 1, mFile);
+}
+
+void Parser::writeHtmlTrailer()
+{
+    if (!mFile)
+        return;
+
+    const auto dir = visualizerDirectory();
+
+    const auto htmlData = readFile(dir + "index.html");
+    const auto jsData = readFile(dir + "graph.js");
+    if (htmlData.empty() || jsData.empty())
+        return;
+
+    // write html header
+    auto hidx = htmlData.find("// inline js goes here");
+    if (hidx == std::string::npos)
+        return;
+
+    auto jidx = jsData.find("$DATA_GOES_HERE$");
+    if (jidx == std::string::npos)
+        return;
+
+    fwrite(jsData.c_str() + jidx + 16, jsData.size() - (jidx + 16), 1, mFile);
+    fwrite(htmlData.c_str() + hidx + 22, htmlData.size() - (hidx + 22), 1, mFile);
+}

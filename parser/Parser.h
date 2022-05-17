@@ -8,6 +8,7 @@
 #include <common/RecordType.h>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <cmath>
 #include <functional>
@@ -135,7 +136,7 @@ public:
     ~Parser();
 
     void feed(const uint8_t* data, uint32_t size);
-    void shutdown();
+    void cleanup();
 
     void onResolvedAddresses(std::vector<Address<std::string>>&& addresses);
 
@@ -146,6 +147,11 @@ private:
     void emitStack(int32_t idx);
     void emitAddress(Address<std::string> &&addr);
     void emitSnapshot(uint32_t now);
+
+    static std::string visualizerDirectory();
+    static std::string readFile(const std::string& fn);
+    void writeHtmlHeader();
+    void writeHtmlTrailer();
 
 private:
     const Options mOptions;
@@ -213,6 +219,7 @@ private:
 
     MmapTracker mMmaps;
 
+    FILE* mFile {};
     FileEmitter mFileEmitter;
 
     std::string mExe, mCwd;

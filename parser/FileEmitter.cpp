@@ -5,18 +5,20 @@
 
 FileEmitter::~FileEmitter()
 {
+    cleanup();
+}
+
+void FileEmitter::cleanup()
+{
     if (mZStream != nullptr) {
         flush(true);
         deflateEnd(mZStream);
         delete mZStream;
-    }
-
-    if (mFile != nullptr) {
-        fclose(mFile);
+        mZStream = nullptr;
     }
 }
 
-void FileEmitter::setFile(const std::string& file, WriteMode writeMode)
+void FileEmitter::setFile(FILE* file, uint8_t writeMode)
 {
     if (mZStream != nullptr) {
         flush(true);
@@ -24,24 +26,20 @@ void FileEmitter::setFile(const std::string& file, WriteMode writeMode)
         delete mZStream;
     }
 
-    if (mFile != nullptr) {
-        fclose(mFile);
-    }
-
-    if (writeMode == WriteMode::GZip || writeMode == WriteMode::Html) {
+    if (writeMode & WriteMode::GZip) {
         mZStream = new z_stream;
         mZStream->zalloc = nullptr;
         mZStream->zfree = nullptr;
         mZStream->opaque = nullptr;
         deflateInit2(mZStream, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
                      15 | 16, 8, Z_DEFAULT_STRATEGY);
-        mBase64 = writeMode == WriteMode::Html;
+        mBase64 = writeMode & WriteMode::Base64;
     } else {
         mZStream = nullptr;
         mBase64 = false;
     }
 
-    mFile = fopen(file.c_str(), "w");
+    mFile = file;
 }
 
 void FileEmitter::flush(bool finalize)

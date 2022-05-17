@@ -11,18 +11,20 @@ extern "C" struct z_stream_s;
 class FileEmitter : public Emitter
 {
 public:
-    enum WriteMode { Uncompressed, GZip, Html };
+    enum WriteMode { None = 0x0, GZip = 0x1, Base64 = 0x2 };
 
     FileEmitter() = default;
-    FileEmitter(const std::string& file, WriteMode writeMode)
+    FileEmitter(FILE* file, uint8_t writeMode)
     {
         setFile(file, writeMode);
     }
     ~FileEmitter();
 
+    void cleanup();
+
     uint64_t offset() const { return mOffset; }
 
-    void setFile(const std::string& file, WriteMode writeMode);
+    void setFile(FILE* file, uint8_t writeMode);
 
     virtual void writeBytes(const void* data, size_t size, WriteType type) override;
 

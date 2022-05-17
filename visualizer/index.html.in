@@ -12,9 +12,6 @@
           pointer-events: none;
       }
     </style>
-    <script>
-      // inline js goes here
-    </script>
   </head>
 <body>
   <div id="linechart"></div>
@@ -26,6 +23,10 @@
     <div id="flamedetails">
     </div>
   </div>
-  <script type="module" src="./graph-bundle.js"></script>
+  <script type="module">
+    (function() {
+        // inline js goes here
+    })();
+  </script>
 </body>
 </html>
