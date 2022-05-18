@@ -10,3 +10,6 @@
 [submodule "3rdparty/zlib"]
 	path = 3rdparty/zlib
 	url = https://github.com/madler/zlib.git
+[submodule "3rdparty/asan_unwind"]
+	path = 3rdparty/asan_unwind
+	url = https://github.com/jhanssen/asan_unwind.git

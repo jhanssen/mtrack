@@ -29,9 +29,6 @@
 #include <thread>
 #include <tuple>
 
-#define UNW_LOCAL_ONLY
-#include <libunwind.h>
-
 #define EINTRWRAP(VAR, BLOCK)                   \
     do {                                        \
         VAR = BLOCK;                            \
@@ -562,9 +559,6 @@ void Hooks::hook()
 
     NoHook nohook;
 
-    unw_set_caching_policy(unw_local_addr_space, UNW_CACHE_PER_THREAD);
-    unw_set_cache_size(unw_local_addr_space, 1024, 0);
-
     safePrint("hook.\n");
 }
 
@@ -852,9 +846,7 @@ void* dlopen(const char* filename, int flags)
         std::call_once(hookOnce, Hooks::hook);
     }
     data->modulesDirty.store(true, std::memory_order_release);
-    void* ret = callbacks.dlopen(filename, flags);
-    Stack::flushCache();
-    return ret;
+    return callbacks.dlopen(filename, flags);
 }
 
 int dlclose(void* handle)
@@ -866,9 +858,7 @@ int dlclose(void* handle)
     if (data) {
         data->modulesDirty.store(true, std::memory_order_release);
     }
-    int ret = callbacks.dlclose(handle);
-    Stack::flushCache();
-    return ret;
+    return callbacks.dlclose(handle);
 }
 
 int pthread_setname_np(pthread_t thread, const char* name)

@@ -91,3 +91,4 @@ set_target_properties(zlib_static PROPERTIES IMPORTED_LOCATION ${ZLIB_EXTERNAL_L
 add_library(zlib::static ALIAS zlib_static)
 
 add_subdirectory(fmt)
+add_subdirectory(asan_unwind)
