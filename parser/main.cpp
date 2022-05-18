@@ -173,12 +173,6 @@ int main(int argc, char** argv)
         options.packetMode = args.value<bool>("packet-mode");
     }
 
-    if (args.has<std::string>("output")) {
-        options.output = args.value<std::string>("output");
-    } else {
-        options.output = "mtrackp.out";
-    }
-
     if (args.has<std::string>("log-file")) {
         Logger::create(args.value<std::string>("log-file"));
     }
@@ -205,6 +199,18 @@ int main(int argc, char** argv)
 
     if (args.has<bool>("no-bundle")) {
         options.html = !args.value<bool>("no-bundle");
+    }
+
+    if (args.has<std::string>("output")) {
+        options.output = args.value<std::string>("output");
+    } else {
+        if (options.html) {
+            options.output = "mtrackp.html";
+        } else if (options.gzip) {
+            options.output = "mtrackp.out.gz";
+        } else {
+            options.output = "mtrackp.out";
+        }
     }
 
     parse(std::move(options));

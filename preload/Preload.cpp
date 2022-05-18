@@ -480,7 +480,7 @@ void Hooks::hook()
             parser = self.substr(0, slash + 1) + "bin/mtrack_parser";
         }
 
-        char* args[7] = {};
+        char* args[8] = {};
         size_t argIdx = 0;
         args[argIdx++] = strdup(parser.c_str());
         args[argIdx++] = strdup("--packet-mode");
@@ -493,6 +493,10 @@ void Hooks::hook()
         if (dump) {
             args[argIdx++] = strdup("--dump");
             args[argIdx++] = strdup(dump);
+        }
+        const char* nob = getenv("MTRACK_NO_BUNDLE");
+        if (nob) {
+            args[argIdx++] = strdup("--no-bundle");
         }
         args[argIdx++] = nullptr;
         char* envs[1] = {};
