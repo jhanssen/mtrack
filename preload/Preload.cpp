@@ -568,7 +568,7 @@ void Hooks::hook()
     safePrint("hook.\n");
 }
 
-void trackMmap(void* addr, size_t length, int prot, int flags)
+static void trackMmap(void* addr, size_t length, int prot, int flags)
 {
     // printf("-maping %p %zu flags 0x%x priv/anon %d\n", addr, length, flags, (flags & (MAP_PRIVATE | MAP_ANONYMOUS)) == (MAP_PRIVATE | MAP_ANONYMOUS));
     {
@@ -603,7 +603,7 @@ void trackMmap(void* addr, size_t length, int prot, int flags)
     }
 }
 
-void reportMalloc(void* ptr, size_t size)
+static void reportMalloc(void* ptr, size_t size)
 {
     NoHook nohook;
 
@@ -620,7 +620,7 @@ void reportMalloc(void* ptr, size_t size)
                  Stack());
 }
 
-void reportFree(void* ptr)
+static void reportFree(void* ptr)
 {
     NoHook nohook;
 
