@@ -179,7 +179,7 @@ private:
         uint64_t mallocBytes {};
         uint32_t timeThreshold { 10000 };
         uint32_t peakTimeThreshold { 1000 };
-        uint32_t maxTimeThreshold { 60000 };
+        uint32_t maxTimeThreshold { 900000 };
         uint32_t peakThreshold { 2500 };
         double growthThreshold { 0.2 };
         uint32_t time {};
