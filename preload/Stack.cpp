@@ -48,7 +48,7 @@ void handler(int sig)
     auto sigData = findSigData(gettid());
 
     asan_unwind::StackTrace st(sigData->stack.data(), Stack::MaxFrames);
-    sigData->stackSize = st.unwind();
+    sigData->stackSize = st.unwindSlow();
 
     Waiter wl(sigData->handled);
     wl.notify();
@@ -62,7 +62,7 @@ Stack::Stack(unsigned ptid)
     if (ptid == 0) {
         //mCount = unw_backtrace(mPtrs.data(), MaxFrames);
         asan_unwind::StackTrace st(mPtrs.data(), MaxFrames);
-        mCount = st.unwind();
+        mCount = st.unwindSlow();
     } else {
         mCount = 1;
         if (!sigDatas.siginstalled.test_and_set()) {
