@@ -1,11 +1,19 @@
 import commonjs from "@rollup/plugin-commonjs";
 import resolve from "@rollup/plugin-node-resolve";
 import typescript from "@rollup/plugin-typescript";
+import namedOutput from "rollup-plugin-named-output";
 
 const plugins = [
     resolve({ preferBuiltins: true, moduleDirectories: [ "@MTRACK_GRAPH_BUILD@/node_modules" ] }),
     commonjs(),
-    typescript({ tsconfig: "tsconfig.json" })
+    typescript({ tsconfig: "tsconfig.json", declaration: true, declarationDir: "@MTRACK_GRAPH_BUILD@/types" }),
+    namedOutput({ mapper: (name) => {
+        switch (name) {
+        case "webpage.js":
+            return "graph.js";
+        }
+        return undefined;
+    } })
 ];
 
 // Define forms
@@ -32,7 +40,7 @@ export default [
         external,
         onwarn,
         output: {
-            file: "graph.js",
+            dir: "@MTRACK_GRAPH_BUILD@",
             format,
             name: "webpage",
             exports: "named",
@@ -45,7 +53,7 @@ export default [
         external,
         onwarn,
         output: {
-            file: "cli.js",
+            dir: "@MTRACK_GRAPH_BUILD@",
             format,
             name: "cli",
             exports: "named",

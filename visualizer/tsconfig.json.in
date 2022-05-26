@@ -13,6 +13,7 @@
         "strict": true,
         "rootDir": "@MTRACK_GRAPH@/src",
         "typeRoots": [ "@MTRACK_GRAPH_BUILD@" ],
+        "outDir": "@MTRACK_GRAPH_BUILD@",
         "sourceMap": true,
         "incremental": true,
         "lib": ["es6","dom"],
