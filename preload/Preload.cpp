@@ -32,7 +32,7 @@
 #ifndef SYS_userfaultfd
 #if defined(__x86_64__)
 #define SYS_userfaultfd 323
-#elif defined(__i686__)
+#elif defined(__i386__)
 #define SYS_userfaultfd 374
 #else
 #error "Unsupported architecture"
