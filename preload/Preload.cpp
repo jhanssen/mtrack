@@ -476,6 +476,10 @@ void Hooks::hook()
                 fprintf(stderr, "could not find the preload path\n");
                 abort();
             }
+            char buf[4096];
+            if (realpath(self.c_str(), buf)) {
+                self = buf;
+            }
 
             // find the slash
             auto slash = self.find_last_of('/');
