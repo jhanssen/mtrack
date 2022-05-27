@@ -465,7 +465,9 @@ void Hooks::hook()
         if (parser.empty()) {
             std::string self;
             dl_iterate_phdr([](struct dl_phdr_info* info, size_t /*size*/, void* d) {
-                if (strstr(info->dlpi_name, "libmtrack_preload") != nullptr) {
+                if (strstr(info->dlpi_name, "libmtrack_preload") != nullptr
+                    || strstr(info->dlpi_name, "libmtrack32_preload") != nullptr
+                    || strstr(info->dlpi_name, "libmtrack64_preload") != nullptr) {
                     *reinterpret_cast<std::string*>(d) = std::string(info->dlpi_name);
                     return 1;
                 }
