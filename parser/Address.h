@@ -45,7 +45,10 @@ struct Address
 
     bool valid() const;
 
-    bool operator==(const Address&) const = default;
+    bool operator==(const Address &other) const
+    {
+        return ip == other.ip && frame == other.frame && inlined == other.inlined;
+    }
 };
 
 template <typename T>
