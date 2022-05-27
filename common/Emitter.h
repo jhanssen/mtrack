@@ -1,19 +1,9 @@
 #pragma once
 
-#include <concepts>
 #include <cstdint>
 #include <cstring>
 #include <vector>
 #include <string>
-
-namespace detail {
-template<typename T>
-concept HasDataSize = requires(T& t)
-{
-    { t.data() } -> std::same_as<const void*>;
-    { t.size() } -> std::same_as<uint32_t>;
-};
-} // namespace detail
 
 class Emitter
 {
@@ -68,11 +58,11 @@ public:
     virtual void writeBytes(const void* data, size_t size, WriteType type) = 0;
 
 private:
-    template<typename T>
-    size_t emitSize_helper(T&&) requires (!detail::HasDataSize<std::decay_t<T>>);
+    template<typename T, std::enable_if_t<!std::is_arithmetic_v<std::decay_t<T>> && !std::is_enum_v<std::decay_t<T>>> * = nullptr>
+    size_t emitSize_helper(T&& str);
 
-    template<typename T>
-    size_t emitSize_helper(T&& str) requires detail::HasDataSize<std::decay_t<T>>;
+    template<typename T, std::enable_if_t<std::is_arithmetic_v<std::decay_t<T>> || std::is_enum_v<std::decay_t<T>>> * = nullptr>
+    size_t emitSize_helper(T&&);
 
     size_t emitSize();
 
@@ -82,24 +72,24 @@ private:
     template<typename T, typename... Ts>
     size_t emitSize(T&& arg, Ts&&... args);
 
-    template<typename T>
-    size_t emit_helper(T&& arg, WriteType type) requires (!detail::HasDataSize<std::decay_t<T>>);
+    template<typename T, std::enable_if_t<!std::is_arithmetic_v<std::decay_t<T>> && !std::is_enum_v<std::decay_t<T>>> * = nullptr>
+    size_t emit_helper(T&& str, WriteType type);
 
-    template<typename T>
-    size_t emit_helper(T&& str, WriteType type) requires detail::HasDataSize<std::decay_t<T>>;
+    template<typename T, std::enable_if_t<std::is_arithmetic_v<std::decay_t<T>> || std::is_enum_v<std::decay_t<T>>> * = nullptr>
+    size_t emit_helper(T&& arg, WriteType type);
 };
 
-template<typename T>
-inline size_t Emitter::emitSize_helper(T&&) requires (!detail::HasDataSize<std::decay_t<T>>)
+template<typename T, std::enable_if_t<!std::is_arithmetic_v<std::decay_t<T>> && !std::is_enum_v<std::decay_t<T>>> *>
+inline size_t Emitter::emitSize_helper(T&& str)
+{
+    return str.size() + sizeof(uint32_t);
+}
+
+template<typename T, std::enable_if_t<std::is_arithmetic_v<std::decay_t<T>> || std::is_enum_v<std::decay_t<T>>> *>
+inline size_t Emitter::emitSize_helper(T&&)
 {
     static_assert(std::is_enum_v<std::decay_t<T>> || std::is_arithmetic_v<std::decay_t<T>>, "Must be arithmetic or enum");
     return sizeof(T);
-}
-
-template<typename T>
-inline size_t Emitter::emitSize_helper(T&& str) requires detail::HasDataSize<std::decay_t<T>>
-{
-    return str.size() + sizeof(uint32_t);
 }
 
 inline size_t Emitter::emitSize()
@@ -119,22 +109,22 @@ inline size_t Emitter::emitSize(T&& arg, Ts&&... args)
     return emitSize_helper<T>(std::forward<T>(arg)) + emitSize(std::forward<Ts>(args)...);
 }
 
-template<typename T>
-inline size_t Emitter::emit_helper(T&& arg, WriteType type) requires (!detail::HasDataSize<std::decay_t<T>>)
-{
-    static_assert(std::is_enum_v<std::decay_t<T>> || std::is_arithmetic_v<std::decay_t<T>>, "Must be arithmetic or enum");
-    writeBytes(&arg, sizeof(T), type);
-    return sizeof(T);
-}
-
-template<typename T>
-inline size_t Emitter::emit_helper(T&& str, WriteType type) requires detail::HasDataSize<std::decay_t<T>>
+template<typename T, std::enable_if_t<!std::is_arithmetic_v<std::decay_t<T>> && !std::is_enum_v<std::decay_t<T>>> *>
+inline size_t Emitter::emit_helper(T&& str, WriteType type)
 {
     const size_t ret = emit_helper(str.size(), WriteType::Continuation);
     if (str.size() == 0)
         return ret;
     writeBytes(str.data(), str.size(), type);
     return ret + str.size();
+}
+
+template<typename T, std::enable_if_t<std::is_arithmetic_v<std::decay_t<T>> || std::is_enum_v<std::decay_t<T>>> *>
+inline size_t Emitter::emit_helper(T&& arg, WriteType type)
+{
+    static_assert(std::is_enum_v<std::decay_t<T>> || std::is_arithmetic_v<std::decay_t<T>>, "Must be arithmetic or enum");
+    writeBytes(&arg, sizeof(T), type);
+    return sizeof(T);
 }
 
 template<typename T>
@@ -156,7 +146,7 @@ inline size_t Emitter::emitSize(Ts&&... args)
 }
 
 template<typename... Ts>
-inline size_t Emitter::emitWithSize(size_t /* size */, Ts&&... args)
+inline size_t Emitter::emitWithSize(size_t /*size*/, Ts&&... args)
 {
     return emit(std::forward<Ts>(args)...);
 }
