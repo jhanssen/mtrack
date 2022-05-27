@@ -45,7 +45,7 @@ static inline SigData* findSigData(uint32_t ptid)
 
 void handler(int /*sig*/)
 {
-    auto sigData = findSigData(gettid());
+    auto sigData = findSigData(syscall(SYS_gettid));
 
     asan_unwind::StackTrace st(sigData->stack.data(), Stack::MaxFrames);
     sigData->stackSize = st.unwindSlow();

@@ -612,7 +612,7 @@ static void reportMalloc(void* ptr, size_t size)
     emitter.emit(RecordType::Malloc,
                  static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
                  static_cast<uint64_t>(size),
-                 static_cast<uint32_t>(gettid()),
+                 static_cast<uint32_t>(syscall(SYS_gettid)),
                  Stack());
 }
 
@@ -664,7 +664,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     PipeEmitter emitter(data->emitPipe[1]);
     emitter.emit(RecordType::Mmap,
                  mmap_ptr_cast(ret), alignToPage(length), prot, flags,
-                 static_cast<uint32_t>(gettid()), Stack());
+                 static_cast<uint32_t>(syscall(SYS_gettid)), Stack());
     return ret;
 }
 
@@ -702,7 +702,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
     PipeEmitter emitter(data->emitPipe[1]);
     emitter.emit(RecordType::Mmap,
                  mmap_ptr_cast(ret), alignToPage(length), prot, flags,
-                 static_cast<uint32_t>(gettid()), Stack());
+                 static_cast<uint32_t>(syscall(SYS_gettid)), Stack());
 
     return ret;
 }
@@ -809,7 +809,7 @@ void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
 
     PipeEmitter emitter(data->emitPipe[1]);
     emitter.emit(RecordType::Mremap, mmap_ptr_cast(addr), alignToPage(old_size),
-                 mmap_ptr_cast(ret), alignToPage(new_size), flags, gettid(), Stack());
+                 mmap_ptr_cast(ret), alignToPage(new_size), flags, syscall(SYS_gettid), Stack());
 
     return ret;
 }
@@ -872,7 +872,7 @@ int pthread_setname_np(pthread_t thread, const char* name)
     // ### should fix this, this will drop unless we're the same thread
     if (pthread_equal(thread, pthread_self())) {
         PipeEmitter emitter(data->emitPipe[1]);
-        emitter.emit(RecordType::ThreadName, static_cast<uint32_t>(gettid()), Emitter::String(name));
+        emitter.emit(RecordType::ThreadName, static_cast<uint32_t>(syscall(SYS_gettid)), Emitter::String(name));
     }
     return callbacks.pthread_setname_np(thread, name);
 }
