@@ -126,7 +126,7 @@ void parse(Options &&options)
             }
             totalRead += r;
             EINTRWRAP(r, ::read(infd, packet, packetSize));
-            if (r != packetSize) {
+            if (r != static_cast<ssize_t>(packetSize)) {
                 LOG("packet mismatch {} {} @ {}", r, packetSize, totalRead);
                 break;
             }

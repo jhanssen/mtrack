@@ -43,7 +43,7 @@ static inline SigData* findSigData(uint32_t ptid)
     return nullptr;
 }
 
-void handler(int sig)
+void handler(int /*sig*/)
 {
     auto sigData = findSigData(gettid());
 

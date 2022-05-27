@@ -89,7 +89,7 @@ void FileEmitter::flush(bool finalize)
                     const ssize_t blen = base64_encode(mBBuffer, 3, b64, sizeof(b64), false);
                     const auto written = fwrite(b64, blen, 1, mFile);
                     if (written != 1) {
-                        fprintf(stderr, "file write error %d %m (%d vs %lu)\n", errno, have, written);
+                        fprintf(stderr, "file write error %d %m (%d vs %zd)\n", errno, have, written);
                         abort();
                     }
 
@@ -116,7 +116,7 @@ void FileEmitter::flush(bool finalize)
                 const ssize_t blen = base64_encode(out + outOffset, have, b64, sizeof(b64), false);
                 const auto written = fwrite(b64, blen, 1, mFile);
                 if (written != 1) {
-                    fprintf(stderr, "file write error %d %m (%d vs %lu)\n", errno, have, written);
+                    fprintf(stderr, "file write error %d %m (%d vs %zd)\n", errno, have, written);
                     abort();
                 }
 
@@ -124,7 +124,7 @@ void FileEmitter::flush(bool finalize)
             } else {
                 const auto written = fwrite(out, have, 1, mFile);
                 if (written != 1) {
-                    fprintf(stderr, "file write error %d %m (%d vs %lu)\n", errno, have, written);
+                    fprintf(stderr, "file write error %d %m (%d vs %zd)\n", errno, have, written);
                     abort();
                 }
             }
@@ -134,7 +134,7 @@ void FileEmitter::flush(bool finalize)
             const ssize_t blen = base64_encode(mBBuffer, mNumBBuffer, b64, sizeof(b64), true);
             const auto written = fwrite(b64, blen, 1, mFile);
             if (written != 1) {
-                fprintf(stderr, "file write error %d %m (%d vs %lu)\n", errno, have, written);
+                fprintf(stderr, "file write error %d %m (%d vs %zd)\n", errno, have, written);
                 abort();
             }
             mNumBBuffer = 0;
@@ -142,7 +142,7 @@ void FileEmitter::flush(bool finalize)
     } else {
         const auto written = fwrite(mBuffer.data(), mBufferOffset, 1, mFile);
         if (written != 1) {
-            fprintf(stderr, "file write error %d %m (%d vs %lu)\n", errno, mBufferOffset, written);
+            fprintf(stderr, "file write error %d %m (%d vs %zd)\n", errno, mBufferOffset, written);
             abort();
         }
     }

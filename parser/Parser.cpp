@@ -362,12 +362,12 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
             item = mPageFaults.erase(item);
         }
 
-        for (auto& item : removed) {
+        for (auto& i : removed) {
             // reinsert item at 'to'
-            item.place += to;
-            auto newit = std::lower_bound(mPageFaults.begin(), mPageFaults.end(), item.place, comparePageFaultItem);
-            if (newit == mPageFaults.end() || newit->place > item.place) {
-                mPageFaults.insert(newit, item);
+            i.place += to;
+            auto newit = std::lower_bound(mPageFaults.begin(), mPageFaults.end(), i.place, comparePageFaultItem);
+            if (newit == mPageFaults.end() || newit->place > i.place) {
+                mPageFaults.insert(newit, i);
             }
         }
     };
@@ -448,8 +448,8 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         break;
     case RecordType::Command: {
         bool handled = false;
-        const CommandType type = static_cast<CommandType>(readUint8());
-        switch (type) {
+        const CommandType t = static_cast<CommandType>(readUint8());
+        switch (t) {
         case CommandType::Invalid:
             break;
         case CommandType::DisableSnapshots:
@@ -471,7 +471,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
             break; }
         }
         if (!handled) {
-            LOG("INVALID command type {}", static_cast<int>(type));
+            LOG("INVALID command type {}", static_cast<int>(t));
             abort();
         }
         break; }
@@ -493,8 +493,8 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
             mPendingStacks.insert(stackIdx);
             // resolveStack(stackIdx);
         }
-        auto it = std::lower_bound(mPageFaults.begin(), mPageFaults.end(), place, [](const auto& item, auto place) {
-            return item.place < place;
+        auto it = std::lower_bound(mPageFaults.begin(), mPageFaults.end(), place, [](const auto& item, auto p) {
+            return item.place < p;
         });
         if (it != mPageFaults.end() && it->place == place) {
             // already got this fault?

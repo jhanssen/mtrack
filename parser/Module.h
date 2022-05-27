@@ -71,12 +71,12 @@ struct hash<std::vector<uint64_t>>
 public:
     size_t operator()(const std::vector<uint64_t>& stack) const
     {
-        size_t hash = 0;
+        size_t h = 0;
 
-        auto hashEntry = [&hash](const uint64_t ip) {
+        auto hashEntry = [&h](const uint64_t ip) {
             const uint8_t* data = reinterpret_cast<const uint8_t*>(&ip);
             for (size_t i = 0; i < sizeof(i); ++i) {
-                hash = *(data + i) + (hash << 6) + (hash << 16) - hash;
+                h = *(data + i) + (h << 6) + (h << 16) - h;
             }
         };
 
@@ -84,7 +84,7 @@ public:
             hashEntry(ip);
         }
 
-        return hash;
+        return h;
     }
 };
 

@@ -91,18 +91,18 @@ struct hash<Hashable>
 public:
     size_t operator()(const Hashable& stack) const
     {
-        size_t hash = stack.type();
+        size_t h = stack.type();
 
         const auto data = stack.data<uint8_t>();
         if (data == nullptr)
-            return hash;
+            return h;
 
         const auto size = stack.size();
         for (size_t i = 0; i < size; ++i) {
-            hash = *(data + i) + (hash << 6) + (hash << 16) - hash;
+            h = *(data + i) + (h << 6) + (h << 16) - h;
         }
 
-        return hash;
+        return h;
     }
 };
 

@@ -165,9 +165,9 @@ inline Args Parser::parse(int argc, char** argv, Error&& error)
 
     std::string key;
 
-    auto add = [&key, &args](State state, char* start, char* end) {
-        assert(state != Normal);
-        switch (state) {
+    auto add = [&key, &args](State s, char* start, char* end) {
+        assert(s != Normal);
+        switch (s) {
         case Dash:
             while (start < end - 1) {
                 args.mValues[std::string(1, *(start++))] = std::any(true);

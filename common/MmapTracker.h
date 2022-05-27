@@ -55,8 +55,8 @@ inline bool MmapTracker::intersects(Mmaps::const_iterator it, uintptr_t start, u
 
 inline std::pair<MmapTracker::Mmaps::iterator, MmapTracker::Mmaps::iterator> MmapTracker::find(uintptr_t addr)
 {
-    auto foundit = std::upper_bound(mMmaps.begin(), mMmaps.end(), addr, [](auto addr, const auto& item) {
-        return addr < item.start;
+    auto foundit = std::upper_bound(mMmaps.begin(), mMmaps.end(), addr, [](auto address, const auto& item) {
+        return address < item.start;
     });
     auto it = foundit;
     if (it != mMmaps.begin())
@@ -68,8 +68,8 @@ inline std::pair<MmapTracker::Mmaps::iterator, MmapTracker::Mmaps::iterator> Mma
 
 inline std::pair<MmapTracker::Mmaps::const_iterator, MmapTracker::Mmaps::const_iterator> MmapTracker::find(uintptr_t addr) const
 {
-    auto foundit = std::upper_bound(mMmaps.begin(), mMmaps.end(), addr, [](auto addr, const auto& item) {
-        return addr < item.start;
+    auto foundit = std::upper_bound(mMmaps.begin(), mMmaps.end(), addr, [](auto address, const auto& item) {
+        return address < item.start;
     });
     auto it = foundit;
     if (it != mMmaps.begin())

@@ -218,8 +218,8 @@ static void hookThread()
     PipeEmitter emitter(data->emitPipe[1]);
 
     pollfd evt[] = {
-        { .fd = data->faultFd, .events = POLLIN },
-        { .fd = data->pfThreadPipe[0], .events = POLLIN }
+        { .fd = data->faultFd, .events = POLLIN, .revents = 0 },
+        { .fd = data->pfThreadPipe[0], .events = POLLIN, .revents = 0 }
     };
     for (;;) {
         // printf("- top of fault thread\n");
@@ -249,7 +249,7 @@ static void hookThread()
         }
         // printf("- fault thread 2\n");
         if (evt[0].revents & POLLIN) {
-            uffd_msg fault_msg = {0};
+            uffd_msg fault_msg = {};
             const auto r = read(data->faultFd, &fault_msg, sizeof(fault_msg));
             if (r == sizeof(fault_msg)) {
                 // printf("- fault thread 3 0x%x\n", fault_msg.event);
@@ -264,7 +264,8 @@ static void hookThread()
                             .start = place & ~(Limits::PageSize - 1),
                             .len = Limits::PageSize
                         },
-                        .mode = 0
+                        .mode = 0,
+                        .zeropage = 0
                     };
                     const auto ir = ioctl(data->faultFd, UFFDIO_ZEROPAGE, &zero);
                     if (ir == -1 && errno != EEXIST) {
@@ -453,9 +454,9 @@ void Hooks::hook()
 
         if (parser.empty()) {
             std::string self;
-            dl_iterate_phdr([](struct dl_phdr_info* info, size_t /*size*/, void* data) {
+            dl_iterate_phdr([](struct dl_phdr_info* info, size_t /*size*/, void* d) {
                 if (strstr(info->dlpi_name, "libmtrack_preload") != nullptr) {
-                    *reinterpret_cast<std::string*>(data) = std::string(info->dlpi_name);
+                    *reinterpret_cast<std::string*>(d) = std::string(info->dlpi_name);
                     return 1;
                 }
                 return 0;
@@ -515,7 +516,8 @@ void Hooks::hook()
 
     uffdio_api api = {
         .api = UFFD_API,
-        .features = UFFD_FEATURE_THREAD_ID
+        .features = UFFD_FEATURE_THREAD_ID,
+        .ioctls = 0
     };
     if (ioctl(data->faultFd, UFFDIO_API, &api)) {
         safePrint("no ioctl api\n");

@@ -70,7 +70,7 @@ static void runCommands(Command* cmds, size_t numCommands)
             }
             // touch n (arg3) pages from arg1 + arg2
             ptr += cmd.arg2;
-            for (size_t n = 0; n < cmd.arg3; ++n) {
+            for (size_t n = 0; n < static_cast<size_t>(cmd.arg3); ++n) {
                 *(ptr + (n * PAGESIZE) + 1) = 'a';
             }
             break; }

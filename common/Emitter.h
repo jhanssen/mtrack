@@ -156,7 +156,7 @@ inline size_t Emitter::emitSize(Ts&&... args)
 }
 
 template<typename... Ts>
-inline size_t Emitter::emitWithSize(size_t size, Ts&&... args)
+inline size_t Emitter::emitWithSize(size_t /* size */, Ts&&... args)
 {
     return emit(std::forward<Ts>(args)...);
 }
