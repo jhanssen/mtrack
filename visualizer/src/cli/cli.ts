@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { Model } from "../model/Model";
 import { readFile } from "fs/promises";
 

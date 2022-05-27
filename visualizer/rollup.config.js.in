@@ -1,7 +1,8 @@
 import commonjs from "@rollup/plugin-commonjs";
+import hashbang from "rollup-plugin-hashbang";
+import namedOutput from "rollup-plugin-named-output";
 import resolve from "@rollup/plugin-node-resolve";
 import typescript from "@rollup/plugin-typescript";
-import namedOutput from "rollup-plugin-named-output";
 
 const plugins = [
     resolve({ preferBuiltins: true, moduleDirectories: [ "@MTRACK_GRAPH_BUILD@/node_modules" ] }),
@@ -13,7 +14,8 @@ const plugins = [
             return "graph.js";
         }
         return undefined;
-    } })
+    } }),
+    hashbang()
 ];
 
 // Define forms
