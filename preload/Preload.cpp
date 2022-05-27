@@ -29,6 +29,16 @@
 #include <thread>
 #include <tuple>
 
+#ifndef SYS_userfaultfd
+#if defined(__x86_64__)
+#define SYS_userfaultfd 323
+#elif defined(__i686__)
+#define SYS_userfaultfd 374
+#else
+#error "Unsupported architecture"
+#endif
+#endif
+
 #define EINTRWRAP(VAR, BLOCK)                   \
     do {                                        \
         VAR = BLOCK;                            \
