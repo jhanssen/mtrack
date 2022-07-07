@@ -347,6 +347,8 @@ static void hookCleanup()
 
 void Hooks::hook()
 {
+    unsetenv("LD_PRELOAD");
+
     callbacks.mmap = reinterpret_cast<MmapSig>(dlsym(RTLD_NEXT, "mmap"));
     if (callbacks.mmap == nullptr) {
         safePrint("no mmap\n");
