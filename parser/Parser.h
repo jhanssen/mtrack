@@ -15,6 +15,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <signal.h>
 #include <string>
 #include <thread>
 #include <unordered_set>
@@ -128,6 +129,7 @@ public:
         size_t maxEventCount { std::numeric_limits<size_t>::max() };
         size_t resolverThreads { 2 };
         uint32_t timeSkipPerTimeStamp { 0 };
+        uint64_t threshold { 0 };
         std::function<uint32_t()> timeStamp;
         bool gzip { true };
         bool html { true };
@@ -135,7 +137,7 @@ public:
     Parser(const Options& options);
     ~Parser();
 
-    void feed(const uint8_t* data, uint32_t size);
+    bool feed(const uint8_t* data, uint32_t size);
     void cleanup();
 
     void onResolvedAddresses(std::vector<Address<std::string>>&& addresses);
@@ -234,9 +236,10 @@ private:
     std::unique_ptr<ResolverThread> mResolverThread;
 
     bool mShutdown {};
+    bool mThreshold {};
 };
 
-inline void Parser::feed(const uint8_t* data, uint32_t size)
+inline bool Parser::feed(const uint8_t* data, uint32_t size)
 {
     std::lock_guard<std::mutex> lock(mMutex);
     if (mData.size() < mDataOffset + size) {
@@ -249,6 +252,7 @@ inline void Parser::feed(const uint8_t* data, uint32_t size)
     }
     mPacketSizes[mPacketSizeCount++] = size;
     mCond.notify_one();
+    return !mThreshold;
 }
 
 inline bool operator==(const Malloc& m1, const Malloc& m2)

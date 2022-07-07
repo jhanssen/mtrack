@@ -445,7 +445,6 @@ void Hooks::hook()
     }
 
     const auto ppid = getpid();
-    const auto strppid = std::to_string(ppid);
 
     int e;
     pid_t pid = fork();
@@ -467,6 +466,7 @@ void Hooks::hook()
             parser = cparser;
         }
 
+        char buf[4096];
         if (parser.empty()) {
             std::string self;
             dl_iterate_phdr([](struct dl_phdr_info* info, size_t /*size*/, void* d) {
@@ -483,7 +483,6 @@ void Hooks::hook()
                 fprintf(stderr, "could not find the preload path\n");
                 abort();
             }
-            char buf[4096];
             if (realpath(self.c_str(), buf)) {
                 self = buf;
             }
@@ -517,8 +516,14 @@ void Hooks::hook()
         if (nob) {
             args[argIdx++] = strdup("--no-bundle");
         }
+        const char* threshold = getenv("MTRACK_THRESHOLD");
+        if (threshold) {
+            args[argIdx++] = strdup("--threshold");
+            args[argIdx++] = strdup(threshold);
+        }
+        snprintf(buf, sizeof(buf), "%u", ppid);
         args[argIdx++] = strdup("--pid");
-        args[argIdx++] = strdup(strppid.c_str());
+        args[argIdx++] = strdup(buf);
         args[argIdx++] = nullptr;
         char* envs[1] = {};
         envs[0] = nullptr;

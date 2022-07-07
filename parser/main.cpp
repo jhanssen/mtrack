@@ -29,6 +29,33 @@ struct Options : public Parser::Options
 };
 
 namespace {
+uint64_t parseSize(const char* str, bool* okptr = nullptr)
+{
+    char* endptr;
+    uint64_t arg = strtoull(str, &endptr, 10);
+    bool dummy = false;
+    bool& ok = okptr ? *okptr : dummy;
+    ok = true;
+    if (*endptr) {
+        ok = false;
+        if (*endptr == ' ')
+            ++endptr;
+        if (!strcasecmp(endptr, "mb") || !strcasecmp(endptr, "m")) {
+            arg *= 1024 * 1024;
+            ok = true;
+        } else if (!strcasecmp(endptr, "gb") || !strcasecmp(endptr, "g")) {
+            arg *= 1024 * 1024 * 1024;
+            ok = true;
+        } else if (!strcasecmp(endptr, "kb") || !strcasecmp(endptr, "k")) {
+            arg *= 1024;
+            ok = true;
+        } else if (!strcasecmp(endptr, "b")) {
+            ok = true;
+        }
+    }
+    return arg;
+}
+
 uint32_t timestamp()
 {
     timespec ts;
@@ -36,15 +63,16 @@ uint32_t timestamp()
     return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
 }
 
-void parse(Options &&options)
+bool parse(Options &&options)
 {
-    int infd = 0;
+    bool threshold = false;
+    int infd = STDIN_FILENO;
     if (!options.input.empty()) {
         infd = open(options.input.c_str(), O_RDONLY);
     }
     if (infd == -1) {
         LOG("no such file {}\n", options.input);
-        return;
+        return true;
     }
 
     FILE* outfile = nullptr;
@@ -52,7 +80,7 @@ void parse(Options &&options)
         outfile = ::fopen(options.dumpFile.c_str(), "w");
         if (!outfile) {
             LOG("no out file {} {}\n", errno, options.dumpFile);
-            return;
+            return true;
         }
     }
 
@@ -138,7 +166,11 @@ void parse(Options &&options)
             }
             totalRead += r;
         }
-        parser.feed(packet, packetSize);
+        if (!parser.feed(packet, packetSize)) {
+            // threshold reached
+            threshold = true;
+            break;
+        }
     }
 
     LOG("done reading {} events\n", eventIdx);
@@ -156,6 +188,8 @@ void parse(Options &&options)
     //         parser.eventCount(), parser.recordCount(),
     //         parser.stringCount(), parser.stringHits(), parser.stringMisses(),
     //         parser.stackCount(), parser.stackHits(), parser.stackMisses());
+
+    return !threshold;
 }
 } // anonymous namespace
 
@@ -203,6 +237,10 @@ int main(int argc, char** argv)
         options.html = !args.value<bool>("no-bundle");
     }
 
+    if (args.has<std::string>("threshold")) {
+        options.threshold = parseSize(args.value<std::string>("threshold").c_str());
+    }
+
     pid_t pid = 0;
     if (args.has<pid_t>("pid")) {
         pid = args.value<pid_t>("pid");
@@ -222,7 +260,12 @@ int main(int argc, char** argv)
         options.output = buf;
     }
 
-    parse(std::move(options));
+    if (!parse(std::move(options))) {
+        // threshold reached
+        if (pid > 0) {
+            kill(pid, SIGABRT);
+        }
+    }
 
     return 0;
 }

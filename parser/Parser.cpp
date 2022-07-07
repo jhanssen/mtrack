@@ -607,6 +607,13 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         if (mLastSnapshot.shouldSend(now, mMallocSize, pageFaultSize)) {
             emitSnapshot(now);
         }
+
+        if (mOptions.threshold > 0 && mMallocSize + pageFaultSize >= mOptions.threshold) {
+            std::lock_guard<std::mutex> lock(mMutex);
+            mThreshold = true;
+
+            emitSnapshot(now);
+        }
     }
 }
 
