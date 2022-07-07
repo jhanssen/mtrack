@@ -9,6 +9,7 @@
 #include <ctime>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #ifndef PIPE_BUF
@@ -20,7 +21,8 @@
         VAR = BLOCK;                            \
     } while (VAR == -1 && errno == EINTR)
 
-struct Options : public Parser::Options {
+struct Options : public Parser::Options
+{
     std::string input;
     std::string dumpFile;
     bool packetMode {};
@@ -201,16 +203,23 @@ int main(int argc, char** argv)
         options.html = !args.value<bool>("no-bundle");
     }
 
+    pid_t pid = 0;
+    if (args.has<pid_t>("pid")) {
+        pid = args.value<pid_t>("pid");
+    }
+
     if (args.has<std::string>("output")) {
         options.output = args.value<std::string>("output");
     } else {
+        char buf[128];
         if (options.html) {
-            options.output = "mtrackp.html";
+            snprintf(buf, sizeof(buf), "mtrackp.%u.html", pid);
         } else if (options.gzip) {
-            options.output = "mtrackp.out.gz";
+            snprintf(buf, sizeof(buf), "mtrackp.%u.out.gz", pid);
         } else {
-            options.output = "mtrackp.out";
+            snprintf(buf, sizeof(buf), "mtrackp.%u.out", pid);
         }
+        options.output = buf;
     }
 
     parse(std::move(options));

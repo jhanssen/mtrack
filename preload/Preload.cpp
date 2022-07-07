@@ -444,6 +444,9 @@ void Hooks::hook()
         abort();
     }
 
+    const auto ppid = getpid();
+    const auto strppid = std::to_string(ppid);
+
     int e;
     pid_t pid = fork();
     if (pid == 0) {
@@ -514,6 +517,8 @@ void Hooks::hook()
         if (nob) {
             args[argIdx++] = strdup("--no-bundle");
         }
+        args[argIdx++] = strdup("--pid");
+        args[argIdx++] = strdup(strppid.c_str());
         args[argIdx++] = nullptr;
         char* envs[1] = {};
         envs[0] = nullptr;
@@ -559,7 +564,7 @@ void Hooks::hook()
     // record the executable file
     char buf1[512];
     char buf2[4096];
-    snprintf(buf1, sizeof(buf1), "/proc/%u/exe", getpid());
+    snprintf(buf1, sizeof(buf1), "/proc/%u/exe", ppid);
     ssize_t l = readlink(buf1, buf2, sizeof(buf2));
     if (l == -1 || l == sizeof(buf2)) {
         // badness
