@@ -5,12 +5,24 @@
 // brings in std::size
 #include <string>
 #include <variant>
+#include <string.h>
 #include <unistd.h>
 
 #define PAGESIZE 4096
 
 struct Command {
-    enum class Type { Mmap, Munmap, Madvise, Touch, Malloc, Realloc, Free, Sleep, Snapshot };
+    enum class Type {
+        Free,
+        Madvise,
+        Malloc,
+        MemMove,
+        Mmap,
+        Munmap,
+        Realloc,
+        Sleep,
+        Snapshot,
+        Touch
+    };
 
     Type type {};
     intptr_t arg1 {};
@@ -73,6 +85,18 @@ static void runCommands(Command* cmds, size_t numCommands)
             for (size_t n = 0; n < static_cast<size_t>(cmd.arg3); ++n) {
                 *(ptr + (n * PAGESIZE) + 1) = 'a';
             }
+            break; }
+        case Command::Type::MemMove: {
+            char* ptr = nullptr;
+            if (cmd.arg1 >= 0) {
+                // relative to start
+                ptr = reinterpret_cast<char*>(cmds[cmd.arg1].ret);
+            } else {
+                // relative to current
+                ptr = reinterpret_cast<char*>(cmds[c + cmd.arg1].ret);
+            }
+            // move from arg2 to arg3, arg4 bytes
+            memmove(ptr + cmd.arg2, ptr + cmd.arg3, cmd.arg4);
             break; }
         case Command::Type::Malloc:
             cmd.ret = reinterpret_cast<uintptr_t>(::malloc(cmd.arg1));

@@ -268,7 +268,7 @@ static void hookThread()
                     const auto place = static_cast<uint64_t>(fault_msg.arg.pagefault.address);
                     const auto ptid = static_cast<uint32_t>(fault_msg.arg.pagefault.feat.ptid);
                     // printf("  - pagefault %u\n", ptid);
-                    emitter.emit(RecordType::PageFault, place, ptid, Stack(ptid));
+                    emitter.emit(RecordType::PageFault, place, ptid, Stack(2, ptid));
                     uffdio_zeropage zero = {
                         .range = {
                             .start = place & ~(Limits::PageSize - 1),
@@ -498,7 +498,7 @@ void Hooks::hook()
             parser = self.substr(0, slash + 1) + "bin/mtrack_parser";
         }
 
-        char* args[8] = {};
+        char* args[10] = {};
         size_t argIdx = 0;
         args[argIdx++] = strdup(parser.c_str());
         args[argIdx++] = strdup("--packet-mode");
@@ -506,6 +506,11 @@ void Hooks::hook()
         if (log) {
             args[argIdx++] = strdup("--log-file");
             args[argIdx++] = strdup(log);
+        }
+        const char* output = getenv("MTRACK_OUTPUT");
+        if (output) {
+            args[argIdx++] = strdup("--output");
+            args[argIdx++] = strdup(output);
         }
         const char* dump = getenv("MTRACK_DUMP");
         if (dump) {
@@ -641,7 +646,7 @@ static void reportMalloc(void* ptr, size_t size)
                  static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
                  static_cast<uint64_t>(size),
                  static_cast<uint32_t>(syscall(SYS_gettid)),
-                 Stack());
+                 Stack(3));
 }
 
 static void reportFree(void* ptr)
@@ -692,7 +697,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     PipeEmitter emitter(data->emitPipe[1]);
     emitter.emit(RecordType::Mmap,
                  mmap_ptr_cast(ret), alignToPage(length), prot, flags,
-                 static_cast<uint32_t>(syscall(SYS_gettid)), Stack());
+                 static_cast<uint32_t>(syscall(SYS_gettid)), Stack(2));
     return ret;
 }
 
@@ -730,7 +735,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
     PipeEmitter emitter(data->emitPipe[1]);
     emitter.emit(RecordType::Mmap,
                  mmap_ptr_cast(ret), alignToPage(length), prot, flags,
-                 static_cast<uint32_t>(syscall(SYS_gettid)), Stack());
+                 static_cast<uint32_t>(syscall(SYS_gettid)), Stack(2));
 
     return ret;
 }
@@ -837,7 +842,7 @@ void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
 
     PipeEmitter emitter(data->emitPipe[1]);
     emitter.emit(RecordType::Mremap, mmap_ptr_cast(addr), alignToPage(old_size),
-                 mmap_ptr_cast(ret), alignToPage(new_size), flags, syscall(SYS_gettid), Stack());
+                 mmap_ptr_cast(ret), alignToPage(new_size), flags, syscall(SYS_gettid), Stack(2));
 
     return ret;
 }

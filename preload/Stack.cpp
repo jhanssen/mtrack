@@ -48,21 +48,21 @@ void handler(int /*sig*/)
     auto sigData = findSigData(syscall(SYS_gettid));
 
     asan_unwind::StackTrace st(sigData->stack.data(), Stack::MaxFrames);
-    sigData->stackSize = st.unwindSlow();
+    sigData->stackSize = st.unwindSlow(0);
 
     Waiter wl(sigData->handled);
     wl.notify();
 }
 } // anonymous namespace
 
-Stack::Stack(unsigned ptid)
+Stack::Stack(unsigned skip, unsigned ptid)
 {
     // dl_iterate_phdr(dl_iterate_phdr_callback, nullptr);
 
     if (ptid == 0) {
         //mCount = unw_backtrace(mPtrs.data(), MaxFrames);
         asan_unwind::StackTrace st(mPtrs.data(), MaxFrames);
-        mCount = st.unwindSlow();
+        mCount = st.unwindSlow(skip);
     } else {
         mCount = 1;
         if (!sigDatas.siginstalled.test_and_set()) {
@@ -96,7 +96,7 @@ Stack::Stack(unsigned ptid)
 
         if (sigData->stackSize > 0) {
             static_assert(sizeof(uintptr_t) == sizeof(void*));
-            memcpy(mPtrs.data(), sigData->stack.data(), sigData->stackSize * sizeof(uintptr_t));
+            memcpy(mPtrs.data(), static_cast<uintptr_t*>(sigData->stack.data()) + skip, (sigData->stackSize - skip) * sizeof(uintptr_t));
         }
         mCount = sigData->stackSize;
 

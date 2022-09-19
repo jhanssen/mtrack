@@ -9,7 +9,7 @@ class Stack
 public:
     enum { MaxFrames = 255 };
 
-    Stack(unsigned ptid = 0);
+    Stack(unsigned skip, unsigned ptid = 0);
 
     void* const* ptrs() const { return mPtrs.data(); }
     const void* data() const { return mPtrs.data(); }
