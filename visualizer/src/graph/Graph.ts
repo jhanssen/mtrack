@@ -3,6 +3,7 @@ import { FlameGraph, flamegraph } from "d3-flame-graph";
 import { Line, ScaleLinear, axisBottom, axisLeft, easeCubic, extent, line, max, scaleLinear, select } from "d3";
 import { Model, PageSize } from "../model/Model";
 import { assert } from "../Assert";
+import { format } from "d3-format";
 import { stringifyFrame } from "../model/Frame";
 
 type Margin = {
@@ -45,6 +46,47 @@ declare class DecompressionStream {
 
     readonly readable: ReadableStream<BufferSource>;
     readonly writable: WritableStream<Uint8Array>;
+}
+
+interface MaybeValue
+{
+    v?: number;
+    value: number;
+}
+
+interface MaybeNameData
+{
+    n?: string;
+    name: string;
+}
+
+interface MaybeName
+{
+    data: MaybeNameData;
+}
+
+function getValue(d: MaybeValue) {
+    if ('v' in d) {
+        return d.v;
+    }
+    return d.value;
+}
+
+function getName(d: MaybeName) {
+    return d.data.n || d.data.name;
+}
+
+function formatBytes(b: number | string) {
+    if (typeof b === "string") {
+        b = parseInt(b, 10);
+    }
+    if (b < 1024) {
+        return `${b} B`;
+    }
+    if (b < 1024 * 1024) {
+        return format(".1f")(b / 1024) + " kB";
+    }
+    return format(".1f")(b / (1024 * 1024)) + " MB";
 }
 
 // lifted from https://stackoverflow.com/questions/7616461/generate-a-hash-from-string-in-javascript
@@ -275,6 +317,9 @@ export class Graph {
         //.onClick(onClick)
             .selfValue(false);
 
+        this._flame.setLabelHandler((d) => {
+            return getName(d) + ' (' + format('.3f')(100 * (d.x1 - d.x0), 3) + '%, ' + formatBytes(getValue(d)) + ')';
+        });
     }
 
     private _flameify(time: number, delta: boolean) {
