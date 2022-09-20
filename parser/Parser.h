@@ -181,19 +181,24 @@ private:
         uint64_t mallocBytes {};
         uint32_t timeThreshold { 10000 };
         uint32_t peakTimeThreshold { 1000 };
+        uint32_t downTimeThreshold { 5000 };
         uint32_t maxTimeThreshold { 900000 };
         uint32_t peakThreshold { 2500 };
-        double growthThreshold { 0.2 };
+        double upThreshold { 0.2 };
+        double downThreshold { 0.05 };
         uint32_t time {};
+        uint32_t downTime {};
         uint32_t peakTime {};
         uint64_t peakBytes {};
         int64_t combinedBytes() const { return mallocBytes + pageFaultBytes; }
         bool shouldSend(uint32_t now, uint64_t mallocSize, uint64_t pageFaultSize)
         {
-            if (!enabled)
+            if (!enabled) {
                 return false;
-            if (mallocSize == mallocBytes && pageFaultSize == pageFaultBytes)
+            }
+            if (mallocSize == mallocBytes && pageFaultSize == pageFaultBytes) {
                 return false;
+            }
             if (now - time >= timeThreshold) {
                 time = now;
                 pageFaultBytes = pageFaultSize;
@@ -202,17 +207,29 @@ private:
                 return true;
             }
             const auto combined = mallocSize + pageFaultSize;
-            const auto delta = std::fabs((combined - combinedBytes()) / static_cast<double>(combined));
-            if (now - time >= peakTimeThreshold && delta >= growthThreshold && combined > peakBytes) {
-                peakTime = time;
-                peakBytes = combined;
-                peakTimeThreshold = std::min(peakTimeThreshold * 2, maxTimeThreshold);
-            } else if (peakTime > 0 && time - peakTime >= peakThreshold) {
+            if (peakTime == 0) {
+                const auto delta = std::fabs((combined - combinedBytes()) / static_cast<double>(combined));
+                if (delta >= upThreshold) {
+                    peakTime = now;
+                    peakBytes = combined;
+                }
+            } else if (peakTime > 0 && now - time >= peakTimeThreshold) {
                 time = now;
                 pageFaultBytes = pageFaultSize;
                 mallocBytes = mallocSize;
                 peakTime = 0;
+                peakTimeThreshold = std::min(peakTimeThreshold * 2, maxTimeThreshold);
                 return true;
+            } else if (peakTime > 0 && now - downTime >= downTimeThreshold && combined < peakBytes) {
+                const auto delta = std::fabs((peakBytes - combined) / static_cast<double>(peakBytes));
+                if (delta >= downThreshold) {
+                    time = downTime = now;
+                    pageFaultBytes = pageFaultSize;
+                    mallocBytes = mallocSize;
+                    peakTime = 0;
+                    peakBytes = combined;
+                    return true;
+                }
             }
             return false;
         }

@@ -59,7 +59,8 @@ Parser::Parser(const Options& options)
 
     mFileEmitter.setFile(mFile, fileEmitterFlags);
 
-    mLastMemory.growthThreshold = 0.01;
+    mLastMemory.upThreshold = 0.01;
+    mLastMemory.downThreshold = 0.01;
     mLastMemory.timeThreshold = 25;
     mLastMemory.peakThreshold = 50;
     mLastMemory.peakTimeThreshold = 250;
