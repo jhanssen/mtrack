@@ -592,8 +592,6 @@ void Hooks::hook()
         emitter.emit(RecordType::WorkingDirectory, Emitter::String(buf2));
     }
 
-    NoHook nohook;
-
     safePrint("hook.\n");
 }
 
