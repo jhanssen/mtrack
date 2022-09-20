@@ -267,5 +267,7 @@ int main(int argc, char** argv)
         }
     }
 
+    printf("!!! wrote file %s\n", options.output.c_str());
+
     return 0;
 }
