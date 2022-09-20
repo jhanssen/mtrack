@@ -192,6 +192,8 @@ private:
         {
             if (!enabled)
                 return false;
+            if (mallocSize == mallocBytes && pageFaultSize == pageFaultBytes)
+                return false;
             if (now - time >= timeThreshold) {
                 time = now;
                 pageFaultBytes = pageFaultSize;
