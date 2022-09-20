@@ -21,6 +21,8 @@
     </div>
     <hr>
     <div id="flamedetails">
+      <input type="text" id="flameterm" onKeyPress="window.graphData.flamePress()" onKeyUp="window.graphData.flameUp()">
+      <button type="button" onclick="window.graphData.flameReset()">Clear</input>
     </div>
   </div>
   <script type="module">

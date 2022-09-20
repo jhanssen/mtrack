@@ -106,12 +106,16 @@ export class Graph {
     private _line: LineData;
     private _flame: FlameGraph;
     private _model: Model | undefined;
+    private _flameified: boolean;
     private _nomodel: unknown | undefined;
     private _readies: Ready[] = [];
     private _prevSnapshot: number | undefined;
     private _initTimeout: number | undefined;
 
+    onFlameReset?: () => void;
+
     constructor() {
+        this._flameified = false;
         this._createGraphs(window.innerWidth - 100);
         const data = "data:application/octet-binary;base64,$DATA_GOES_HERE$";
         try {
@@ -174,6 +178,12 @@ export class Graph {
         if (this._model === undefined) {
             throw new Error("init called with no model");
         }
+
+        if (this.onFlameReset) {
+            this.onFlameReset();
+        }
+
+        this._flameified = false;
 
         interface StackData {
             time: number;
@@ -280,6 +290,13 @@ export class Graph {
         console.log("inited");
     }
 
+    flameSearch(term: string) {
+        if (!this._flame || !this._model || !this._flameified) {
+            return;
+        }
+        this._flame.search(term);
+    }
+
     private _createGraphs(windowWidth: number) {
         const margin = {top: 20, right: 20, bottom: 50, left: 70};
         const width = windowWidth - margin.left - margin.right;
@@ -323,6 +340,12 @@ export class Graph {
     }
 
     private _flameify(time: number, delta: boolean) {
+        if (this.onFlameReset) {
+            this.onFlameReset();
+        }
+
+        this._flameified = true;
+
         const deltaFrom = delta ? this._prevSnapshot : undefined;
         this._prevSnapshot = time;
 
