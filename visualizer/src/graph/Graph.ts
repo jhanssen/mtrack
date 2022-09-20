@@ -149,6 +149,7 @@ export class Graph {
         window.addEventListener("resize", () => {
             select("#linechart").selectAll("*").remove();
             select("#flamechart").selectAll("*").remove();
+            this._flameified = false;
             this._createGraphs(window.innerWidth - 100);
             this.ready().then(() => {
                 if (this._initTimeout !== undefined) {
