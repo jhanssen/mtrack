@@ -498,7 +498,7 @@ void Hooks::hook()
             parser = self.substr(0, slash + 1) + "bin/mtrack_parser";
         }
 
-        char* args[10] = {};
+        char* args[14] = {};
         size_t argIdx = 0;
         args[argIdx++] = strdup(parser.c_str());
         args[argIdx++] = strdup("--packet-mode");
