@@ -52,7 +52,7 @@ typedef int (*MadviseSig)(void*, size_t, int);
 typedef int (*MprotectSig)(void*, size_t, int);
 typedef void* (*DlOpenSig)(const char*, int);
 typedef int (*DlCloseSig)(void*);
-typedef int (*PthreadSetnameSig)(pthread_t thread, const char* name);
+typedef int (*PthreadSetnameSig)(pthread_t, const char*);
 typedef void* (*MallocSig)(size_t);
 typedef void (*FreeSig)(void*);
 typedef void* (*CallocSig)(size_t, size_t);
@@ -431,9 +431,9 @@ void Hooks::hook()
         abort();
     }
 
-    callbacks.realloc = reinterpret_cast<ReallocSig>(dlsym(RTLD_NEXT, "realloc"));
-    if (callbacks.realloc == nullptr) {
-        safePrint("no realloc\n");
+    callbacks.aligned_alloc = reinterpret_cast<Aligned_AllocSig>(dlsym(RTLD_NEXT, "aligned_alloc"));
+    if (callbacks.aligned_alloc == nullptr) {
+        safePrint("no aligned_alloc\n");
         abort();
     }
 
