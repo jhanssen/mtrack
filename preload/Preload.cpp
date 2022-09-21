@@ -543,7 +543,7 @@ void Hooks::hook()
 
     data->faultFd = syscall(SYS_userfaultfd, O_NONBLOCK);
     if (data->faultFd == -1) {
-        safePrint("no faultFd\n");
+        safePrint("could not initialize userfaultfd\nyou might have to run sysctl -w vm.unprivileged_userfaultfd=1\n");
         abort();
     }
 
