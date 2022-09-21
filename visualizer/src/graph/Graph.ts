@@ -377,7 +377,7 @@ export class Graph {
         }
 
         const children: GraphChild[] = [];
-        const data: GraphSnapshot = { name: "nrdp", value: 0, children };
+        const data: GraphSnapshot = { name: "all", value: 0, children };
 
         if (snapshot === undefined) {
             throw new Error(`no such snapshot ${time}`);
