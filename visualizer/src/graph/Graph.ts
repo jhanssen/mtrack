@@ -28,7 +28,7 @@ type Ready = {
     reject: (reason?: unknown) => void;
 };
 
-type GraphChild = { name: string, value: number, ip: number, children: GraphChild[] };
+type GraphChild = { name: string, value: number, num: number, ip: number, children: GraphChild[] };
 type GraphSnapshot = { name: string, value: number, children: GraphChild[] };
 
 interface WalkEntry {
@@ -336,7 +336,7 @@ export class Graph {
             .selfValue(false);
 
         this._flame.setLabelHandler((d) => {
-            return getName(d) + ' (' + format('.3f')(100 * (d.x1 - d.x0), 3) + '%, ' + formatBytes(getValue(d)) + ')';
+            return getName(d) + ' (' + format('.3f')(100 * (d.x1 - d.x0), 3) + '%, ' + formatBytes(getValue(d)) + ' in ' + d.data.num + ' allocs)';
         });
     }
 
@@ -384,16 +384,28 @@ export class Graph {
         }
 
         // build a size per stack data structure
-        const byStack: Map<number, number> = new Map();
+        const byStack: Map<number, { num: number, size: number }> = new Map();
         for (const pf of snapshot.pageFaults) {
-            byStack.set(pf.stackIdx, (byStack.get(pf.stackIdx) || 0) + PageSize);
+            const bs = byStack.get(pf.stackIdx);
+            if (bs) {
+                bs.num += 1;
+                bs.size += PageSize;
+            } else {
+                byStack.set(pf.stackIdx, { num: 1, size: PageSize });
+            }
         }
         for (const m of snapshot.mallocs) {
-            byStack.set(m.stackIdx, (byStack.get(m.stackIdx) || 0) + m.size);
+            const bs = byStack.get(m.stackIdx);
+            if (bs) {
+                bs.num += 1;
+                bs.size += m.size;
+            } else {
+                byStack.set(m.stackIdx, { num: 1, size: m.size });
+            }
         }
 
         let cur = children;
-        for (const [ stackIdx, bytes ] of byStack) {
+        for (const [ stackIdx, item ] of byStack) {
             //console.log(stackid, pfs.length);
             const stack = this._model.stacks[stackIdx];
             //console.log(Stack.print(stack, this._data.strings));
@@ -412,9 +424,10 @@ export class Graph {
                 });
                 if (curIdx === -1) {
                     curIdx = cur.length;
-                    cur.push({ name: stringifyFrame(frame, this._model.stackStrings), value: bytes, ip: stackFrame.ip, children: [] });
+                    cur.push({ name: stringifyFrame(frame, this._model.stackStrings), value: item.size, num: item.num, ip: stackFrame.ip, children: [] });
                 } else {
-                    cur[curIdx].value += bytes;
+                    cur[curIdx].value += item.size;
+                    cur[curIdx].num += item.num;
                 }
                 cur = cur[curIdx].children;
             }
