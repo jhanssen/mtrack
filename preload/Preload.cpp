@@ -62,6 +62,13 @@ typedef int (*Posix_MemalignSig)(void **, size_t, size_t);
 typedef void* (*Aligned_AllocSig)(size_t, size_t);
 
 namespace {
+inline uint32_t timestamp()
+{
+    timespec ts;
+    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+    return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
+}
+
 inline uint64_t alignToPage(uint64_t size)
 {
     return size + (((~size) + 1) & (Limits::PageSize - 1));
@@ -268,7 +275,7 @@ static void hookThread()
                     const auto place = static_cast<uint64_t>(fault_msg.arg.pagefault.address);
                     const auto ptid = static_cast<uint32_t>(fault_msg.arg.pagefault.feat.ptid);
                     // printf("  - pagefault %u\n", ptid);
-                    emitter.emit(RecordType::PageFault, place, ptid, Stack(2, ptid));
+                    emitter.emit(RecordType::PageFault, timestamp(), place, ptid, Stack(2, ptid));
                     uffdio_zeropage zero = {
                         .range = {
                             .start = place & ~(Limits::PageSize - 1),
@@ -571,6 +578,8 @@ void Hooks::hook()
 
     PipeEmitter emitter(data->emitPipe[1]);
 
+    emitter.emit(RecordType::Start, timestamp());
+
     // record the executable file
     char buf1[512];
     char buf2[4096];
@@ -641,6 +650,7 @@ static void reportMalloc(void* ptr, size_t size)
 
     PipeEmitter emitter(data->emitPipe[1]);
     emitter.emit(RecordType::Malloc,
+                 timestamp(),
                  static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
                  static_cast<uint64_t>(size),
                  static_cast<uint32_t>(syscall(SYS_gettid)),

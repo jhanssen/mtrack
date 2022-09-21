@@ -56,13 +56,6 @@ uint64_t parseSize(const char* str, bool* okptr = nullptr)
     return arg;
 }
 
-uint32_t timestamp()
-{
-    timespec ts;
-    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
-    return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
-}
-
 bool parse(Options &&options)
 {
     bool threshold = false;
@@ -91,18 +84,6 @@ bool parse(Options &&options)
         }
     }
 
-    uint32_t curTimestamp = 0;
-    if (options.packetMode) {
-        curTimestamp = timestamp();
-        options.timeStamp = [curTimestamp]() {
-            return timestamp() - curTimestamp;
-        };
-    } else {
-        options.timeStamp = [&curTimestamp]() {
-            return curTimestamp;
-        };
-    }
-
     if (!options.packetMode && options.timeSkipPerTimeStamp == 0) {
         options.timeSkipPerTimeStamp = 100;
     }
@@ -129,22 +110,12 @@ bool parse(Options &&options)
             totalRead += packetSize;
 
             if (outfile) {
-                const uint32_t ts = timestamp() - curTimestamp;
-                ::fwrite(&ts, sizeof(ts), 1, outfile);
                 ::fwrite(&packetSize, sizeof(packetSize), 1, outfile);
                 ::fwrite(packet, packetSize, 1, outfile);
                 continue;
             }
         } else {
             ssize_t r;
-            EINTRWRAP(r, ::read(infd, &curTimestamp, sizeof(curTimestamp)));
-            if (r == 0) {
-                break;
-            }
-            if (r != sizeof(curTimestamp)) {
-                LOG("read ts size != than {}, {}\n", sizeof(curTimestamp), r);
-                abort();
-            }
             EINTRWRAP(r, ::read(infd, &packetSize, sizeof(packetSize)));
             if (r != sizeof(packetSize)) {
                 LOG("read ps size != than {}, {}\n", sizeof(packetSize), r);

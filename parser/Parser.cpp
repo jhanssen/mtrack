@@ -23,9 +23,16 @@ enum class EmitType : uint8_t {
 };
 
 namespace {
-bool intersects(uint64_t startA, uint64_t endA, uint64_t startB, uint64_t endB)
+inline bool intersects(uint64_t startA, uint64_t endA, uint64_t startB, uint64_t endB)
 {
     return startA < endB && startB < endA;
+}
+
+inline uint32_t timestamp()
+{
+    timespec ts;
+    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+    return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
 }
 } // anonymous namespace
 
@@ -263,7 +270,6 @@ void Parser::parseThread()
 
     size_t totalPacketNo = 0;
     size_t bytesConsumed = 0;
-    mLastMemory.time = mLastSnapshot.time = mOptions.timeStamp();
 
     bool done = false;
     while (!done) {
@@ -326,11 +332,12 @@ void Parser::parseThread()
         }
     }
 
+    const auto lastTime = timestamp() - mStartTimestamp;
     if (mLastSnapshot.enabled) {
-        emitSnapshot(mOptions.timeStamp());
+        emitSnapshot(lastTime);
     }
 
-    LOG("Finished parsing {} events in {}ms", totalPacketNo, mOptions.timeStamp());
+    LOG("Finished parsing {} events in {}ms", totalPacketNo, lastTime);
 }
 
 static bool comparePageFaultItem(const PageFault& item, uint64_t start)
@@ -444,6 +451,10 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
     const auto type = data[offset++];
     //LOG("gleh {} {} packetno {}\n", type, offset - 1, mPacketNo);
     switch (static_cast<RecordType>(type)) {
+    case RecordType::Start:
+        mStartTimestamp = readUint32();
+        mLastMemory.time = mLastSnapshot.time = timestamp() - mStartTimestamp;
+        break;
     case RecordType::Executable:
         mExe = readString();
         break;
@@ -462,10 +473,11 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
             handled = true;
             break;
         case CommandType::Snapshot: {
-            mLastSnapshot.time = mOptions.timeStamp();
+            const auto snapshotTime = timestamp() - mStartTimestamp;
+            mLastSnapshot.time = snapshotTime;
             mLastSnapshot.pageFaultBytes = mPageFaults.size() * Limits::PageSize;
             mLastSnapshot.mallocBytes = mMallocSize;
-            emitSnapshot(mLastSnapshot.time);
+            emitSnapshot(snapshotTime);
             const auto name = readHashableString();
             EMIT(mFileEmitter.emit(EmitType::SnapshotName, name));
             handled = true;
@@ -486,6 +498,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         mLibraries.back().headers.push_back(Library::Header { readUint64(), readUint64() });
         break;
     case RecordType::PageFault: {
+        now = readUint32() - mStartTimestamp;
         const auto place = readUint64();
         const auto ptid = readUint32();
         const auto [ stackIdx, stackInserted ] = readHashable(Hashable::Stack);
@@ -502,7 +515,6 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
             break;
         }
         assert(it == mPageFaults.end() || it->place > place);
-        now = mOptions.timeStamp();
         mPageFaults.insert(it, PageFault { place, ptid, stackIdx, now });
         //EMIT(mFileEmitter.emit(EmitType::PageFault, static_cast<double>(place), ptid));
         break; }
@@ -518,6 +530,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         removePageFaults(start, end);
         break; }
     case RecordType::Malloc: {
+        now = readUint32() - mStartTimestamp;
         const auto addr = readUint64();
         const auto size = readUint64();
         const auto ptid = readUint32();
@@ -529,7 +542,6 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         } else {
             // LOG("not inserted");
         }
-        now = mOptions.timeStamp();
         mMallocs.insert(Malloc { addr, size, ptid, stackIdx, now });
         mMallocSize += size;
         //EMIT(mFileEmitter.emit(EmitType::Malloc, ptid));

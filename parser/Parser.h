@@ -130,7 +130,6 @@ public:
         size_t resolverThreads { 2 };
         uint32_t timeSkipPerTimeStamp { 0 };
         uint64_t threshold { 0 };
-        std::function<uint32_t()> timeStamp;
         bool gzip { true };
         bool html { true };
    };
@@ -236,6 +235,7 @@ private:
 
     } mLastMemory, mLastSnapshot;
 
+    uint32_t mStartTimestamp {};
     uint64_t mMallocSize {};
 
     MmapTracker mMmaps;

@@ -11,6 +11,7 @@ enum class CommandType : uint8_t {
 
 enum class RecordType : uint8_t {
     Invalid,
+    Start,
     Command,
     Executable,
     Free,
@@ -32,6 +33,7 @@ inline static const char *recordTypeToString(RecordType t)
 {
     switch (t) {
     case RecordType::Invalid: break;
+    case RecordType::Start: return "Start";
     case RecordType::Command: return "Command";
     case RecordType::Executable: return "Executable";
     case RecordType::Free: return "Free";
