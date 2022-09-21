@@ -203,6 +203,7 @@ private:
                 pageFaultBytes = pageFaultSize;
                 mallocBytes = mallocSize;
                 timeThreshold = std::min(timeThreshold * 2, maxTimeThreshold);
+                peakTime = 0;
                 return true;
             }
             const auto combined = mallocSize + pageFaultSize;
