@@ -5,6 +5,7 @@ interface WindowGraphData {
     flameUp?: () => void;
     flameReset?: () => void;
     inputTimer?: ReturnType<typeof setTimeout>;
+    toggleCopyStacks?: () => void;
 }
 
 declare global {
@@ -54,4 +55,9 @@ window.graphData.flameReset = function() {
     const inp = document.getElementById("flameterm") as HTMLInputElement;
     inp.value = "";
     graph.flameSearch(inp.value);
+}
+
+window.graphData.toggleCopyStacks = function() {
+    const inp = document.getElementById("copystacks") as HTMLInputElement;
+    graph.setCopyStacks(inp.checked);
 }

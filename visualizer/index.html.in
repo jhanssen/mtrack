@@ -22,7 +22,9 @@
     <hr>
     <div id="flamedetails">
       <input type="text" id="flameterm" onKeyPress="window.graphData.flamePress()" onKeyUp="window.graphData.flameUp()">
-      <button type="button" onclick="window.graphData.flameReset()">Clear</input>
+      <button type="button" onclick="window.graphData.flameReset()">Clear</button>
+      <input type="checkbox" id="copystacks" name="copystacks" onclick="window.graphData.toggleCopyStacks()">
+      <label for="copystacks">Copy stacks</label>
     </div>
   </div>
   <script type="module">

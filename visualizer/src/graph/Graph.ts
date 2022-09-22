@@ -111,11 +111,13 @@ export class Graph {
     private _readies: Ready[] = [];
     private _prevSnapshot: number | undefined;
     private _initTimeout: number | undefined;
+    private _copyStacks: boolean;
 
     onFlameReset?: () => void;
 
     constructor() {
         this._flameified = false;
+        this._copyStacks = false;
         this._createGraphs(window.innerWidth - 100);
         const data = "data:application/octet-binary;base64,$DATA_GOES_HERE$";
         try {
@@ -298,6 +300,10 @@ export class Graph {
         this._flame.search(term);
     }
 
+    setCopyStacks(c: boolean) {
+        this._copyStacks = c;
+    }
+
     private _createGraphs(windowWidth: number) {
         const margin = {top: 20, right: 20, bottom: 50, left: 70};
         const width = windowWidth - margin.left - margin.right;
@@ -338,6 +344,11 @@ export class Graph {
         this._flame.setLabelHandler((d) => {
             return getName(d) + ' (' + format('.3f')(100 * (d.x1 - d.x0), 3) + '%, ' + formatBytes(getValue(d)) + ' in ' + d.data.num + ' allocs)';
         });
+        this._flame.onClick(async (d) => {
+            if (this._copyStacks) {
+                await Graph._tryCopyToClipboard(d);
+            }
+        });
     }
 
     private _flameify(time: number, delta: boolean) {
@@ -360,6 +371,28 @@ export class Graph {
         select("#flamechart")
             .datum(data)
             .call(this._flame);
+    }
+
+    private static async _tryCopyToClipboard(d) {
+        // only copy single stacktraces so walk down to all the children until we reach the end
+        // bail out if there's more than one child
+        let cur = d;
+        while ("children" in cur) {
+            if (cur.children.length > 1) {
+                console.log("got more than one child", cur);
+                return;
+            }
+            cur = cur.children[0];
+        }
+        // walk back to the bottom, building a stack string
+        const stack = [];
+        while ("parent" in cur && cur.parent) {
+            stack.push(getName(cur));
+            cur = cur.parent;
+        }
+        // console.log(stack);
+        await navigator.clipboard.writeText(stack.join("\n"));
+        console.log("stack copied");
     }
 
     private _buildSnapshot(time: number): GraphSnapshot {
