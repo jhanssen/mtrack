@@ -52,16 +52,16 @@ async function readData(): Uint8Array | undefined {
         process.exit(1);
     }
     const model = new Model(data.buffer);
+    const mb = 1024 * 1024;
 
     console.log("parsing data");
     model.parse();
     console.log("parsed, processing data");
     console.log(model.snapshots.length, "snapshots");
     console.log(model.memories.length, "memories");
-    console.log((model.stackStrings.reduce((prev, cur) => prev + cur.length, 0) / (1024 * 1024)).toFixed(2), "MB strings");
-    console.log((model.stacks.reduce((prev, cur) => prev + (cur.length * 8), 0)).toFixed(2), "MB stacks");
+    console.log((model.stackStrings.reduce((prev, cur) => prev + cur.length, 0) / mb).toFixed(2), "MB strings");
+    console.log((model.stacks.reduce((prev, cur) => prev + (cur.length * 8), 0) / mb).toFixed(2), "MB stacks");
 
-    const mb = 1024 * 1024;
     const peak = [0, 0, 0];
     for (const memory of model.memories) {
         if (memory.pageFault + memory.malloc > peak[0]) {
@@ -71,7 +71,7 @@ async function readData(): Uint8Array | undefined {
         }
     }
 
-    console.log(`peaked at ${(peak[0] / mb).toFixed(2)}Mb, pf ${(peak[1] / mb).toFixed(2)}Mb, malloc ${(peak[2] / mb).toFixed(2)}Mb`);
+    console.log(`peaked at ${(peak[0] / mb).toFixed(2)}MB, pf ${(peak[1] / mb).toFixed(2)}MB, malloc ${(peak[2] / mb).toFixed(2)}MB`);
 
 })().then(() => {
     process.exit(0);
