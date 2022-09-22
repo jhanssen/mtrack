@@ -1,23 +1,52 @@
 #!/usr/bin/env node
 
 import { Model } from "../model/Model";
+import { gunzip } from "zlib";
+import { promisify } from "util";
 import { readFile } from "fs/promises";
 
+const gunzipPromise = promisify(gunzip);
 const args = process.argv.slice(2);
 
 let input = "mtrackp.data";
 
-for (let i = 0; i < args.length; ++i) {
-    if (args[i] === "--input" && i + 1 < args.length) {
-        input = args[i + 1];
+if (args.length > 0) {
+    let hasInput = false;
+    for (let i = 0; i < args.length; ++i) {
+        if (args[i] === "--input" && i + 1 < args.length) {
+            input = args[i + 1];
+            hasInput = true;
+        }
+    }
+    if (!hasInput) {
+        console.error("no --input argument");
+        process.exit(1);
     }
 }
 
 console.log("loading", input);
 
-(async function() {
-
+async function readData(): Uint8Array | undefined {
+    if (input.endsWith(".html")) {
+        const html = await readFile(input, "utf8");
+        const dataOffset = html.indexOf("\"data:application/octet-binary;base64,");
+        if (dataOffset === -1) {
+            return undefined;
+        }
+        const dataEnd = html.indexOf("\"", dataOffset + 38);
+        if (dataEnd === -1) {
+            return undefined;
+        }
+        const b64data = Buffer.from(html.substring(dataOffset + 38, dataEnd), "base64");
+        const rawdata = await gunzipPromise(b64data);
+        return rawdata;
+    }
     const data = await readFile(input);
+    return data;
+}
+
+(async function() {
+    const data = await readData();
     if (!(data instanceof Uint8Array)) {
         console.error("no data");
         process.exit(1);
