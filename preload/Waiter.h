@@ -17,7 +17,11 @@ public:
                 break;
             }
             while (mLock.load(std::memory_order_relaxed) == false) {
+#if defined(__arm__)
+                asm volatile("yield");
+#else
                 __builtin_ia32_pause();
+#endif
             }
         }
     }
