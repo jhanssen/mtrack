@@ -230,6 +230,9 @@ export class Graph {
             .attr("stroke", (d: unknown, i: number) => { return lineColors[i]; })
             .attr("stroke-width", 4)
             .attr("d", this._line.valueLine)
+            .on("click", (e, d, i) => {
+                console.log("lineclk", d, i);
+            });
 
         const toolTip = select("body").append("div")
             .attr("class", "tooltip")
