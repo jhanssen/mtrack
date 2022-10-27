@@ -428,12 +428,6 @@ void Hooks::hook()
         abort();
     }
 
-    callbacks.reallocarray = reinterpret_cast<ReallocArraySig>(dlsym(RTLD_NEXT, "reallocarray"));
-    if (callbacks.reallocarray == nullptr) {
-        safePrint("no reallocarray\n");
-        abort();
-    }
-
     callbacks.posix_memalign = reinterpret_cast<Posix_MemalignSig>(dlsym(RTLD_NEXT, "posix_memalign"));
     if (callbacks.posix_memalign == nullptr) {
         safePrint("no posix_memalign\n");
@@ -445,6 +439,8 @@ void Hooks::hook()
         safePrint("no aligned_alloc\n");
         abort();
     }
+
+    callbacks.reallocarray = reinterpret_cast<ReallocArraySig>(dlsym(RTLD_NEXT, "reallocarray"));
 
     data = new Data();
 
