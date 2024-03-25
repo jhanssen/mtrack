@@ -112,9 +112,10 @@ inline size_t Emitter::emitSize(T&& arg, Ts&&... args)
 template<typename T, std::enable_if_t<!std::is_arithmetic_v<std::decay_t<T>> && !std::is_enum_v<std::decay_t<T>>> *>
 inline size_t Emitter::emit_helper(T&& str, WriteType type)
 {
+    if (str.size() == 0) {
+        return emit_helper(static_cast<decltype(str.size())>(0), type);
+    }
     const size_t ret = emit_helper(str.size(), WriteType::Continuation);
-    if (str.size() == 0)
-        return ret;
     writeBytes(str.data(), str.size(), type);
     return ret + str.size();
 }
