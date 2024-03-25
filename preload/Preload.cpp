@@ -449,6 +449,13 @@ void Hooks::hook()
         abort();
     }
 
+    const auto maybeNoMmap = getenv("MTRACK_NO_MMAP_STACKS");
+    if (maybeNoMmap != nullptr) {
+        if (!strncasecmp(maybeNoMmap, "true", 4) || !strncmp(maybeNoMmap, "1", 1)) {
+            Stack::setNoMmap();
+        }
+    }
+
     const auto ppid = getpid();
 
     int e;

@@ -18,6 +18,8 @@
 
 #include <asan_unwind.h>
 
+bool Stack::sNoMmap = false;
+
 namespace {
 struct SigData {
     std::array<uintptr_t, Stack::MaxFrames> stack;
@@ -63,6 +65,8 @@ Stack::Stack(unsigned skip, unsigned ptid)
         //mCount = unw_backtrace(mPtrs.data(), MaxFrames);
         asan_unwind::StackTrace st(mPtrs.data(), MaxFrames);
         mCount = st.unwindSlow(skip);
+    } else if (sNoMmap) {
+        mCount = 0;
     } else {
         mCount = 1;
         if (!sigDatas.siginstalled.test_and_set()) {

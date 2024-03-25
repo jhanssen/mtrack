@@ -15,10 +15,14 @@ public:
     const void* data() const { return mPtrs.data(); }
     uint32_t size() const { return mCount * sizeof(void*); }
 
+    static void setNoMmap() { sNoMmap = true; }
+
 private:
     Stack(const Stack &) = delete;
     Stack &operator=(const Stack &) = delete;
 
     uint32_t mCount { 0 };
     std::array<void *, MaxFrames> mPtrs;
+
+    static bool sNoMmap;
 };
