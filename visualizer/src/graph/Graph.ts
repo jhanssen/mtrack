@@ -444,6 +444,9 @@ export class Graph {
         for (const [ stackIdx, item ] of byStack) {
             //console.log(stackid, pfs.length);
             const stack = this._model.stacks[stackIdx];
+            if (stack === undefined) {
+                continue;
+            }
             //console.log(Stack.print(stack, this._data.strings));
 
             for (let stackNo = stack.length - 1; stackNo >= 0; --stackNo) {
