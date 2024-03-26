@@ -274,25 +274,27 @@ static void hookThread()
                 // printf("- fault thread 3 0x%x\n", fault_msg.event);
                 switch (fault_msg.event) {
                 case UFFD_EVENT_PAGEFAULT: {
-                    const auto place = static_cast<uint64_t>(fault_msg.arg.pagefault.address);
-                    const auto ptid = static_cast<uint32_t>(fault_msg.arg.pagefault.feat.ptid);
-                    // printf("  - pagefault %u\n", ptid);
-                    emitter.emit(RecordType::PageFault, timestamp(), place, ptid, Stack(2, ptid));
-                    uffdio_zeropage zero = {
-                        .range = {
-                            .start = place & ~(Limits::PageSize - 1),
-                            .len = Limits::PageSize
-                        },
-                        .mode = 0,
-                        .zeropage = 0
-                    };
-                    const auto ir = ioctl(data->faultFd, UFFDIO_ZEROPAGE, &zero);
-                    if (ir == -1 && errno != EEXIST) {
-                        // boo
-                        close(data->faultFd);
-                        data->faultFd = -1;
-                        printf("- pagefault error 3 %d %d %m\n", ir, errno);
-                        return;
+                    if (fault_msg.arg.pagefault.flags & UFFD_PAGEFAULT_FLAG_WP) {
+                        const auto place = static_cast<uint64_t>(fault_msg.arg.pagefault.address);
+                        const auto ptid = static_cast<uint32_t>(fault_msg.arg.pagefault.feat.ptid);
+                        // printf("  - pagefault %u\n", ptid);
+                        emitter.emit(RecordType::PageFault, timestamp(), place, ptid, Stack(2, ptid));
+
+                        uffdio_writeprotect uprot = {
+                            .range = {
+                                .start = place & ~(Limits::PageSize - 1),
+                                .len = Limits::PageSize
+                            },
+                            .mode = 0
+                        };
+                        const auto ir = ioctl(data->faultFd, UFFDIO_WRITEPROTECT, &uprot);
+                        if (ir == -1 && errno != EEXIST) {
+                            // boo
+                            close(data->faultFd);
+                            data->faultFd = -1;
+                            printf("- pagefault error 3 %d %d %m\n", ir, errno);
+                            return;
+                        }
                     }
                     // printf("  - handled pagefault\n");
                     break; }
@@ -628,12 +630,24 @@ static void trackMmap(void* addr, size_t length, int prot, int flags)
                 .start = reinterpret_cast<__u64>(addr),
                 .len = alignToPage(length)
             },
-            .mode = UFFDIO_REGISTER_MODE_MISSING,
+            .mode = UFFDIO_REGISTER_MODE_WP,
             .ioctls = 0
         };
 
         if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) == -1) {
             printf("register failed (1) %m\n");
+            return;
+        }
+
+        uffdio_writeprotect uprot = {
+            .range = {
+                .start = reinterpret_cast<__u64>(addr),
+                .len = alignToPage(length)
+            },
+            .mode = UFFDIO_WRITEPROTECT_MODE_WP
+        };
+        if (ioctl(data->faultFd, UFFDIO_WRITEPROTECT, &uprot) == -1) {
+            printf("writeprotect failed (1) %m\n");
             return;
         }
 
@@ -804,11 +818,21 @@ int mprotect(void* addr, size_t len, int prot)
                 .start = reinterpret_cast<__u64>(addr),
                 .len = alignToPage(len)
             },
-            .mode = UFFDIO_REGISTER_MODE_MISSING,
+            .mode = UFFDIO_REGISTER_MODE_WP,
             .ioctls = 0
         };
 
         if (ioctl(data->faultFd, UFFDIO_REGISTER, &reg) == -1)
+            return callbacks.mprotect(addr, len, prot);
+
+        uffdio_writeprotect uprot = {
+            .range = {
+                .start = reinterpret_cast<__u64>(addr),
+                .len = alignToPage(len)
+            },
+            .mode = UFFDIO_WRITEPROTECT_MODE_WP
+        };
+        if (ioctl(data->faultFd, UFFDIO_WRITEPROTECT, &uprot) == -1)
             return callbacks.mprotect(addr, len, prot);
 
         // ### don't forget me
