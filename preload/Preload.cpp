@@ -906,6 +906,16 @@ int madvise(void* addr, size_t length, int advice)
             PipeEmitter emitter(data->emitPipe[1]);
             emitter.emit(RecordType::PageRemove, mmap_ptr_cast(addr), mmap_ptr_cast(addr) + alignToPage(length));
         }
+
+        // reprotect?
+        uffdio_writeprotect uprot = {
+            .range = {
+                .start = reinterpret_cast<__u64>(addr),
+                .len = alignToPage(length)
+            },
+            .mode = UFFDIO_WRITEPROTECT_MODE_WP
+        };
+        ioctl(data->faultFd, UFFDIO_WRITEPROTECT, &uprot);
     }
 
     return callbacks.madvise(addr, length, advice);
