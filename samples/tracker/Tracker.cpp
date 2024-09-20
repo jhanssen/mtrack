@@ -3,6 +3,7 @@
 #include <vector>
 #include <algorithm>
 #include <fmt/core.h>
+#include <algorithm>
 
 class MmapTracker
 {

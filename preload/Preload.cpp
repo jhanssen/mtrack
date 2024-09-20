@@ -64,13 +64,6 @@ typedef int (*Posix_MemalignSig)(void **, size_t, size_t);
 typedef void* (*Aligned_AllocSig)(size_t, size_t);
 
 namespace {
-inline uint32_t timestamp()
-{
-    timespec ts;
-    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
-    return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000));
-}
-
 inline uint64_t alignToPage(uint64_t size)
 {
     return size + (((~size) + 1) & (Limits::PageSize - 1));
@@ -155,6 +148,7 @@ struct Data {
     int faultFd {};
     pid_t pid {};
     std::thread thread;
+    uint32_t started { 0 };
     std::atomic_flag isShutdown = ATOMIC_FLAG_INIT;
     std::atomic<bool> modulesDirty = true;
 
@@ -164,6 +158,15 @@ struct Data {
     Spinlock mmapTrackerLock;
     MmapTracker mmapTracker;
 } *data = nullptr;
+
+namespace {
+inline uint32_t timestamp()
+{
+    timespec ts;
+    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+    return static_cast<uint32_t>((ts.tv_sec * 1000) + (ts.tv_nsec / 1000000)) - data->started;
+}
+}
 
 namespace {
 bool safePrint(const char *string)
@@ -611,11 +614,12 @@ void Hooks::hook()
     }
 
     data->thread = std::thread(hookThread);
+    data->started = timestamp();
     atexit(hookCleanup);
 
     PipeEmitter emitter(data->emitPipe[1]);
 
-    emitter.emit(RecordType::Start, timestamp());
+    emitter.emit(RecordType::Start, 0);
 
     // record the executable file
     char buf1[512];
@@ -1089,6 +1093,14 @@ void* aligned_alloc(size_t alignment, size_t size)
     return ret;
 }
 
+void mtrack_writeBytes(const unsigned char *bytes, size_t size)
+{
+    if(data) {
+        MallocFree mallocFree;
+        PipeEmitter emitter(data->emitPipe[1]);
+        emitter.writeBytes(bytes, size, Emitter::WriteType::Last);
+    }
+}
 
 void mtrack_snapshot(const char* name, size_t nameSize)
 {

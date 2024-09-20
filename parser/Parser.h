@@ -237,6 +237,7 @@ private:
     } mLastMemory, mLastSnapshot;
 
     uint32_t mStartTimestamp {};
+    uint32_t mLastTimestamp {};
     uint64_t mMallocSize {};
 
     MmapTracker mMmaps;

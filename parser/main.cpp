@@ -117,6 +117,10 @@ bool parse(Options &&options)
         } else {
             ssize_t r;
             EINTRWRAP(r, ::read(infd, &packetSize, sizeof(packetSize)));
+            if (r == 0) {
+                LOG("EOF");
+                break;
+            }
             if (r != sizeof(packetSize)) {
                 LOG("read ps size != than {}, {}\n", sizeof(packetSize), r);
                 abort();

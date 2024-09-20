@@ -5,6 +5,7 @@
 #include <vector>
 #include <algorithm>
 #include <sys/mman.h>
+#include <algorithm>
 
 class MmapTracker
 {
