@@ -174,7 +174,7 @@ bool safePrint(const char *string)
 
 struct TLSData
 {
-    bool hooked = false;
+    bool hooked = true;
     bool inMallocFree = false;
 };
 
@@ -201,7 +201,7 @@ static TLSData* tlsData()
             realMalloc = reinterpret_cast<MallocSig>(dlsym(RTLD_NEXT, "malloc"));
         }
         ptr = realMalloc(sizeof(TLSData));
-        memset(ptr, '\0', sizeof(TLSData));
+        new (ptr) TLSData();
         pthread_setspecific(tlsInit.tlsKey, ptr);
     }
     return static_cast<TLSData*>(ptr);
