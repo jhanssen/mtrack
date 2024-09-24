@@ -172,32 +172,64 @@ bool safePrint(const char *string)
     return ::write(STDOUT_FILENO, string, len) == len;
 }
 
-thread_local bool hooked = true;
-thread_local bool inMallocFree = false;
+struct TLSData
+{
+    bool hooked = false;
+    bool inMallocFree = false;
+};
+
+struct TLSInit
+{
+    TLSInit();
+
+    pthread_key_t tlsKey;
+};
+
+TLSInit::TLSInit()
+{
+    pthread_key_create(&tlsKey, nullptr);
+}
+
+static TLSData* tlsData()
+{
+    static TLSInit tlsInit;
+
+    void* ptr = pthread_getspecific(tlsInit.tlsKey);
+    if (ptr == nullptr) {
+        static MallocSig realMalloc = nullptr;
+        if (realMalloc == nullptr) {
+            realMalloc = reinterpret_cast<MallocSig>(dlsym(RTLD_NEXT, "malloc"));
+        }
+        ptr = realMalloc(sizeof(TLSData));
+        memset(ptr, '\0', sizeof(TLSData));
+        pthread_setspecific(tlsInit.tlsKey, ptr);
+    }
+    return static_cast<TLSData*>(ptr);
+}
 } // anonymous namespace
 
 NoHook::NoHook()
-    : wasHooked(::hooked)
+    : wasHooked(::tlsData()->hooked)
 {
-    ::hooked = false;
+    ::tlsData()->hooked = false;
 }
 NoHook::~NoHook()
 {
-    ::hooked = wasHooked;
+    ::tlsData()->hooked = wasHooked;
 }
 
 class MallocFree
 {
 public:
     MallocFree()
-        : mPrev(::inMallocFree)
+        : mPrev(::tlsData()->inMallocFree)
     {
-        ::inMallocFree = true;
+        ::tlsData()->inMallocFree = true;
     }
 
     ~MallocFree()
     {
-        ::inMallocFree = mPrev;
+        ::tlsData()->inMallocFree = mPrev;
     }
 
     bool wasInMallocFree() const
@@ -232,7 +264,7 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, 
 
 static void hookThread()
 {
-    hooked = false;
+    ::tlsData()->hooked = false;
 
     PipeEmitter emitter(data->emitPipe[1]);
 
@@ -687,7 +719,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
     auto ret = callbacks.mmap(addr, length, prot, flags, fd, offset);
     // printf("mmap %p??\n", ret);
 
-    if (!::hooked || ret == MAP_FAILED)
+    if (!::tlsData()->hooked || ret == MAP_FAILED)
         return ret;
 
     NoHook nohook;
@@ -725,7 +757,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
     auto ret = callbacks.mmap64(addr, length, prot, flags, fd, pgoffset);
     // printf("mmap64 %p??\n", ret);
 
-    if (!::hooked || ret == MAP_FAILED)
+    if (!::tlsData()->hooked || ret == MAP_FAILED)
         return ret;
 
     NoHook nohook;
@@ -760,7 +792,7 @@ int munmap(void* addr, size_t length)
         std::call_once(hookOnce, Hooks::hook);
     }
 
-    if (!::hooked)
+    if (!::tlsData()->hooked)
         return callbacks.munmap(addr, length);
 
     NoHook nohook;
@@ -867,7 +899,7 @@ int madvise(void* addr, size_t length, int advice)
         std::call_once(hookOnce, Hooks::hook);
     }
 
-    if (!::hooked)
+    if (!::tlsData()->hooked)
         return callbacks.madvise(addr, length, advice);
 
     NoHook nohook;
@@ -935,7 +967,7 @@ void* malloc(size_t size)
     }
 
     auto ret = callbacks.malloc(size);
-    if (!::hooked || !ret)
+    if (!::tlsData()->hooked || !ret)
         return ret;
 
     if (!mallocFree.wasInMallocFree() && data)
@@ -956,7 +988,7 @@ void free(void* ptr)
 
     callbacks.free(ptr);
 
-    if (!::hooked)
+    if (!::tlsData()->hooked)
         return;
 
     if (!mallocFree.wasInMallocFree() && ptr && data)
@@ -975,7 +1007,7 @@ void* calloc(size_t nmemb, size_t size)
     }
 
     auto ret = callbacks.calloc(nmemb, size);
-    if (!::hooked || !ret)
+    if (!::tlsData()->hooked || !ret)
         return ret;
 
     if (!mallocFree.wasInMallocFree() && data)
@@ -991,7 +1023,7 @@ void* realloc(void* ptr, size_t size)
     }
 
     auto ret = callbacks.realloc(ptr, size);
-    if (!::hooked || !ret)
+    if (!::tlsData()->hooked || !ret)
         return ret;
 
     // printf("mmap?? %p\n", addr);
@@ -1012,7 +1044,7 @@ void* reallocarray(void* ptr, size_t nmemb, size_t size)
     }
 
     auto ret = callbacks.reallocarray(ptr, nmemb, size);
-    if (!::hooked || !ret)
+    if (!::tlsData()->hooked || !ret)
         return ret;
 
     // printf("mmap?? %p\n", addr);
@@ -1033,7 +1065,7 @@ int posix_memalign(void** memptr, size_t alignment, size_t size)
     }
 
     auto ret = callbacks.posix_memalign(memptr, alignment, size);
-    if (!::hooked || !*memptr || ret != 0)
+    if (!::tlsData()->hooked || !*memptr || ret != 0)
         return ret;
 
     if (!mallocFree.wasInMallocFree() && data)
@@ -1049,7 +1081,7 @@ void* aligned_alloc(size_t alignment, size_t size)
     }
 
     auto ret = callbacks.aligned_alloc(alignment, size);
-    if (!::hooked || !ret)
+    if (!::tlsData()->hooked || !ret)
         return ret;
 
     if (!mallocFree.wasInMallocFree() && data)

@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <tuple>
 #include <vector>
+#include <algorithm>
 #include <fmt/core.h>
 
 class MmapTracker

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <tuple>
 #include <vector>
+#include <algorithm>
 #include <sys/mman.h>
 
 class MmapTracker
