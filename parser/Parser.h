@@ -3,6 +3,7 @@
 #include "FileEmitter.h"
 #include "Module.h"
 #include "Address.h"
+#include <common/Limits.h>
 #include <common/Indexer.h>
 #include <common/MmapTracker.h>
 #include <common/RecordType.h>
@@ -117,7 +118,35 @@ public:
     }
 };
 
+template<>
+struct hash<InstructionPointer>
+{
+public:
+    size_t operator()(const InstructionPointer& ip) const
+    {
+        return static_cast<size_t>(ip.aid) ^ static_cast<size_t>(ip.ip);
+    }
+};
+
+
 } // namespace std
+
+struct Application
+{
+    uint8_t id {};
+    std::string exe;
+    std::string cwd;
+    std::vector<Library> libraries;
+    uint32_t startTimestamp {};
+    uint32_t lastTimestamp {};
+    uint64_t mallocSize {};
+    MmapTracker mmaps;
+    std::vector<PageFault> pageFaults;
+    std::unordered_set<Malloc> mallocs;
+    std::unordered_set<int32_t> pendingStacks;
+    std::map<uint64_t, ModuleEntry> moduleCache;
+    std::vector<std::shared_ptr<Module>> modules;
+};
 
 class ResolverThread;
 class Parser
@@ -125,6 +154,7 @@ class Parser
 public:
     struct Options {
         std::string output;
+        uint8_t appId { 0xFF }; //all
         size_t fileSize { std::numeric_limits<size_t>::max() };
         size_t maxEventCount { std::numeric_limits<size_t>::max() };
         size_t resolverThreads { 2 };
@@ -141,11 +171,28 @@ public:
 
     void onResolvedAddresses(std::vector<Address<std::string>>&& addresses);
 
+    uint64_t currentMallocBytes() const {
+        uint64_t result = 0;
+        for(auto app = mApplications.begin(); app != mApplications.end(); ++app) {
+            if(mOptions.appId & app->first)
+                result += app->second.mallocSize;
+        }
+        return result;
+    }
+    uint64_t currentPageFaultBytes() const {
+        uint64_t result = 0;
+        for(auto app = mApplications.begin(); app != mApplications.end(); ++app) {
+            if(mOptions.appId & app->first)
+                result += app->second.pageFaults.size() * Limits::PageSize;
+        }
+        return result;
+    }
+
 private:
     void parsePacket(const uint8_t* data, uint32_t size);
     void parseThread();
     Frame<int32_t> convertFrame(Frame<std::string> &&frame);
-    void emitStack(int32_t idx);
+    void emitStack(Application &app, int32_t idx);
     void emitAddress(Address<std::string> &&addr);
     void emitSnapshot(uint32_t now);
 
@@ -161,18 +208,11 @@ private:
     std::vector<uint8_t> mHashData;
     Indexer<Hashable> mHashIndexer;
     Indexer<std::string> mStringIndexer;
-    std::unordered_map<uint64_t, std::optional<Address<int32_t>>> mAddressCache;
+    std::unordered_map<InstructionPointer, std::optional<Address<int32_t>>> mAddressCache;
     std::mutex mResolvedAddressesMutex;
     std::vector<Address<std::string>> mResolvedAddresses;
+    uint32_t mLastTimestamp {};
     size_t mStacksResolved {};
-
-    std::vector<Library> mLibraries;
-    std::vector<PageFault> mPageFaults;
-    std::unordered_set<Malloc> mMallocs;
-    std::unordered_set<int32_t> mPendingStacks;
-
-    std::map<uint64_t, ModuleEntry> mModuleCache;
-    std::vector<std::shared_ptr<Module>> mModules;
 
     struct {
         bool enabled { true };
@@ -236,16 +276,8 @@ private:
 
     } mLastMemory, mLastSnapshot;
 
-    uint32_t mStartTimestamp {};
-    uint32_t mLastTimestamp {};
-    uint64_t mMallocSize {};
-
-    MmapTracker mMmaps;
-
     FILE* mFile {};
     FileEmitter mFileEmitter;
-
-    std::string mExe, mCwd;
 
     std::thread mThread;
     std::mutex mMutex;
@@ -255,6 +287,7 @@ private:
     size_t mDataOffset {};
     size_t mPacketSizeCount {};
     std::unique_ptr<ResolverThread> mResolverThread;
+    std::map<uint8_t, Application> mApplications;
 
     bool mShutdown {};
     bool mThreshold {};

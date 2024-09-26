@@ -100,6 +100,7 @@ void ResolverThread::run()
         for (size_t idx=0; idx<pending.size(); ++idx) {
             const UnresolvedAddress &unresolved = pending[idx];
             Address<std::string> &dest = resolved[idx];
+            dest.aid = unresolved.aid;
             dest.ip = unresolved.ip;
             unresolved.state->fileline_fn(unresolved.state, unresolved.ip, backtrace_callback, backtrace_errorCallback, &dest);
 

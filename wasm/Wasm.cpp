@@ -36,6 +36,7 @@ private:
 };
 
 struct Data {
+    uint8_t appId { 2 };
     std::atomic<bool> modulesDirty = true;
 } *data = nullptr;
 
@@ -64,6 +65,8 @@ void Hooks::hook()
     data = new Data();
     atexit(hookCleanup);
 
+    HostEmitter emitter;
+    emitter.emit(RecordType::Start, data->appId, 0);
     safePrint("Mtrack: hooked\n");
 }
 
@@ -103,14 +106,13 @@ static std::once_flag hookOnce = {};
 
 static void sendModules()
 {
-    // HostEmitter emitter();
-    // emitter.emit(RecordType::Library, Emitter::String(fileName), static_cast<uint64_t>(info->dlpi_addr));
+    // HostEmitter emitter;
+    // emitter.emit(RecordType::Library, data->appId, Emitter::String(fileName), static_cast<uint64_t>(info->dlpi_addr));
 }
 
 static void reportMalloc(void* ptr, size_t size)
 {
     NoHook nohook;
-
     if (data->modulesDirty.load(std::memory_order_acquire)) {
         sendModules();
         data->modulesDirty.store(false, std::memory_order_release);
@@ -118,6 +120,7 @@ static void reportMalloc(void* ptr, size_t size)
 
     HostEmitter emitter;
     emitter.emit(RecordType::Malloc,
+                 data->appId,
                  timestamp(),
                  static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
                  static_cast<uint64_t>(size),
@@ -128,9 +131,8 @@ static void reportMalloc(void* ptr, size_t size)
 static void reportFree(void* ptr)
 {
     NoHook nohook;
-
     HostEmitter emitter;
-    emitter.emit(RecordType::Free, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)));
+    emitter.emit(RecordType::Free, data->appId, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)));
 }
 
 extern "C" {

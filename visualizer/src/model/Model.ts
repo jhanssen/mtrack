@@ -5,6 +5,7 @@ export const PageSize = 4096;
 
 // needs to match EmitType in Parser.cpp
 const enum EventType {
+    Start,
     Memory,
     Snapshot,
     SnapshotName,
@@ -51,6 +52,7 @@ interface Mmap {
 }
 
 export interface Snapshot {
+    appid: number;
     name?: string;
     time: number;
     pageFault: number;
@@ -85,6 +87,12 @@ export class Model {
         this._parsed = false;
     }
 
+    private _readUint8() {
+        const n = this._view.getUint8(this._offset);
+        this._offset += 1;
+        return n;
+    }
+
     private _readFloat64() {
         const n = this._view.getFloat64(this._offset, true);
         this._offset += 8;
@@ -117,17 +125,27 @@ export class Model {
         this._parsed = true;
         const stacks: Stack[] = [];
         const stackStrings: string[] = [];
-        const threads: Map<number, string> = new Map();
-        const ipToStacks: Map<number, Stack[]> = new Map();
-        const ipToFrame: Map<number, FrameOrSingleFrame | undefined> = new Map();
+        const applications: Map<number, {
+            threads: Map<number, string>,
+            ipToStacks: Map<number, Stack[]>,
+            ipToFrame: Map<number, FrameOrSingleFrame | undefined>
+        }> = new Map();
         const memories: Memory[] = [];
         const snapshots: Snapshot[] = [];
 
         while (this._offset < this._data.byteLength) {
-            const et = this._view.getUint8(this._offset++);
-            // console.log("got event", et);
+            const et = this._readUint8();
+            console.log("got event", et);
             switch (et) {
+            case EventType.Start: {
+                const appid = this._readUint8();
+                assert(applications.get(appid) === undefined);
+                applications.set(appid, { threads: new Map(), ipToStacks: new Map(), ipToFrame: new Map() });
+                break; }
             case EventType.Stack: {
+                const appid = this._readUint8();
+                const app = applications.get(appid);
+                assert(app !== undefined);
                 const idx = this._readInt32();
                 if (idx >= stacks.length || stacks[idx] === undefined) {
                     stacks[idx] = [];
@@ -135,12 +153,12 @@ export class Model {
                 const numFrames = this._readUint32();
                 for (let n = 0; n < numFrames; ++n) {
                     const ip = this._readFloat64();
-                    const frame = ipToFrame.get(ip);
+                    const frame = app.ipToFrame.get(ip);
                     stacks[idx].push({ ip, frame });
                     if (frame === undefined) {
-                        const ipts = ipToStacks.get(ip);
+                        const ipts = app.ipToStacks.get(ip);
                         if (ipts === undefined) {
-                            ipToStacks.set(ip, [ stacks[idx] ]);
+                            app.ipToStacks.set(ip, [ stacks[idx] ]);
                         } else {
                             ipts.push(stacks[idx]);
                         }
@@ -154,6 +172,9 @@ export class Model {
                 break; }
             case EventType.StackAddr: {
                 let frame: FrameOrSingleFrame | undefined;
+                const appid = this._readUint8();
+                const app = applications.get(appid);
+                assert(app !== undefined);
                 const ip = this._readFloat64();
                 const numf = this._readUint32();
                 for (let n = 0; n < numf; ++n) {
@@ -171,9 +192,9 @@ export class Model {
                         }
                     }
                 }
-                ipToFrame.set(ip, frame);
+                app.ipToFrame.set(ip, frame);
                 if (frame !== undefined) {
-                    const ipts = ipToStacks.get(ip);
+                    const ipts = app.ipToStacks.get(ip);
                     if (ipts !== undefined) {
                         for (const st of ipts) {
                             for (let n = 0; n < st.length; ++n) {
@@ -182,7 +203,7 @@ export class Model {
                                 }
                             }
                         }
-                        ipToStacks.delete(ip);
+                        app.ipToStacks.delete(ip);
                     }
                 }
                 break; }
@@ -193,6 +214,9 @@ export class Model {
                 memories.push({ time, pageFault, malloc });
                 break; }
             case EventType.Snapshot: {
+                const appid = this._readUint8();
+                const app = applications.get(appid);
+                assert(app !== undefined);
                 const time = this._readUint32();
                 const pageFault = this._readFloat64();
                 const malloc = this._readFloat64();
@@ -200,7 +224,7 @@ export class Model {
                 const numPfs = this._readUint32();
                 const numMallocs = this._readUint32();
                 const numMmaps = this._readUint32();
-                const snapshot: Snapshot = { time, pageFault, malloc, pageFaults: [], mallocs: [], mmaps: [] };
+                const snapshot: Snapshot = { appid, time, pageFault, malloc, pageFaults: [], mallocs: [], mmaps: [] };
                 for (let n = 0; n < numPfs; ++n) {
                     const place = this._readFloat64();
                     const ptid = this._readUint32();
@@ -229,9 +253,12 @@ export class Model {
                 snapshots[snapshots.length - 1].name = n ? n : undefined;
                 break; }
             case EventType.ThreadName: {
+                const appid = this._readUint8();
+                const app = applications.get(appid);
+                assert(app !== undefined);
                 const ptid = this._readUint32();
                 const fn = this._readString();
-                threads.set(ptid, fn);
+                app.threads.set(ptid, fn);
                 break; }
             default:
                 throw new Error(`Unhandled event type: ${et}`);

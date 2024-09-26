@@ -36,10 +36,48 @@ struct Frame
     }
 };
 
-template <typename T>
-struct Address
+struct InstructionPointer
 {
+    uint8_t aid {};
     uint64_t ip {};
+
+    int compare(const InstructionPointer &other) const
+    {
+        if(aid < other.aid)
+            return -1;
+        if(aid > other.aid)
+            return 1;
+        if(ip < other.ip)
+            return -1;
+        if(ip > other.ip)
+            return 1;
+        return 0;
+    }
+    bool operator==(const InstructionPointer &other) const
+    {
+        return !compare(other);
+    }
+};
+static inline bool operator<(const InstructionPointer &l, const InstructionPointer &r)
+{
+    return l.compare(r) < 1;
+}
+static inline bool operator>(const InstructionPointer &l, const InstructionPointer &r)
+{
+    return l.compare(r) > 1;
+}
+static inline bool operator>=(const InstructionPointer &l, const InstructionPointer &r)
+{
+    return l.compare(r) >= 0;
+}
+static inline bool operator<=(const InstructionPointer &l, const InstructionPointer &r)
+{
+    return l.compare(r) <= 0;
+}
+
+template <typename T>
+struct Address : public InstructionPointer
+{
     Frame<T> frame;
     std::vector<Frame<T>> inlined;
 
@@ -47,7 +85,7 @@ struct Address
 
     bool operator==(const Address &other) const
     {
-        return ip == other.ip && frame == other.frame && inlined == other.inlined;
+        return InstructionPointer::operator==(other) && frame == other.frame && inlined == other.inlined;
     }
 };
 
@@ -57,8 +95,7 @@ inline bool Address<T>::valid() const
     return frame.function != frameDefault<T>();
 }
 
-struct UnresolvedAddress
+struct UnresolvedAddress : public InstructionPointer
 {
-    uint64_t ip {};
     backtrace_state* state {};
 };

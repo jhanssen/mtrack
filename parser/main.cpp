@@ -204,6 +204,10 @@ int main(int argc, char** argv)
         options.timeSkipPerTimeStamp = args.value<uint32_t>("time-skip");
     }
 
+    if (args.has<int32_t>("app-id")) {
+        options.appId = args.value<int32_t>("app-id");
+    }
+
     if (args.has<bool>("uncompressed")) {
         options.gzip = !args.value<bool>("uncompressed");
     }

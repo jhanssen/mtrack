@@ -148,6 +148,7 @@ struct Data {
     int faultFd {};
     pid_t pid {};
     std::thread thread;
+    uint8_t appId { 1 };
     uint32_t started { 0 };
     std::atomic_flag isShutdown = ATOMIC_FLAG_INIT;
     std::atomic<bool> modulesDirty = true;
@@ -253,12 +254,12 @@ static int dl_iterate_phdr_callback(struct dl_phdr_info* info, size_t /*size*/, 
     }
 
     PipeEmitter emitter(data->emitPipe[1]);
-    emitter.emit(RecordType::Library, Emitter::String(fileName), static_cast<uint64_t>(info->dlpi_addr));
+    emitter.emit(RecordType::Library, data->appId, Emitter::String(fileName), static_cast<uint64_t>(info->dlpi_addr));
 
     for (int i = 0; i < info->dlpi_phnum; i++) {
         const auto& phdr = info->dlpi_phdr[i];
         if (phdr.p_type == PT_LOAD) {
-            emitter.emit(RecordType::LibraryHeader, static_cast<uint64_t>(phdr.p_vaddr), static_cast<uint64_t>(phdr.p_memsz));
+            emitter.emit(RecordType::LibraryHeader, data->appId, static_cast<uint64_t>(phdr.p_vaddr), static_cast<uint64_t>(phdr.p_memsz));
         }
     }
 
@@ -312,7 +313,7 @@ static void hookThread()
                     const auto place = static_cast<uint64_t>(fault_msg.arg.pagefault.address);
                     const auto ptid = static_cast<uint32_t>(fault_msg.arg.pagefault.feat.ptid);
                     // printf("  - pagefault %u\n", ptid);
-                    emitter.emit(RecordType::PageFault, timestamp(), place, ptid, Stack(2, ptid));
+                    emitter.emit(RecordType::PageFault, data->appId, timestamp(), place, ptid, Stack(2, ptid));
                     uffdio_zeropage zero = {
                         .range = {
                             .start = place & ~(Limits::PageSize - 1),
@@ -335,13 +336,13 @@ static void hookThread()
                     const auto from = static_cast<uint64_t>(fault_msg.arg.remap.from);
                     const auto to = static_cast<uint64_t>(fault_msg.arg.remap.to);
                     const auto len = static_cast<uint64_t>(fault_msg.arg.remap.len);
-                    emitter.emit(RecordType::PageRemap, from, to, len);
+                    emitter.emit(RecordType::PageRemap, data->appId, from, to, len);
                     break; }
                 case UFFD_EVENT_REMOVE:
                 case UFFD_EVENT_UNMAP: {
                     const auto start = static_cast<uint64_t>(fault_msg.arg.remove.start);
                     const auto end = static_cast<uint64_t>(fault_msg.arg.remove.end);
-                    emitter.emit(RecordType::PageRemove, start, end);
+                    emitter.emit(RecordType::PageRemove, data->appId, start, end);
                     break; }
                 }
             } else if (r != -1 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
@@ -613,13 +614,12 @@ void Hooks::hook()
         abort();
     }
 
+    PipeEmitter emitter(data->emitPipe[1]);
+    emitter.emit(RecordType::Start, data->appId, 0);
+
     data->thread = std::thread(hookThread);
     data->started = timestamp();
     atexit(hookCleanup);
-
-    PipeEmitter emitter(data->emitPipe[1]);
-
-    emitter.emit(RecordType::Start, 0);
 
     // record the executable file
     char buf1[512];
@@ -630,7 +630,7 @@ void Hooks::hook()
         // badness
         fprintf(stderr, "no exe\n");
     } else {
-        emitter.emit(RecordType::Executable, Emitter::String(buf2, l));
+        emitter.emit(RecordType::Executable, data->appId, Emitter::String(buf2, l));
     }
 
     // record the working directory
@@ -639,7 +639,7 @@ void Hooks::hook()
         // badness
         fprintf(stderr, "no cwd\n");
     } else {
-        emitter.emit(RecordType::WorkingDirectory, Emitter::String(buf2));
+        emitter.emit(RecordType::WorkingDirectory, data->appId, Emitter::String(buf2));
     }
 
     safePrint("hook.\n");
@@ -691,6 +691,7 @@ static void reportMalloc(void* ptr, size_t size)
 
     PipeEmitter emitter(data->emitPipe[1]);
     emitter.emit(RecordType::Malloc,
+                 data->appId,
                  timestamp(),
                  static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
                  static_cast<uint64_t>(size),
@@ -708,7 +709,7 @@ static void reportFree(void* ptr)
     }
 
     PipeEmitter emitter(data->emitPipe[1]);
-    emitter.emit(RecordType::Free, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)));
+    emitter.emit(RecordType::Free, data->appId, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)));
 }
 
 extern "C" {
@@ -735,7 +736,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 
         if (flags & MAP_FIXED) {
             PipeEmitter emitter(data->emitPipe[1]);
-            emitter.emit(RecordType::PageRemove, mmap_ptr_cast(addr), mmap_ptr_cast(addr) + alignToPage(length));
+            emitter.emit(RecordType::PageRemove, data->appId, mmap_ptr_cast(addr), mmap_ptr_cast(addr) + alignToPage(length));
         }
     }
 
@@ -744,7 +745,7 @@ void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
         data->modulesDirty.store(false, std::memory_order_release);
     }
     PipeEmitter emitter(data->emitPipe[1]);
-    emitter.emit(RecordType::Mmap,
+    emitter.emit(RecordType::Mmap, data->appId,
                  mmap_ptr_cast(ret), alignToPage(length), prot, flags,
                  static_cast<uint32_t>(syscall(SYS_gettid)), Stack(2));
     return ret;
@@ -773,7 +774,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
 
         if (flags & MAP_FIXED) {
             PipeEmitter emitter(data->emitPipe[1]);
-            emitter.emit(RecordType::PageRemove, mmap_ptr_cast(addr), mmap_ptr_cast(addr) + alignToPage(length));
+            emitter.emit(RecordType::PageRemove, data->appId, mmap_ptr_cast(addr), mmap_ptr_cast(addr) + alignToPage(length));
         }
     }
 
@@ -782,7 +783,7 @@ void* mmap64(void* addr, size_t length, int prot, int flags, int fd, __off64_t p
         data->modulesDirty.store(false, std::memory_order_release);
     }
     PipeEmitter emitter(data->emitPipe[1]);
-    emitter.emit(RecordType::Mmap,
+    emitter.emit(RecordType::Mmap,data->appId,
                  mmap_ptr_cast(ret), alignToPage(length), prot, flags,
                  static_cast<uint32_t>(syscall(SYS_gettid)), Stack(2));
 
@@ -807,7 +808,7 @@ int munmap(void* addr, size_t length)
     }
 
     PipeEmitter emitter(data->emitPipe[1]);
-    emitter.emit(RecordType::Munmap,
+    emitter.emit(RecordType::Munmap, data->appId,
                  mmap_ptr_cast(addr), alignToPage(length));
 
     return callbacks.munmap(addr, length);
@@ -874,7 +875,7 @@ void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
                 data->mmapTracker.munmap(new_address, new_size);
             }
             PipeEmitter emitter(data->emitPipe[1]);
-            emitter.emit(RecordType::Munmap,
+            emitter.emit(RecordType::Munmap, data->appId,
                          mmap_ptr_cast(new_address), alignToPage(new_size));
         }
     } else {
@@ -890,7 +891,7 @@ void* mremap(void* addr, size_t old_size, size_t new_size, int flags, ...)
     }
 
     PipeEmitter emitter(data->emitPipe[1]);
-    emitter.emit(RecordType::Mremap, mmap_ptr_cast(addr), alignToPage(old_size),
+    emitter.emit(RecordType::Mremap, data->appId, mmap_ptr_cast(addr), alignToPage(old_size),
                  mmap_ptr_cast(ret), alignToPage(new_size), flags, syscall(SYS_gettid), Stack(2));
 
     return ret;
@@ -916,7 +917,7 @@ int madvise(void* addr, size_t length, int advice)
 
         {
             PipeEmitter emitter(data->emitPipe[1]);
-            emitter.emit(RecordType::PageRemove, mmap_ptr_cast(addr), mmap_ptr_cast(addr) + alignToPage(length));
+            emitter.emit(RecordType::PageRemove, data->appId, mmap_ptr_cast(addr), mmap_ptr_cast(addr) + alignToPage(length));
         }
     }
 
@@ -954,7 +955,7 @@ int pthread_setname_np(pthread_t thread, const char* name)
     // ### should fix this, this will drop unless we're the same thread
     if (pthread_equal(thread, pthread_self())) {
         PipeEmitter emitter(data->emitPipe[1]);
-        emitter.emit(RecordType::ThreadName, static_cast<uint32_t>(syscall(SYS_gettid)), Emitter::String(name));
+        emitter.emit(RecordType::ThreadName, data->appId, static_cast<uint32_t>(syscall(SYS_gettid)), Emitter::String(name));
     }
     return callbacks.pthread_setname_np(thread, name);
 }
