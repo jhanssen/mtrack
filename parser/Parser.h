@@ -133,6 +133,7 @@ public:
 
 struct Application
 {
+    ApplicationType type { ApplicationType::ELF };
     uint8_t id {};
     std::string exe;
     std::string cwd;

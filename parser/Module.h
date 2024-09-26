@@ -1,6 +1,7 @@
 #pragma once
 
 #include <common/Indexer.h>
+#include <common/RecordType.h>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -18,7 +19,8 @@ struct backtrace_state;
 class Module : public std::enable_shared_from_this<Module>
 {
 public:
-    static std::shared_ptr<Module> create(Indexer<std::string>& indexer,
+    static std::shared_ptr<Module> create(ApplicationType type,
+                                          Indexer<std::string>& indexer,
                                           std::string&& filename,
                                           uint64_t addr);
 
@@ -30,7 +32,7 @@ public:
     const std::vector<std::pair<uint64_t, uint64_t>>& ranges() const;
 
 protected:
-    Module(Indexer<std::string>& indexer,
+    Module(ApplicationType type, Indexer<std::string>& indexer,
            const std::string& filename,
            uint64_t addr);
 

@@ -124,13 +124,12 @@ void Parser::emitStack(Application &app, int32_t idx)
             if (name == "s") {
                 name = app.exe;
             }
-            if (name.size() > 0 && name[0] != '/') {
-                // relative path?
+            if (name.size() > 0 && name[0] != '/' && app.cwd[0]) { // relative path?
                 char buf[4096];
                 name = realpath((app.cwd + name).c_str(), buf);
             }
 
-            auto module = Module::create(mStringIndexer, std::move(name), lib.addr);
+            auto module = Module::create(app.type, mStringIndexer, std::move(name), lib.addr);
             for (const auto& hdr : lib.headers) {
                 module->addHeader(hdr.addr, hdr.len);
             }
@@ -457,6 +456,7 @@ void Parser::parsePacket(const uint8_t* data, uint32_t dataSize)
         assert(mApplications.find(appId) == mApplications.end());
         Application app;
         app.id = appId;
+        app.type = static_cast<ApplicationType>(readUint8());
         app.startTimestamp = app.lastTimestamp = readUint32();
         if(!mApplications.size())
             mLastMemory.time = mLastSnapshot.time = app.lastTimestamp;

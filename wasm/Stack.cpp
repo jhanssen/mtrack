@@ -1,29 +1,37 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 #include "Stack.h"
 
-#ifdef __EMSCRIPTEN__
-
 extern "C" {
-void *emscripten_stack_snapshot();
-uint32_t emscripten_stack_unwind_buffer(const void *pc, void *buffer, uint32_t depth);
+uint32_t mtrack_stack(const char *str, uint32_t strBytes);
 }
-
 Stack::Stack(unsigned skip) : mCount(0)
 {
-    const void *pc = emscripten_stack_snapshot();
-    std::array<void *, MaxFrames> frames;
-    mCount = emscripten_stack_unwind_buffer(pc, frames.data(), MaxFrames);
-    frames[0] = (void*)pc;
-    for(size_t i = 0; i < mCount; ++i)
-        mPtrs[i] = (uint64_t)frames[i];
+    const size_t bufferSize = 8 * 1024;
+    char buffer[bufferSize];
+
+    const uint32_t len = mtrack_stack(buffer, bufferSize);
+    for(size_t i = 0, last = 0, count = 0; i < len; ++i) {
+        if(buffer[i] == '\n') {
+            if(strncmp(buffer + last, "Error", i - last - 1) && count++ > skip) {
+                buffer[i-1] = '\0';
+                //printf("Found %zu %s\n", count, buffer+last);
+                if(char *w = strstr(buffer+last, ":wasm-function[")) {
+                    w[0] = '\0';
+                    const char *url = w;
+                    while(*(url-1) != '(')
+                        --url;
+                    const char *ip = w + 15;
+                    while(*ip++ != ':');
+                    //printf("Got %zu (%s) (%s)\n", count, url, ip);
+                    mPtrs[mCount] = strtol(ip, nullptr, 16);
+                    mUrls[mCount] = url;
+                    ++mCount;
+                }
+
+            }
+            last = i + 1;
+        }
+    }
 }
-
-#else
-
-#include <asan_unwind.h>
-
-Stack::Stack(unsigned skip) : mCount(0)
-{
-    asan_unwind::StackTrace st(mPtrs.data(), MaxFrames);
-    mCount = st.unwindSlow(skip);
-}
-#endif

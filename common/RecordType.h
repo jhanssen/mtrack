@@ -1,5 +1,9 @@
 #pragma once
 
+enum class ApplicationType : uint8_t {
+    ELF,
+    WASM
+};
 
 enum class CommandType : uint8_t {
     Invalid,

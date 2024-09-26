@@ -37,7 +37,7 @@ private:
 
 struct Data {
     uint8_t appId { 2 };
-    std::atomic<bool> modulesDirty = true;
+    std::map<std::string, uint64_t> urls;
 } *data = nullptr;
 
 namespace {
@@ -65,8 +65,11 @@ void Hooks::hook()
     data = new Data();
     atexit(hookCleanup);
 
-    HostEmitter emitter;
-    emitter.emit(RecordType::Start, data->appId, 0);
+    {
+        HostEmitter emitter;
+        emitter.emit(RecordType::Start, data->appId, ApplicationType::WASM, 0);
+        emitter.emit(RecordType::Executable, data->appId, Emitter::String("http://www.netflix.com"));
+    }
     safePrint("Mtrack: hooked\n");
 }
 
@@ -104,28 +107,30 @@ private:
 
 static std::once_flag hookOnce = {};
 
-static void sendModules()
-{
-    // HostEmitter emitter;
-    // emitter.emit(RecordType::Library, data->appId, Emitter::String(fileName), static_cast<uint64_t>(info->dlpi_addr));
-}
-
 static void reportMalloc(void* ptr, size_t size)
 {
     NoHook nohook;
-    if (data->modulesDirty.load(std::memory_order_acquire)) {
-        sendModules();
-        data->modulesDirty.store(false, std::memory_order_release);
-    }
-
+    Stack stack(3);
     HostEmitter emitter;
+    for(size_t i = 0; i < stack.count(); ++i) {
+        const std::string &url = stack.url(i);
+        const uint64_t ptr = *(stack.ptrs() + i);
+        printf("Got %llx\n", ptr);
+        assert(!(ptr >> 32));
+        auto u = data->urls.find(url);
+        if(u == data->urls.end()) {
+            const uint64_t id = (uint64_t(data->urls.size()) << 32);
+            data->urls[url] = id;
+            stack.setPtr(i, ptr | id);
+            emitter.emit(RecordType::Library, data->appId, Emitter::String(url), id);
+            emitter.emit(RecordType::LibraryHeader, data->appId, id, static_cast<uint64_t>(id | 0xFFFFFFFF));
+        } else {
+            stack.setPtr(i, ptr | u->second);
+        }
+    }
     emitter.emit(RecordType::Malloc,
-                 data->appId,
-                 timestamp(),
-                 static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
-                 static_cast<uint64_t>(size),
-                 static_cast<uint32_t>(gettid()),
-                 Stack(3));
+                 data->appId, timestamp(), static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
+                 static_cast<uint64_t>(size), static_cast<uint32_t>(gettid()), stack);
 }
 
 static void reportFree(void* ptr)

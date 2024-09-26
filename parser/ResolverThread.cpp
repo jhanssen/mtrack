@@ -27,9 +27,9 @@ inline std::string demangle(const char* function)
     return {};
 }
 
-int backtrace_callback(void* data, uintptr_t /*addr*/, const char* file, int line, const char* function)
+int backtrace_callback(void* data, uintptr_t addr, const char* file, int line, const char* function)
 {
-    // printf("pc frame %s %s %d\n", demangle(function).c_str(), file ? file : "(no file)", line);
+    //printf("pc frame 0x%lx %s %s %d\n", addr, demangle(function).c_str(), file ? file : "(no file)", line);
     Address<std::string> &address = *static_cast<Address<std::string>*>(data);
     Frame<std::string> *frame;
     if (address.frame.line == -1) {
@@ -102,11 +102,10 @@ void ResolverThread::run()
             Address<std::string> &dest = resolved[idx];
             dest.aid = unresolved.aid;
             dest.ip = unresolved.ip;
-            unresolved.state->fileline_fn(unresolved.state, unresolved.ip, backtrace_callback, backtrace_errorCallback, &dest);
-
-            if (dest.frame.function.empty()) {
+            if(unresolved.state->fileline_fn)
+                unresolved.state->fileline_fn(unresolved.state, unresolved.ip, backtrace_callback, backtrace_errorCallback, &dest);
+            if (unresolved.state->syminfo_fn && dest.frame.function.empty())
                 unresolved.state->syminfo_fn(unresolved.state, unresolved.ip, backtrace_symInfoCallback, backtrace_errorCallback, &dest);
-            }
         }
         mParser->onResolvedAddresses(std::move(resolved));
     }

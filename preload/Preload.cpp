@@ -615,7 +615,7 @@ void Hooks::hook()
     }
 
     PipeEmitter emitter(data->emitPipe[1]);
-    emitter.emit(RecordType::Start, data->appId, 0);
+    emitter.emit(RecordType::Start, data->appId, ApplicationType::ELF, 0);
 
     data->thread = std::thread(hookThread);
     data->started = timestamp();

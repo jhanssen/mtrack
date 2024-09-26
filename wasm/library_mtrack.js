@@ -18,6 +18,12 @@ var Mtracking = {
     mtrack_enabled: function() {
         return mtrack.enabled;
     },
+    mtrack_stack: function(str, maxbytes) {
+        const callstack = new Error().stack;
+        if (!str || maxbytes <= 0)
+            return lengthBytesUTF8(callstack)+1;
+        return stringToUTF8(callstack, str, maxbytes)+1;
+    },
     mtrack_writeBytes: function(data, size) {
         mtrack.dlsym_writeBytes(HEAPU8, data, size);
     },
