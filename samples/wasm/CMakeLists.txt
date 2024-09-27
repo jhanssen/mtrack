@@ -1,11 +1,10 @@
-set(SOURCES
-    MallocSample.cpp
-    )
+set(MTRACK_DIR "../../wasm")
+set(MTRACK_LFLAGS --bind --tracing --js-library ${MTRACK_DIR}/library_mtrack.js -Wl,--whole-archive ${MTRACK_DIR}/libmtrack_wasm.a -Wl,--no-whole-archive)
 
+set(SOURCES MallocSample.cpp )
 add_executable(malloc_sample ${SOURCES})
 target_compile_features(malloc_sample PRIVATE cxx_std_20)
 set_target_properties(malloc_sample PROPERTIES OUTPUT_NAME "malloc_sample.js")
-target_compile_options(malloc_sample PRIVATE -g3)
-target_link_options(malloc_sample PRIVATE --bind -sWASM=1 -sENVIRONMENT=shell -sSINGLE_FILE -sDEMANGLE_SUPPORT=1 -sUSE_OFFSET_CONVERTER --js-library ../../wasm/library_mtrack.js -gseparate-dwarf=../malloc_sample.js.dwo)
-target_link_libraries(malloc_sample mtrack_wasm)
+target_compile_options(malloc_sample PRIVATE -g3 --tracing)
+target_link_options(malloc_sample PRIVATE -sWASM=1 -sENVIRONMENT=shell -sSINGLE_FILE -gseparate-dwarf ${MTRACK_LFLAGS})
 add_dependencies(malloc_sample mtrack_wasm_js)

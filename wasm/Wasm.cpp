@@ -11,7 +11,8 @@
 #include <atomic>
 #include <mutex>
 
-#include "dlmalloc.h"
+#include <emscripten/bind.h>
+#include <emscripten/emscripten.h>
 
 extern "C" {
 bool mtrack_enabled();
@@ -110,12 +111,11 @@ static std::once_flag hookOnce = {};
 static void reportMalloc(void* ptr, size_t size)
 {
     NoHook nohook;
-    Stack stack(3);
+    Stack stack(7);
     HostEmitter emitter;
     for(size_t i = 0; i < stack.count(); ++i) {
         const std::string &url = stack.url(i);
         const uint64_t ptr = *(stack.ptrs() + i);
-        printf("Got %llx\n", ptr);
         assert(!(ptr >> 32));
         auto u = data->urls.find(url);
         if(u == data->urls.end()) {
@@ -131,6 +131,7 @@ static void reportMalloc(void* ptr, size_t size)
     emitter.emit(RecordType::Malloc,
                  data->appId, timestamp(), static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)),
                  static_cast<uint64_t>(size), static_cast<uint32_t>(gettid()), stack);
+    //printf("Malloc %p [%d]\n", ptr, size);
 }
 
 static void reportFree(void* ptr)
@@ -138,74 +139,45 @@ static void reportFree(void* ptr)
     NoHook nohook;
     HostEmitter emitter;
     emitter.emit(RecordType::Free, data->appId, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)));
+    //printf("Free %p\n", ptr);
 }
 
 extern "C" {
-void *malloc(size_t size)
+
+EMSCRIPTEN_KEEPALIVE void mtrack_report_malloc(void *ptr, size_t size)
 {
     MallocFree mallocFree;
-    if (!mallocFree.wasInMallocFree()) {
+    if (!mallocFree.wasInMallocFree())
         std::call_once(hookOnce, Hooks::hook);
-    }
-
-    auto ret = dlmalloc(size);
-    if (!::hooked || !ret)
-        return ret;
-
-    if (!mallocFree.wasInMallocFree() && data)
-        reportMalloc(ret, size);
-    return ret;
+    if (::hooked && !mallocFree.wasInMallocFree() && data)
+        reportMalloc(ptr, size);
 }
 
-void free(void* ptr)
+EMSCRIPTEN_KEEPALIVE void mtrack_report_free(void *ptr)
 {
     MallocFree mallocFree;
-    if (!mallocFree.wasInMallocFree()) {
+    if (!mallocFree.wasInMallocFree())
         std::call_once(hookOnce, Hooks::hook);
-    }
-
-    dlfree(ptr);
-
-    if (!::hooked)
-        return;
-
-    if (!mallocFree.wasInMallocFree() && ptr && data)
+    if (::hooked && !mallocFree.wasInMallocFree() && ptr && data)
         reportFree(ptr);
 }
 
-void* calloc(size_t nmemb, size_t size)
+EMSCRIPTEN_KEEPALIVE void mtrack_report_realloc(void *oldPtr, void *newPtr, size_t size)
 {
     MallocFree mallocFree;
-    if (!mallocFree.wasInMallocFree()) {
+    if (!mallocFree.wasInMallocFree())
         std::call_once(hookOnce, Hooks::hook);
+    if (::hooked && !mallocFree.wasInMallocFree() && data) {
+        if(oldPtr)
+            reportFree(oldPtr);
+        reportMalloc(newPtr, size);
     }
-
-    auto ret = dlcalloc(nmemb, size);
-    if (!::hooked || !ret)
-        return ret;
-
-    if (!mallocFree.wasInMallocFree() && data)
-        reportMalloc(ret, nmemb * size);
-    return ret;
-}
-
-void* realloc(void* ptr, size_t size)
-{
-    MallocFree mallocFree;
-    if (!mallocFree.wasInMallocFree()) {
-        std::call_once(hookOnce, Hooks::hook);
-    }
-
-    auto ret = dlrealloc(ptr, size);
-    if (!::hooked || !ret)
-        return ret;
-
-    if (!mallocFree.wasInMallocFree() && data) {
-        if (ptr)
-            reportFree(ptr);
-        reportMalloc(ret, size);
-    }
-    return ret;
 }
 
 } // extern "C"
+
+EMSCRIPTEN_BINDINGS(Mtrack) {
+    emscripten::function("mtrack_report_realloc", &mtrack_report_realloc, emscripten::allow_raw_pointers());
+    emscripten::function("mtrack_report_malloc", &mtrack_report_malloc, emscripten::allow_raw_pointers());
+    emscripten::function("mtrack_report_free", &mtrack_report_free, emscripten::allow_raw_pointers());
+}
