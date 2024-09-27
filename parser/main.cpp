@@ -239,6 +239,17 @@ int main(int argc, char** argv)
         options.output = buf;
     }
 
+    for(size_t f = 0; f < args.freeformSize(); ++f) {
+        const std::string freeform = args.freeformValue(f);
+        const size_t equals = freeform.rfind('=');
+        if(equals != std::string::npos) {
+            const std::string input = freeform.substr(0, equals);
+            const std::string output = freeform.substr(equals+1);
+            printf("Mapping %s -> %s\n", input.c_str(), output.c_str());
+            options.symbolMap[input] = output;
+        }
+    }
+
     if (!parse(std::move(options))) {
         // threshold reached
         if (pid > 0) {

@@ -156,6 +156,7 @@ public:
     struct Options {
         std::string output;
         uint8_t appId { 0xFF }; //all
+        std::map<std::string, std::string> symbolMap;
         size_t fileSize { std::numeric_limits<size_t>::max() };
         size_t maxEventCount { std::numeric_limits<size_t>::max() };
         size_t resolverThreads { 2 };

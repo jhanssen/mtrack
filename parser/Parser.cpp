@@ -128,6 +128,11 @@ void Parser::emitStack(Application &app, int32_t idx)
                 char buf[4096];
                 name = realpath((app.cwd + name).c_str(), buf);
             }
+            if(!mOptions.symbolMap.empty()) {
+                const auto file = mOptions.symbolMap.find(name);
+                if(file != mOptions.symbolMap.end())
+                    name = file->second;
+            }
 
             auto module = Module::create(app.type, mStringIndexer, std::move(name), lib.addr);
             for (const auto& hdr : lib.headers) {
