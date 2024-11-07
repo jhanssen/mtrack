@@ -181,3 +181,10 @@ EMSCRIPTEN_BINDINGS(Mtrack) {
     emscripten::function("mtrack_report_malloc", &mtrack_report_malloc, emscripten::allow_raw_pointers());
     emscripten::function("mtrack_report_free", &mtrack_report_free, emscripten::allow_raw_pointers());
 }
+
+extern "C" {
+void *mtrack_force_bindings()
+{
+    return (void*)__embind_init_Mtrack;
+}
+}
