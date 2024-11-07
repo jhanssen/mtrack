@@ -60,4 +60,6 @@ else()
 endif()
 
 add_subdirectory(3rdparty)
-add_subdirectory(samples)
+if (${MTRACK_SAMPLES})
+    add_subdirectory(samples)
+endif()
