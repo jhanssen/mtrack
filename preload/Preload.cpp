@@ -34,6 +34,8 @@
 #define SYS_userfaultfd 323
 #elif defined(__i386__)
 #define SYS_userfaultfd 374
+#elif defined(__aarch64__)
+#define SYS_userfaultfd 282
 #elif defined(__arm__)
 #define SYS_userfaultfd 388
 #else

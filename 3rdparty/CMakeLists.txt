@@ -50,7 +50,11 @@ set(ZLIB_EXTERNAL_LIB ${ZLIB_BINARY_DIR}/prefix/lib/libz.a)
 if (${MTRACK_32})
     set(ZLIB_CONFIGURE ${CMAKE_COMMAND} -E env CFLAGS=-m32 ${ZLIB_CONFIGURE})
 else ()
-    set(ZLIB_CONFIGURE ${ZLIB_CONFIGURE} --64)
+    if("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "aarch64")
+        set(ZLIB_CONFIGURE ${ZLIB_CONFIGURE})
+    else()
+        set(ZLIB_CONFIGURE ${ZLIB_CONFIGURE} --64)
+    endif()
 endif()
 
 ExternalProject_Add(zlib_external
