@@ -1,3 +1,9 @@
+#if defined(__arm__)
+#define _LARGEFILE64_SOURCE
+#undef _FILE_OFFSET_BITS
+#undef _TIME_BITS
+#endif
+
 #include "Preload.h"
 #include "NoHook.h"
 #include "PipeEmitter.h"
