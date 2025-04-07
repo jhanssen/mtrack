@@ -28,7 +28,7 @@ Module::Module(Indexer<std::string>& indexer, const std::string& filename, uint6
     if (descriptor >= 1) {
         int foundSym = 0;
         int foundDwarf = 0;
-        auto ret = elf_add(state, mFileName.c_str(), descriptor, NULL, 0, addr, btErrorHandler, this,
+        auto ret = elf_add(state, mFileName.c_str(), descriptor, nullptr, 0, { addr }, nullptr, btErrorHandler, this,
                            &state->fileline_fn, &foundSym, &foundDwarf, nullptr, false, false, nullptr, 0);
         if (ret && foundSym) {
             state->syminfo_fn = &elf_syminfo;
