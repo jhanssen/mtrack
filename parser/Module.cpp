@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstring>
 #include <fcntl.h>
+#include <unistd.h>
 #include <backtrace.h>
 #include <functional>
 extern "C" {
