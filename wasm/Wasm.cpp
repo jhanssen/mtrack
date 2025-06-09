@@ -185,6 +185,6 @@ EMSCRIPTEN_BINDINGS(Mtrack) {
 extern "C" {
 void *mtrack_force_bindings()
 {
-    return (void*)__embind_init_Mtrack;
+    return (void*)embind_init_Mtrack;
 }
 }
