@@ -268,7 +268,7 @@ export class Graph {
                         .style("opacity", 0.9);
                     toolTip.html(str)
                         .style("left", (avent.pageX) + "px")
-                        .style("top", (avent.pageY - yoff) + "px");
+                        .style("top", Math.max(avent.pageY - yoff, 0) + "px");
                 }, 100);
             }).on("mouseout", function() {
                 /* eslint-disable-next-line no-invalid-this */ /* @ts-ignore */
